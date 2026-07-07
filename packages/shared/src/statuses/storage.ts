@@ -28,6 +28,19 @@ import { debug } from '../utils/debug.ts';
 const STATUS_CONFIG_DIR = 'statuses';
 const STATUS_CONFIG_FILE = 'statuses/config.json';
 const STATUS_ICONS_DIR = 'statuses/icons';
+const REQUIRED_FIXED_STATUS_IDS = ['todo'] as const;
+const HIDDEN_BUILT_IN_STATUS_IDS = new Set(['backlog', 'needs-review', 'done', 'cancelled']);
+
+function createTodoStatus(): StatusConfig {
+  return {
+    id: 'todo',
+    label: 'Todo',
+    category: 'open',
+    isFixed: true,
+    isDefault: false,
+    order: 0,
+  };
+}
 
 /**
  * Get default status configuration (matches current hardcoded behavior)
@@ -35,58 +48,44 @@ const STATUS_ICONS_DIR = 'statuses/icons';
  */
 export function getDefaultStatusConfig(): WorkspaceStatusConfig {
   // Note: color is omitted - defaults from colors/defaults.ts are applied:
-  // - backlog: foreground/50 (muted, not yet planned)
-  // - todo: foreground/50 (muted, ready to work on)
-  // - needs-review: info (amber, attention needed)
-  // - done: accent (purple, completed)
-  // - cancelled: foreground/50 (muted, inactive)
+  // - todo: foreground/50 (muted, current sessions)
   //
   // Note: icon is omitted - auto-discovered from statuses/icons/{id}.svg
   return {
     version: 1,
-    statuses: [
-      {
-        id: 'backlog',
-        label: 'Backlog',
-        category: 'open',
-        isFixed: false,
-        isDefault: true,
-        order: 0,
-      },
-      {
-        id: 'todo',
-        label: 'Todo',
-        category: 'open',
-        isFixed: true,
-        isDefault: false,
-        order: 1,
-      },
-      {
-        id: 'needs-review',
-        label: 'Needs Review',
-        category: 'open',
-        isFixed: false,
-        isDefault: true,
-        order: 2,
-      },
-      {
-        id: 'done',
-        label: 'Done',
-        category: 'closed',
-        isFixed: true,
-        isDefault: false,
-        order: 3,
-      },
-      {
-        id: 'cancelled',
-        label: 'Cancelled',
-        category: 'closed',
-        isFixed: true,
-        isDefault: false,
-        order: 4,
-      },
-    ],
+    statuses: [createTodoStatus()],
     defaultStatusId: 'todo',
+  };
+}
+
+function sanitizeStatusConfig(config: WorkspaceStatusConfig): {
+  config: WorkspaceStatusConfig;
+  changed: boolean;
+} {
+  const visibleStatuses = config.statuses.filter(status => !HIDDEN_BUILT_IN_STATUS_IDS.has(status.id));
+  let changed = visibleStatuses.length !== config.statuses.length;
+
+  if (!visibleStatuses.some(status => status.id === 'todo')) {
+    visibleStatuses.unshift(createTodoStatus());
+    changed = true;
+  }
+
+  const defaultStatusId = visibleStatuses.some(status => status.id === config.defaultStatusId)
+    ? config.defaultStatusId
+    : 'todo';
+  changed ||= defaultStatusId !== config.defaultStatusId;
+
+  if (!changed) {
+    return { config, changed: false };
+  }
+
+  return {
+    config: {
+      ...config,
+      statuses: visibleStatuses,
+      defaultStatusId,
+    },
+    changed: true,
   };
 }
 
@@ -120,9 +119,7 @@ export function ensureDefaultIconFiles(workspaceRootPath: string): void {
  * Validate status configuration has required fixed statuses
  */
 function validateStatusConfig(config: WorkspaceStatusConfig): boolean {
-  const requiredFixedStatuses = ['todo', 'done', 'cancelled'];
-
-  return requiredFixedStatuses.every(id =>
+  return REQUIRED_FIXED_STATUS_IDS.every(id =>
     config.statuses.some(s => s.id === id && s.isFixed)
   );
 }
@@ -145,7 +142,9 @@ export function loadStatusConfig(workspaceRootPath: string): WorkspaceStatusConf
   }
 
   try {
-    const config = readJsonFileSync<WorkspaceStatusConfig>(configPath);
+    const loadedConfig = readJsonFileSync<WorkspaceStatusConfig>(configPath);
+    const sanitized = sanitizeStatusConfig(loadedConfig);
+    const config = sanitized.config;
 
     // Validate required fixed statuses exist
     if (!validateStatusConfig(config)) {
@@ -156,8 +155,8 @@ export function loadStatusConfig(workspaceRootPath: string): WorkspaceStatusConf
     // Auto-migrate old Tailwind class colors (e.g., "text-accent") to new EntityColor format.
     // If migration occurs, write the updated config back to disk.
     const migrated = migrateStatusColors(config);
-    if (migrated) {
-      debug('[loadStatusConfig] Migrated old color format, writing back');
+    if (sanitized.changed || migrated) {
+      debug('[loadStatusConfig] Updated status config, writing back');
       saveStatusConfig(workspaceRootPath, config);
     }
 

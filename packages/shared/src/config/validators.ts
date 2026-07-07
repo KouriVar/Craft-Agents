@@ -909,7 +909,7 @@ export function validateAllSkills(workspaceRoot: string): ValidationResult {
 const STATUS_CONFIG_FILE = 'statuses/config.json';
 
 /** Required fixed statuses that must always exist */
-const REQUIRED_FIXED_STATUS_IDS = ['todo', 'done', 'cancelled'] as const;
+const REQUIRED_FIXED_STATUS_IDS = ['todo'] as const;
 
 /**
  * Status icons are simple strings: emoji characters, URLs, or local filenames
@@ -1079,23 +1079,14 @@ export function validateStatusesContent(jsonString: string): ValidationResult {
     }
   }
 
-  // 5. Check that at least one status is in each category
+  // 5. Check that at least one active-session status exists.
   const hasOpen = config.statuses.some(s => s.category === 'open');
-  const hasClosed = config.statuses.some(s => s.category === 'closed');
   if (!hasOpen) {
     errors.push({
       file,
       path: 'statuses',
       message: 'No status with category "open" - sessions will not appear in inbox',
       severity: 'error',
-    });
-  }
-  if (!hasClosed) {
-    warnings.push({
-      file,
-      path: 'statuses',
-      message: 'No status with category "closed" - sessions cannot be archived',
-      severity: 'warning',
     });
   }
 

@@ -37,7 +37,7 @@ export { generateMessageId } from '@craft-agent/core/types'
  */
 export type SessionStatus = string
 
-export type BuiltInStatusId = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled'
+export type BuiltInStatusId = 'todo'
 
 /**
  * Electron-specific Session type (includes runtime state).

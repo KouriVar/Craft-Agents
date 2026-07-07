@@ -10,7 +10,6 @@ import {
   ChevronDown,
   MoreHorizontal,
   RotateCw,
-  Flag,
   ListFilter,
   Tag,
   Check,
@@ -1469,9 +1468,7 @@ function AppShellContent({
     return cleanup
   }, [workspaces])
 
-  // Count sessions by todo state (scoped to workspace)
-  const isMetaDone = (s: SessionMeta) => s.sessionStatus === 'done' || s.sessionStatus === 'cancelled'
-  const flaggedCount = activeSessionMetas.filter(s => s.isFlagged).length
+  // Count archived sessions (scoped to workspace)
   const archivedCount = workspaceSessionMetas.filter(s => s.isArchived).length
 
   // Compute session counts per label (cumulative: parent includes descendants).
@@ -1765,10 +1762,6 @@ function AppShellContent({
 
   const handleAllSessionsClick = useCallback(() => {
     navigate(routes.view.allSessions())
-  }, [])
-
-  const handleFlaggedClick = useCallback(() => {
-    navigate(routes.view.flagged())
   }, [])
 
   const handleArchivedClick = useCallback(() => {
@@ -2112,12 +2105,11 @@ function AppShellContent({
   const unifiedSidebarItems = React.useMemo((): SidebarItem[] => {
     const result: SidebarItem[] = []
 
-    // 1. Sessions section: All Sessions (expandable) with status items, Flagged, Archived as children
+    // 1. Sessions section: All Sessions (expandable) with status items and Archived as children
     result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
     for (const state of effectiveSessionStatuses) {
       result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleSessionStatusClick(state.id) })
     }
-    result.push({ id: 'nav:flagged', type: 'nav', action: handleFlaggedClick })
     result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
 
     // 2. Labels section header + regular label tree for keyboard nav
@@ -2141,7 +2133,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2284,7 +2276,7 @@ function AppShellContent({
 
     switch (sessionFilter.kind) {
       case 'flagged':
-        return t("sidebar.flagged")
+        return t("sidebar.allSessions")
       case 'state': {
         const state = effectiveSessionStatuses.find(s => s.id === sessionFilter.stateId)
         return state ? t(`status.${state.id}`, state.label) : t("sidebar.allSessions")
@@ -2493,16 +2485,7 @@ function AppShellContent({
                           },
                         })),
                         // Separator: SortableStatusList splits here — items after become non-sortable trailingItems
-                        { id: 'separator:states-flagged', type: 'separator' as const },
-                        // Flagged (trailing, non-sortable)
-                        {
-                          id: "nav:flagged",
-                          title: t("sidebar.flagged"),
-                          label: String(flaggedCount),
-                          icon: <Flag className="h-3.5 w-3.5" />,
-                          variant: (sessionFilter?.kind === 'flagged' ? "default" : "ghost") as "default" | "ghost",
-                          onClick: handleFlaggedClick,
-                        },
+                        { id: 'separator:states-archived', type: 'separator' as const },
                         // Archived (trailing, non-sortable)
                         {
                           id: "nav:archived",

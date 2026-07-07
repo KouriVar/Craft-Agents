@@ -354,7 +354,7 @@ function StateBadge({
   const badgeColor = state.resolvedColor || 'var(--foreground)'
   const applyColor = state.iconColorable
 
-  const DEFAULT_STATUS_IDS = new Set(['backlog', 'todo', 'needs-review', 'done', 'cancelled'])
+  const DEFAULT_STATUS_IDS = new Set(['todo'])
   const stateLabel = DEFAULT_STATUS_IDS.has(state.id) ? t(`status.${state.id}`, state.label) : state.label
 
   return (
@@ -524,4 +524,3 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
     </Popover>
   )
 }
-

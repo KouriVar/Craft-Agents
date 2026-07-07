@@ -51,10 +51,10 @@ export interface StatusConfig {
   /** Category (open = inbox, closed = archive) */
   category: StatusCategory;
 
-  /** If true, cannot be deleted/renamed (todo, done, cancelled) */
+  /** If true, cannot be deleted/renamed (todo) */
   isFixed: boolean;
 
-  /** If true, can be modified but not deleted (in-progress, needs-review) */
+  /** If true, can be modified but not deleted */
   isDefault: boolean;
 
   /** Display order in UI (lower = first) */

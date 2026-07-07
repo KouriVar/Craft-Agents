@@ -79,9 +79,9 @@ export type SessionStatus = string;
 
 /**
  * Built-in status IDs (for TypeScript consumers)
- * These are the default statuses but users can add/remove custom ones
+ * These are built-in statuses but users can add/remove custom ones.
  */
-export type BuiltInStatusId = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled';
+export type BuiltInStatusId = 'todo';
 
 /**
  * Session token usage tracking

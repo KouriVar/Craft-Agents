@@ -12,7 +12,7 @@
  * - Hierarchical submenus collapse to a single flat list per section
  *   (Statuses, Labels). Tapping a row toggles include; tapping the trailing
  *   mode chip on an active row toggles include ↔ exclude.
- * - Pinned filters (from the route, e.g. flagged / state / label views) are
+ * - Pinned filters (from the route, e.g. state / label views) are
  *   shown as disabled rows with a check mark, matching the dropdown.
  * - The search input filters statuses + labels into a single combined view,
  *   reusing the same scoring helpers as the desktop dropdown
@@ -24,7 +24,6 @@ import { useTranslation } from 'react-i18next'
 import {
   Calendar,
   Check,
-  Flag,
   Inbox,
   Layers,
   ListFilter,
@@ -457,14 +456,11 @@ function PinnedSummary({
     ? findLabelById(labelConfigs, pinnedFilters.pinnedLabelId)
     : null
 
-  if (!pinnedFilters.pinnedFlagged && !pinnedStatus && !pinnedLabel) return null
+  if (!pinnedStatus && !pinnedLabel) return null
 
   return (
     <div className="px-2 pt-1 pb-2">
       <div className="flex flex-wrap gap-1.5 px-1">
-        {pinnedFilters.pinnedFlagged && (
-          <PinnedChip icon={<Flag className="h-3.5 w-3.5" />} label={t('sidebar.flagged')} />
-        )}
         {pinnedStatus && (
           <PinnedChip
             icon={
