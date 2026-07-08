@@ -177,11 +177,9 @@ function updateBadgeCountMacOS(count: number): void {
         eventSink(RPC_CHANNELS.badge.DRAW, { to: 'all' }, { count, iconDataUrl: baseIconDataUrl })
       }
     } else {
-      // Reset to original icon (no badge)
-      if (baseIconPath) {
-        const originalIcon = nativeImage.createFromPath(baseIconPath)
-        app.dock?.setIcon(originalIcon)
-      }
+      // Don't override dock icon when count is 0 — let macOS manage it so
+      // the icon follows system dark/light appearance. setIcon with a fixed
+      // image breaks dark mode (icon turns light at night).
     }
     mainLog.info('Badge count updated (macOS):', count)
   } catch (error) {
