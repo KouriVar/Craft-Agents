@@ -215,7 +215,7 @@ echo "Packaging app with electron-builder..."
 cd "$ELECTRON_DIR"
 
 # Set up environment for electron-builder
-export CSC_IDENTITY_AUTO_DISCOVERY=true
+export CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-true}"
 
 # Build electron-builder arguments
 BUILDER_ARGS="--mac --${ARCH}"
