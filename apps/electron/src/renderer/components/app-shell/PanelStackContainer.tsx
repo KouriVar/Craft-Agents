@@ -30,7 +30,6 @@ import { panelStackAtom, focusedPanelIdAtom, focusedPanelRouteAtom } from '@/ato
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { isDetailNavState } from '@/lib/nav-helpers'
 import { PanelSlot } from './PanelSlot'
-import { PanelResizeSash } from './PanelResizeSash'
 import { CompactPanelTransition } from './CompactPanelTransition'
 import {
   PANEL_GAP,
@@ -72,7 +71,8 @@ export function PanelStackContainer({
   const focusedPanelId = useAtomValue(focusedPanelIdAtom)
   const focusedRoute = useAtomValue(focusedPanelRouteAtom)
 
-  const contentPanels = panelStack
+  const focusedEntry = panelStack.find((entry) => entry.id === focusedPanelId) ?? panelStack[0]
+  const contentPanels = focusedEntry ? [focusedEntry] : []
 
   // Compact mode: drill-in is "detail focused", not just "session selected".
   // For sessions: a session is selected. For settings: a subpage is selected.
@@ -93,7 +93,6 @@ export function PanelStackContainer({
   // is always mounted (transform-hidden when detail-focused) so the slide can
   // animate both slots in lockstep.
   const hasNavigator = isCompact ? navigatorWidth > 0 : navigatorWidth > 0
-  const isMultiPanel = visiblePanels.length > 1
   const isLeftEdge = !hasSidebar && !hasNavigator
 
   // Auto-scroll to newly pushed content panel (desktop multi-panel only).
@@ -253,18 +252,12 @@ export function PanelStackContainer({
               key={entry.id}
               entry={entry}
               isOnly={visiblePanels.length === 1}
-              isFocusedPanel={isMultiPanel ? entry.id === focusedPanelId : true}
+              isFocusedPanel={true}
               isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
               isAtLeftEdge={index === 0 && isLeftEdge}
               isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
               proportion={entry.proportion}
               isCompact={false}
-              sash={index > 0 ? (
-                <PanelResizeSash
-                  leftIndex={index - 1}
-                  rightIndex={index}
-                />
-              ) : undefined}
             />
           ))
         )}

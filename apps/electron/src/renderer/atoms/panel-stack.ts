@@ -138,27 +138,14 @@ export const visibleSessionIdsAtom = atom((get) => {
 
 export const pushPanelAtom = atom(
   null,
-  (get, set, { route, afterIndex }: {
+  (_get, set, { route }: {
     route: ViewRoute
     afterIndex?: number
     targetLaneId?: PanelLaneId
     intent?: OpenIntent
   }) => {
-    const stack = get(panelStackAtom)
-    let insertAt = stack.length
-    if (afterIndex !== undefined && afterIndex >= 0 && afterIndex < stack.length) {
-      insertAt = afterIndex + 1
-    }
-
-    const newEntry = createEntry(route, 0)
-    const newStack = [
-      ...stack.slice(0, insertAt),
-      newEntry,
-      ...stack.slice(insertAt),
-    ]
-
-    const normalized = normalizeProportions(newStack)
-    set(panelStackAtom, normalized)
+    const newEntry = createEntry(route, 1)
+    set(panelStackAtom, [newEntry])
     set(focusedPanelIdAtom, newEntry.id)
   }
 )
@@ -193,8 +180,10 @@ export const reconcilePanelStackAtom = atom(
 
     const requestedFocusIndex = Math.min(focusedIndex ?? 0, entries.length - 1)
     const requestedFocusRoute = entries[requestedFocusIndex]?.route ?? entries[0].route
+    const focusedEntry = entries[requestedFocusIndex] ?? entries[0]
+    const singleEntry = { route: focusedEntry.route, proportion: 1 }
 
-    const newStack = entries.map((target, i) => {
+    const newStack = [singleEntry].map((target, i) => {
       const positional = current[i]
 
       if (positional && positional.route === target.route && !used.has(positional.id)) {
@@ -274,27 +263,10 @@ export const resizePanelsAtom = atom(
 
 export const updateFocusedPanelRouteAtom = atom(
   null,
-  (get, set, route: ViewRoute) => {
-    const stack = get(panelStackAtom)
-
-    if (stack.length === 0) {
-      const newEntry = createEntry(route, 1)
-      set(panelStackAtom, [newEntry])
-      set(focusedPanelIdAtom, newEntry.id)
-      return
-    }
-
-    const focusedId = get(focusedPanelIdAtom)
-    const focused = stack.find(p => p.id === focusedId) ?? stack[0]
-
-    const updated = stack.map((p) =>
-      p.id === focused.id
-        ? { ...createEntry(route, p.proportion, p.id), proportion: p.proportion }
-        : p
-    )
-
-    set(panelStackAtom, updated)
-    set(focusedPanelIdAtom, focused.id)
+  (_get, set, route: ViewRoute) => {
+    const newEntry = createEntry(route, 1)
+    set(panelStackAtom, [newEntry])
+    set(focusedPanelIdAtom, newEntry.id)
   }
 )
 

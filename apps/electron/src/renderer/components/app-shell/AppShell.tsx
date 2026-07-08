@@ -1233,7 +1233,7 @@ function AppShellContent({
 
   // New chat
   useAction('app.newChat', () => handleNewChat())
-  useAction('app.newChatInPanel', () => handleNewChat(true))
+  useAction('app.newChatInPanel', () => handleNewChat())
 
   // Settings
   useAction('app.settings', onOpenSettings)
@@ -2048,7 +2048,7 @@ function AppShellContent({
   }, [listFilter, labelFilter, projectFilter])
 
   // Create a new chat and select it
-  const handleNewChat = useCallback((newPanel: boolean = false) => {
+  const handleNewChat = useCallback(() => {
     if (!activeWorkspace) return
 
     // Exit search mode and switch to All Sessions
@@ -2060,27 +2060,12 @@ function AppShellContent({
 
     // Delegate to NavigationContext which handles session creation
     navigate(
-      routes.action.newSession(inherited ?? undefined),
-      newPanel ? { newPanel: true, targetLaneId: 'main' } : undefined
+      routes.action.newSession(inherited ?? undefined)
     )
 
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
-
-  // Create a brand new dedicated browser window and focus it.
-  // Intentionally unbound: this action should always create a NEW window.
-  const handleNewBrowserWindow = useCallback(async () => {
-    try {
-      const instanceId = await window.electronAPI.browserPane.create({
-        show: true,
-      })
-      await window.electronAPI.browserPane.focus(instanceId)
-    } catch (error) {
-      console.error('[Chat] Failed to create browser window:', error)
-      toast.error(t('toast.failedToCreateBrowser'))
-    }
-  }, [])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
@@ -2376,7 +2361,6 @@ function AppShellContent({
           workspaceUnreadMap={workspaceUnreadMap}
           onWorkspaceCreated={() => onRefreshWorkspaces?.()}
           onWorkspaceRemoved={() => onRefreshWorkspaces?.()}
-          activeSessionId={effectiveSessionId}
           onNewChat={() => handleNewChat()}
           onNewWindow={() => window.electronAPI.menuNewWindow()}
           onOpenSettings={onOpenSettings}
@@ -2389,8 +2373,6 @@ function AppShellContent({
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
-          onAddSessionPanel={() => handleNewChat(true)}
-          onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
           isCompact={isAutoCompact}
         />
 
@@ -2428,7 +2410,7 @@ function AppShellContent({
                           <ContextMenuTrigger asChild>
                             <Button
                               variant="ghost"
-                              onClick={(e) => handleNewChat(e.metaKey || e.ctrlKey)}
+                              onClick={() => handleNewChat()}
                               className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
                               data-tutorial="new-chat-button"
                             >

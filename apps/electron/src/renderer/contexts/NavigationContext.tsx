@@ -452,6 +452,9 @@ export function NavigationProvider({
         }
 
         focusedIndex = focusedIndexParam != null ? (parseInt(focusedIndexParam, 10) || 0) : 0
+        const focusedEntry = entries[Math.min(focusedIndex, entries.length - 1)] ?? entries[0]
+        entries = focusedEntry ? [{ ...focusedEntry, proportion: 1 }] : []
+        focusedIndex = 0
       } else if (initialRoute) {
         // Single panel from ?route=
         const navState = parseRouteToNavigationState(initialRoute)

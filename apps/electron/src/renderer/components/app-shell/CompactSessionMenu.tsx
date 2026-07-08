@@ -15,7 +15,7 @@
  *
  * Side-effect handlers (share / refresh title / copy path / share submenu /
  * label toggle with optimistic state) come from `useSessionMenuActions`,
- * shared with the desktop `SessionMenu` so a new session action only has to
+ * shared with the desktop `SessionMenu` so a session action only has to
  * be wired through one place.
  *
  * Leaf actions close the drawer on tap. Label toggles do NOT close the
@@ -35,7 +35,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CloudUpload,
-  Columns2,
   Copy,
   Flag,
   FlagOff,
@@ -312,7 +311,6 @@ export function CompactSessionMenu({
               onMarkUnread={closeAfter(onMarkUnread)}
               onRename={closeAfter(onRename)}
               onRefreshTitle={closeAfter(actions.refreshTitle)}
-              onOpenInNewPanel={closeAfter(actions.openInNewPanel)}
               onOpenInNewWindow={closeAfter(onOpenInNewWindow)}
               onShowInFinder={closeAfter(actions.showInFinder)}
               onCopyPath={closeAfter(actions.copyPath)}
@@ -385,7 +383,6 @@ interface RootPaneProps {
   onMarkUnread?: () => void
   onRename?: () => void
   onRefreshTitle?: () => void
-  onOpenInNewPanel?: () => void
   onOpenInNewWindow?: () => void
   onShowInFinder?: () => void
   onCopyPath?: () => void
@@ -416,7 +413,6 @@ function RootPane({
   onMarkUnread,
   onRename,
   onRefreshTitle,
-  onOpenInNewPanel,
   onOpenInNewWindow,
   onShowInFinder,
   onCopyPath,
@@ -499,7 +495,6 @@ function RootPane({
 
       <Separator />
 
-      <Row icon={<Columns2 className="h-4 w-4" />} label={t('sessionMenu.openInNewPanel')} onTap={onOpenInNewPanel} />
       {onOpenInNewWindow && (
         <Row icon={<AppWindow className="h-4 w-4" />} label={t('sessionMenu.openInNewWindow')} onTap={onOpenInNewWindow} />
       )}

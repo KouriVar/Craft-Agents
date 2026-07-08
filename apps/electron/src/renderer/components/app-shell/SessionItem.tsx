@@ -95,9 +95,8 @@ export function SessionItem({
       return
     }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
-      // Cmd+Shift+Click: open session in a new panel
       e.preventDefault()
-      navigate(routes.view.allSessions(item.id), { newPanel: true })
+      navigate(routes.view.allSessions(item.id))
       return
     }
     if ((e.metaKey || e.ctrlKey) && onToggleSelect) {
