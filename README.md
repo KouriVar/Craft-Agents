@@ -38,7 +38,10 @@
 
 ## 下载
 
-mac 安装包见 [Releases](../../releases)，arm64（Apple Silicon）和 x64（Intel）都有。
+见 [Releases](../../releases)：
+
+- **macOS（Apple Silicon）**：Craft-Agents-arm64.dmg
+- **Windows（Intel/AMD x64）**：Craft-Agents-x64.exe
 
 ## 自用备注
 
