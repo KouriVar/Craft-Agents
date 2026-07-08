@@ -21,7 +21,6 @@ import {
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
 import { CodedError } from '@craft-agent/shared/protocol'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
-import { sanitizeEmbeddedBrowserUserAgent } from '../shared/browser-user-agent'
 import type {
   IBrowserPaneManager,
   BrowserInstanceSnapshot,
@@ -488,7 +487,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const defaultUa = pageView.webContents.userAgent || ''
-    const sanitizedUa = sanitizeEmbeddedBrowserUserAgent(defaultUa)
+    const sanitizedUa = defaultUa.replace(/\sElectron\/[^\s]+/g, '')
     if (sanitizedUa && sanitizedUa !== defaultUa) {
       pageView.webContents.setUserAgent(sanitizedUa)
     }

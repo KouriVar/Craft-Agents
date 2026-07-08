@@ -27,8 +27,6 @@ type ApiToChannelMapKeys = Exclude<
   | 'getMemoryConfig'
   | 'setMemoryConfig'
   | 'getMemoryStatus'
-  | 'getFeatureBlocksConfig'
-  | 'setFeatureBlocksConfig'
   | 'transferSessionToWorkspace' // direct IPC to main process — orchestrated remote transfer
   | 'onTransferProgress' // direct IPC listener — chunk upload progress
   | 'changeLanguage' // direct IPC to main process — syncs i18n language

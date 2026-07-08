@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'projects' | 'featureBlocks' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'projects' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'automations', 'projects', 'feature-blocks', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'automations', 'projects', 'settings'
 ]
 
 /**
@@ -228,16 +228,6 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     return null
   }
 
-  if (first === 'feature-blocks') {
-    if (segments[1]) {
-      return {
-        navigator: 'featureBlocks',
-        details: { type: 'featureBlock', id: decodeURIComponent(segments[1]) },
-      }
-    }
-    return null
-  }
-
   // Sessions navigator (allSessions, flagged, state)
   let sessionFilter: SessionFilter
   let detailsStartIndex: number
@@ -333,11 +323,6 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   if (parsed.navigator === 'projects') {
     if (!parsed.details) return 'projects'
     return `projects/project/${parsed.details.id}`
-  }
-
-  if (parsed.navigator === 'featureBlocks') {
-    if (!parsed.details) return 'feature-blocks'
-    return `feature-blocks/${encodeURIComponent(parsed.details.id)}`
   }
 
   // Sessions navigator
@@ -466,15 +451,12 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
     return { type: 'view', name: 'automation-info', id: compound.details.id, params: {} }
   }
 
+  // Projects
   if (compound.navigator === 'projects') {
     if (!compound.details) {
       return { type: 'view', name: 'projects', params: {} }
     }
     return { type: 'view', name: 'project-info', id: compound.details.id, params: {} }
-  }
-
-  if (compound.navigator === 'featureBlocks') {
-    return { type: 'view', name: 'feature-block', id: compound.details?.id, params: {} }
   }
 
   // Sessions
@@ -612,6 +594,7 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     }
   }
 
+  // Projects
   if (compound.navigator === 'projects') {
     if (!compound.details) {
       return { navigator: 'projects', details: null }
@@ -619,13 +602,6 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     return {
       navigator: 'projects',
       details: { type: 'project', projectSlug: compound.details.id },
-    }
-  }
-
-  if (compound.navigator === 'featureBlocks') {
-    return {
-      navigator: 'featureBlocks',
-      details: { type: 'featureBlock', blockId: compound.details?.id ?? '' },
     }
   }
 
@@ -717,17 +693,6 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
         }
       }
       return { navigator: 'projects', details: null }
-    case 'feature-block':
-      if (parsed.id) {
-        return {
-          navigator: 'featureBlocks',
-          details: {
-            type: 'featureBlock',
-            blockId: parsed.id,
-          },
-        }
-      }
-      return null
     case 'session':
       if (parsed.id) {
         // Reconstruct filter from params
@@ -840,13 +805,6 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     return {
       navigator: 'projects',
       details: state.details ? { type: 'project', id: state.details.projectSlug } : null,
-    }
-  }
-
-  if (state.navigator === 'featureBlocks') {
-    return {
-      navigator: 'featureBlocks',
-      details: { type: 'featureBlock', id: state.details.blockId },
     }
   }
 

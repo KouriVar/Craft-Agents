@@ -418,8 +418,6 @@ client.onConnectionStateChanged((state) => {
 ;(api as ElectronAPI).getMemoryConfig = () => ipcRenderer.invoke('memory:getConfig')
 ;(api as ElectronAPI).setMemoryConfig = (settings) => ipcRenderer.invoke('memory:setConfig', settings)
 ;(api as ElectronAPI).getMemoryStatus = () => ipcRenderer.invoke('memory:getStatus')
-;(api as ElectronAPI).getFeatureBlocksConfig = () => ipcRenderer.invoke('featureBlocks:getConfig')
-;(api as ElectronAPI).setFeatureBlocksConfig = (config) => ipcRenderer.invoke('featureBlocks:setConfig', config)
 ;(api as ElectronAPI).transferSessionToWorkspace = (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) =>
   ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)
 ;(api as ElectronAPI).onTransferProgress = (cb: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void) => {

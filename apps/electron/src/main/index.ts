@@ -87,7 +87,6 @@ import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
 import { registerMemoryIpcHandlers } from './handlers/memory'
-import { registerFeatureBlocksIpcHandlers } from './handlers/feature-blocks'
 import { startGateway, stopGateway } from './gateway-manager'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
@@ -538,7 +537,6 @@ app.whenReady().then(async () => {
 
     // Memory Gateway IPC (standalone, not part of RPC system)
     registerMemoryIpcHandlers()
-    registerFeatureBlocksIpcHandlers()
 
     // Dialog bridge — preload capability handlers use ipcRenderer.invoke to
     // call main-process-only dialog APIs (dialog, BrowserWindow).
