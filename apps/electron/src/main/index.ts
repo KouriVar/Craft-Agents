@@ -438,9 +438,14 @@ app.whenReady().then(async () => {
     ].find(p => existsSync(p))
 
     if (dockIconPath) {
-      app.dock.setIcon(dockIconPath)
       // Initialize badge icon for canvas-based badge overlay
       initBadgeIcon(dockIconPath)
+      // Only override dock icon in dev mode — packaged apps use Info.plist's
+      // icon.icns which follows system dark/light. setIcon with a fixed png
+      // breaks dark mode (icon turns white at night).
+      if (!app.isPackaged) {
+        app.dock.setIcon(dockIconPath)
+      }
     }
 
     // Multi-instance dev: show instance number badge on dock icon
