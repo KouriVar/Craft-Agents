@@ -29,6 +29,10 @@ export interface BuildConfig {
   electronDir: string;
 }
 
+function shellArg(value: string): string {
+  return JSON.stringify(value);
+}
+
 /**
  * Bun version to bundle with the app.
  * Update this when upgrading Bun. Check latest at: https://github.com/oven-sh/bun/releases
@@ -546,7 +550,7 @@ export function copyPiAgentServer(config: BuildConfig): void {
   mkdirSync(koffiDest, { recursive: true });
 
   // Copy koffi JS files
-  for (const entry of ['package.json', 'index.js', 'indirect.js', 'index.d.ts', 'lib']) {
+  for (const entry of ['package.json', 'index.js', 'index.cjs', 'indirect.js', 'indirect.cjs', 'index.d.ts', 'lib', 'src']) {
     const src = join(koffiSource, entry);
     if (existsSync(src)) {
       cpSync(src, join(koffiDest, entry), { recursive: true });
@@ -556,17 +560,21 @@ export function copyPiAgentServer(config: BuildConfig): void {
   // Copy only the target platform's native binary
   const targetDir = koffiPlatformDir(platform, arch);
   const nativeSrc = join(koffiSource, 'build', 'koffi', targetDir);
+  const optionalNativeSrc = join(rootDir, 'node_modules', '@koromix', `koffi-${platform}-${arch}`, targetDir);
   const nativeDest = join(koffiDest, 'build', 'koffi', targetDir);
 
-  if (existsSync(nativeSrc)) {
+  const resolvedNativeSrc = existsSync(nativeSrc) ? nativeSrc : optionalNativeSrc;
+
+  if (existsSync(resolvedNativeSrc)) {
     mkdirSync(nativeDest, { recursive: true });
-    cpSync(nativeSrc, nativeDest, { recursive: true });
-    const size = lstatSync(join(nativeSrc, readdirSync(nativeSrc)[0])).size;
+    cpSync(resolvedNativeSrc, nativeDest, { recursive: true });
+    const size = lstatSync(join(resolvedNativeSrc, readdirSync(resolvedNativeSrc)[0])).size;
     console.log(`  Copied index.js + koffi/${targetDir} (${(size / 1024 / 1024).toFixed(1)}MB)`);
-  } else {
-    console.warn(`  Warning: koffi native binary not found for ${targetDir}`);
+  } else if (existsSync(join(koffiSource, 'build'))) {
     cpSync(join(koffiSource, 'build'), join(koffiDest, 'build'), { recursive: true });
     console.log('  Copied index.js + koffi (all platforms as fallback)');
+  } else {
+    console.warn(`  Warning: koffi native binary not found for ${targetDir}`);
   }
 }
 
@@ -587,7 +595,7 @@ export function buildMcpServers(config: BuildConfig): void {
   mkdirSync(join(sessionDir, 'dist'), { recursive: true });
 
   execSync(
-    `bun build ${join(sessionDir, 'src', 'index.ts')} --outfile ${sessionOut} --target node --format cjs`,
+    `bun build ${shellArg(join(sessionDir, 'src', 'index.ts'))} --outfile ${shellArg(sessionOut)} --target node --format cjs`,
     { cwd: rootDir, stdio: 'inherit', shell: true }
   );
 
@@ -603,7 +611,7 @@ export function buildMcpServers(config: BuildConfig): void {
   if (existsSync(join(piDir, 'src'))) {
     mkdirSync(join(piDir, 'dist'), { recursive: true });
     execSync(
-      `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
+      `bun build ${shellArg(join(piDir, 'src', 'index.ts'))} --outdir ${shellArg(join(piDir, 'dist'))} --target bun --format esm --external koffi`,
       { cwd: rootDir, stdio: 'inherit', shell: true }
     );
     if (!existsSync(piOut)) {
