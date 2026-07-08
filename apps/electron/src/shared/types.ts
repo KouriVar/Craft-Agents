@@ -58,6 +58,10 @@ export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 // Source types for session source selection
 import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
 export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
+import type { MemoryGatewayStatus, MemorySettings } from './memory-settings';
+export type { MemoryGatewayStatus, MemorySettings };
+import type { FeatureBlocksConfig } from './feature-blocks';
+export type { FeatureBlock, FeatureBlocksConfig } from './feature-blocks';
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -268,6 +272,11 @@ export interface ElectronAPI {
   relaunchApp(): Promise<void>
   removeWorkspace(workspaceId: string): Promise<boolean>
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
+  getMemoryConfig(): Promise<MemorySettings>
+  setMemoryConfig(settings: MemorySettings): Promise<void>
+  getMemoryStatus(): Promise<MemoryGatewayStatus>
+  getFeatureBlocksConfig(): Promise<FeatureBlocksConfig>
+  setFeatureBlocksConfig(config: FeatureBlocksConfig): Promise<FeatureBlocksConfig>
 
   // Remote session transfer (main-process orchestrated, supports chunked upload)
   transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>
@@ -723,6 +732,9 @@ export interface ElectronAPI {
   startWhatsAppConnect(): Promise<{ success: boolean }>
   submitWhatsAppPhone(phoneNumber: string): Promise<{ success: boolean }>
   onWhatsAppEvent(callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void): () => void
+  startWeChatConnect(): Promise<{ success: boolean }>
+  submitWeChatVerifyCode(code: string): Promise<{ success: boolean }>
+  onWeChatEvent(callback: (payload: { workspaceId: string; event: WeChatUiEvent }) => void): () => void
   // Messaging access control (Phase 3)
   getMessagingPlatformOwners(platform: string): Promise<MessagingPlatformOwnerInfo[]>
   setMessagingPlatformOwners(platform: string, owners: MessagingPlatformOwnerInfo[]): Promise<MessagingPlatformOwnerInfo[]>
@@ -788,6 +800,13 @@ export type WhatsAppUiEvent =
   | { type: 'connected'; jid?: string; name?: string }
   | { type: 'disconnected'; loggedOut: boolean; reason?: string }
   | { type: 'unavailable'; reason: string; message: string }
+  | { type: 'error'; message: string }
+
+export type WeChatUiEvent =
+  | { type: 'qr'; qr: string }
+  | { type: 'scanned' }
+  | { type: 'need_verifycode' }
+  | { type: 'connected' }
   | { type: 'error'; message: string }
 
 // =============================================================================
@@ -893,6 +912,12 @@ export interface AutomationsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface FeatureBlocksNavigationState {
+  navigator: 'featureBlocks'
+  details: { type: 'featureBlock'; blockId: string }
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Projects navigation state
  */
@@ -912,6 +937,7 @@ export type NavigationState =
   | SkillsNavigationState
   | AutomationsNavigationState
   | ProjectsNavigationState
+  | FeatureBlocksNavigationState
 
 export const isSessionsNavigation = (
   state: NavigationState
@@ -936,6 +962,10 @@ export const isAutomationsNavigation = (
 export const isProjectsNavigation = (
   state: NavigationState
 ): state is ProjectsNavigationState => state.navigator === 'projects'
+
+export const isFeatureBlocksNavigation = (
+  state: NavigationState
+): state is FeatureBlocksNavigationState => state.navigator === 'featureBlocks'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'sessions',
@@ -967,6 +997,9 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `projects/project/${state.details.projectSlug}`
     }
     return 'projects'
+  }
+  if (state.navigator === 'featureBlocks') {
+    return `feature-blocks/${state.details.blockId}`
   }
   if (state.navigator === 'settings') {
     if (state.subpage === null) return 'settings'

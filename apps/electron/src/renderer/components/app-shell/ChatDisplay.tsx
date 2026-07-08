@@ -1397,6 +1397,20 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const turns = allTurns.slice(startIndex)
   const hasMoreAbove = startIndex > 0
 
+  // Fix: when opening a session, scroll to latest turn after messages load
+  const prevSessionIdForInitialScrollRef = React.useRef(session?.id ?? null)
+  React.useEffect(() => {
+    if (session?.id && session.id !== prevSessionIdForInitialScrollRef.current && allTurns.length > 0) {
+      prevSessionIdForInitialScrollRef.current = session.id
+      // Double rAF to let React layout settle after reverse pagination
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        })
+      })
+    }
+  }, [session?.id, allTurns.length])
+
   const assistantTurnIndexByMessageId = useMemo(() => {
     const map = new Map<string, number>()
     allTurns.forEach((turn, index) => {

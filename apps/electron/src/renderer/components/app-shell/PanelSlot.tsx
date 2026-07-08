@@ -88,14 +88,21 @@ export function PanelSlot({
     )
   }, [isCompact, handleClose])
 
+  const rightSidebarButton = useMemo(() => (
+    <span className="inline-flex items-center gap-1.5">
+      {parentContext.rightSidebarButton}
+      {closeButton}
+    </span>
+  ), [parentContext.rightSidebarButton, closeButton])
+
   // Override AppShellContext so ChatPage/PanelHeader gets our per-panel close button,
   // back button (compact mode), and isFocusedPanel for input field appearance
   const contextOverride = useMemo(() => ({
     ...parentContext,
-    rightSidebarButton: closeButton,
+    rightSidebarButton,
     leadingAction: backButton,
     isFocusedPanel,
-  }), [parentContext, closeButton, backButton, isFocusedPanel])
+  }), [parentContext, rightSidebarButton, backButton, isFocusedPanel])
 
   const handlePointerDown = useCallback(() => {
     if (!isFocusedPanel) {

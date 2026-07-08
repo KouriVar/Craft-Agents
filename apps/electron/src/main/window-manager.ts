@@ -258,7 +258,7 @@ export class WindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
-        webviewTag: false // Browser integration uses WebContentsView, not <webview>
+        webviewTag: true
       }
     })
 

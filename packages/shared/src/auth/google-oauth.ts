@@ -129,7 +129,7 @@ async function exchangeCodeForTokens(
   redirectUri: string,
   clientId: string,
   clientSecret: string
-): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }> {
+): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; idToken?: string }> {
   const params = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
@@ -154,12 +154,14 @@ async function exchangeCodeForTokens(
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
+    id_token?: string;
   };
 
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresIn: data.expires_in,
+    idToken: data.id_token,
   };
 }
 
@@ -172,11 +174,39 @@ async function getUserEmail(accessToken: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to get user info');
+    const errorText = await response.text();
+    throw new Error(`Failed to get Google profile (HTTP ${response.status}): ${errorText}`);
   }
 
-  const data = (await response.json()) as { email: string };
-  return data.email;
+  const data = await response.json();
+  const email = readStringProperty(data, 'email');
+  if (!email) {
+    throw new Error('Failed to get Google profile: response did not include an email address');
+  }
+  return email;
+}
+
+function readStringProperty(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = Reflect.get(value, key);
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+}
+
+function parseEmailFromIdToken(idToken: string | undefined): string | undefined {
+  if (!idToken) return undefined;
+  const [, payload] = idToken.split('.');
+  if (!payload) return undefined;
+
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    const parsed: unknown = JSON.parse(decoded);
+    return readStringProperty(parsed, 'email');
+  } catch (error) {
+    if (error instanceof Error) return undefined;
+    throw error;
+  }
 }
 
 /**
@@ -249,23 +279,20 @@ export function isGoogleOAuthConfigured(clientId?: string, clientSecret?: string
  * Get scopes for a Google service or use custom scopes
  */
 export function getGoogleScopes(options: GoogleOAuthOptions): string[] {
+  const identityScopes = ['openid', 'email', 'https://www.googleapis.com/auth/userinfo.email'];
+
   // Custom scopes take precedence
   if (options.scopes && options.scopes.length > 0) {
-    // Ensure userinfo.email is included for email retrieval
-    const emailScope = 'https://www.googleapis.com/auth/userinfo.email';
-    if (!options.scopes.includes(emailScope)) {
-      return [...options.scopes, emailScope];
-    }
-    return options.scopes;
+    return [...new Set([...options.scopes, ...identityScopes])];
   }
 
   // Use predefined service scopes
   if (options.service && options.service in GOOGLE_SERVICE_SCOPES) {
-    return GOOGLE_SERVICE_SCOPES[options.service];
+    return [...new Set([...GOOGLE_SERVICE_SCOPES[options.service], ...identityScopes])];
   }
 
   // Default to Gmail scopes for backwards compatibility
-  return GOOGLE_SERVICE_SCOPES.gmail;
+  return [...new Set([...GOOGLE_SERVICE_SCOPES.gmail, ...identityScopes])];
 }
 
 /**
@@ -340,7 +367,7 @@ export async function exchangeGoogleOAuth(params: OAuthExchangeParams): Promise<
       params.clientSecret || ''
     );
 
-    const email = await getUserEmail(tokens.accessToken);
+    const email = parseEmailFromIdToken(tokens.idToken) ?? await getUserEmail(tokens.accessToken);
 
     return {
       success: true,
@@ -464,7 +491,7 @@ export async function startGoogleOAuth(
     const tokens = await exchangeCodeForTokens(code, pkce.verifier, redirectUri, clientId, clientSecret);
 
     // Get user email
-    const email = await getUserEmail(tokens.accessToken);
+    const email = parseEmailFromIdToken(tokens.idToken) ?? await getUserEmail(tokens.accessToken);
 
     return {
       success: true,

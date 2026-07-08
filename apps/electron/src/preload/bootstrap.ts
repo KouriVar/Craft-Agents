@@ -415,6 +415,11 @@ client.onConnectionStateChanged((state) => {
 ;(api as ElectronAPI).removeWorkspace = (workspaceId: string) => ipcRenderer.invoke('workspace:remove', workspaceId)
 ;(api as ElectronAPI).invokeOnServer = (url: string, token: string, channel: string, ...args: any[]) =>
   ipcRenderer.invoke('server:invokeOnServer', url, token, channel, ...args)
+;(api as ElectronAPI).getMemoryConfig = () => ipcRenderer.invoke('memory:getConfig')
+;(api as ElectronAPI).setMemoryConfig = (settings) => ipcRenderer.invoke('memory:setConfig', settings)
+;(api as ElectronAPI).getMemoryStatus = () => ipcRenderer.invoke('memory:getStatus')
+;(api as ElectronAPI).getFeatureBlocksConfig = () => ipcRenderer.invoke('featureBlocks:getConfig')
+;(api as ElectronAPI).setFeatureBlocksConfig = (config) => ipcRenderer.invoke('featureBlocks:setConfig', config)
 ;(api as ElectronAPI).transferSessionToWorkspace = (sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) =>
   ipcRenderer.invoke('session:transferToRemoteWorkspace', sessionId, targetWorkspaceId, sessionIndex, sessionCount)
 ;(api as ElectronAPI).onTransferProgress = (cb: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void) => {
@@ -443,5 +448,10 @@ client.onConnectionStateChanged((state) => {
     return null
   }
 }
+
+// Memory settings bridge — allows renderer to persist config & start/stop Gateway
+;(api as any).getMemoryConfig = () => ipcRenderer.invoke('memory:getConfig')
+;(api as any).setMemoryConfig = (settings: unknown) => ipcRenderer.invoke('memory:setConfig', settings)
+;(api as any).getMemoryStatus = () => ipcRenderer.invoke('memory:getStatus')
 
 contextBridge.exposeInMainWorld('electronAPI', api)

@@ -192,6 +192,9 @@ export const routes = {
 
     /** Kanban board view (sessions navigator, board view mode, all sessions) */
     board: () => 'board' as const,
+
+    featureBlock: (blockId: string) =>
+      `feature-blocks/${encodeURIComponent(blockId)}` as const,
   },
 } as const
 

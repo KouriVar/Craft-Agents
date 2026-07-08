@@ -25,6 +25,8 @@ import MessagingSettingsPage from './MessagingSettingsPage'
 import ServerSettingsPage from './ServerSettingsPage'
 import ShortcutsPage from './ShortcutsPage'
 import PreferencesPage from './PreferencesPage'
+import MemorySettingsPage from './MemorySettingsPage'
+import FeatureBlocksSettingsPage from './FeatureBlocksSettingsPage'
 
 /**
  * Map of settings subpage IDs to their page components.
@@ -42,6 +44,8 @@ export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = 
   server: ServerSettingsPage,
   shortcuts: ShortcutsPage,
   preferences: PreferencesPage,
+  memory: MemorySettingsPage,
+  featureBlocks: FeatureBlocksSettingsPage,
 }
 
 /**

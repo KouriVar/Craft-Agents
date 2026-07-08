@@ -10,6 +10,7 @@ import {
   ChevronDown,
   MoreHorizontal,
   RotateCw,
+  Flag,
   ListFilter,
   Tag,
   Check,
@@ -32,6 +33,9 @@ import {
   Info,
   MailOpen,
   FolderKanban,
+  Brain,
+  Blocks,
+  Figma,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -88,10 +92,12 @@ import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { FeatureBlock } from "../../../shared/feature-blocks"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
-import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
+import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute, reconcilePanelStackAtom } from "@/atoms/panel-stack"
+import type { ViewRoute } from "../../../shared/routes"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
@@ -122,6 +128,7 @@ import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
+import { MemoryCardsSidebar } from "../right-sidebar/MemoryCardsSidebar"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
 import { useProjects } from "@/hooks/useProjects"
@@ -173,6 +180,14 @@ interface AppShellProps {
 type FilterMode = 'include' | 'exclude'
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
+
+function isFeatureBlockPanelRoute(route: ViewRoute): boolean {
+  return route.startsWith('feature-blocks/')
+}
+
+function isSessionPanelRoute(route: ViewRoute): boolean {
+  return route === 'allSessions' || parseSessionIdFromRoute(route) !== null
+}
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
 function AltExcludeTooltip({ show, children }: { show: boolean; children: React.ReactNode }) {
@@ -547,6 +562,7 @@ function AppShellContent({
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
+  const [isMemorySidebarOpen, setIsMemorySidebarOpen] = React.useState(true)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -598,6 +614,12 @@ function AppShellContent({
   const panelStack = useAtomValue(panelStackAtom)
   const panelCount = useAtomValue(panelCountAtom)
   const focusedSessionId = useAtomValue(focusedSessionIdAtom)
+  const reconcilePanelStack = useSetAtom(reconcilePanelStackAtom)
+  const featureBlockWorkspaceEntry = React.useMemo(
+    () => panelStack.find((entry) => isFeatureBlockPanelRoute(entry.route)) ?? null,
+    [panelStack]
+  )
+  const isFeatureBlockWorkspace = featureBlockWorkspaceEntry !== null
 
   // Navigate the focused panel to a session.
   // If the session is already open in another panel, focus that panel instead.
@@ -916,6 +938,25 @@ function AppShellContent({
   React.useEffect(() => {
     setSkillsAtom(skills)
   }, [skills, setSkillsAtom])
+
+  const [featureBlocks, setFeatureBlocks] = React.useState<FeatureBlock[]>([])
+  const loadFeatureBlocks = React.useCallback(async () => {
+    try {
+      const config = await window.electronAPI.getFeatureBlocksConfig()
+      setFeatureBlocks([...config.blocks])
+    } catch (error) {
+      console.error('[AppShell] Failed to load feature blocks:', error)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    void loadFeatureBlocks()
+    const handleChanged = () => {
+      void loadFeatureBlocks()
+    }
+    window.addEventListener('feature-blocks-changed', handleChanged)
+    return () => window.removeEventListener('feature-blocks-changed', handleChanged)
+  }, [loadFeatureBlocks])
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
 
@@ -1388,6 +1429,8 @@ function AppShellContent({
   // This prevents closures from retaining full message arrays
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const setSessionMetaMap = useSetAtom(sessionMetaMapAtom)
+  const effectiveSessionMeta = effectiveSessionId ? sessionMetaMap.get(effectiveSessionId) : undefined
+  const isMemorySidebarVisible = !isAutoCompact && isMemorySidebarOpen && isSessionsNavigation(navState) && !isFeatureBlockWorkspace
 
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
@@ -1427,6 +1470,28 @@ function AppShellContent({
   const activeSessionMetas = useMemo(() => {
     return workspaceSessionMetas.filter(s => !s.isArchived)
   }, [workspaceSessionMetas])
+
+  const buildFeatureBlockChatRoute = useCallback((): ViewRoute => {
+    const sessionEntry = panelStack.find((entry) => isSessionPanelRoute(entry.route))
+    if (sessionEntry) return sessionEntry.route
+
+    const fallbackSessionId = focusedSessionId ?? session.selected ?? activeSessionMetas[0]?.id ?? null
+    return fallbackSessionId ? routes.view.allSessions(fallbackSessionId) : routes.view.allSessions()
+  }, [activeSessionMetas, focusedSessionId, panelStack, session.selected])
+
+  React.useEffect(() => {
+    const featureEntry = panelStack.find((entry) => isFeatureBlockPanelRoute(entry.route))
+    if (!featureEntry) return
+    if (panelStack.some((entry) => isSessionPanelRoute(entry.route))) return
+
+    reconcilePanelStack({
+      entries: [
+        { route: featureEntry.route, proportion: 0.68 },
+        { route: buildFeatureBlockChatRoute(), proportion: 0.32 },
+      ],
+      focusedIndex: 0,
+    })
+  }, [buildFeatureBlockChatRoute, panelStack, reconcilePanelStack])
 
   const refreshWorkspaceUnreadMap = useCallback(async () => {
     try {
@@ -1688,6 +1753,21 @@ function AppShellContent({
   }, [session.selected, setSession, onDeleteSession])
 
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
+  const memorySidebarButton = React.useMemo(() => (
+    <HeaderIconButton
+      icon={<Brain className="h-4 w-4" />}
+      tooltip={isMemorySidebarOpen ? "隐藏记忆卡片" : "显示记忆卡片"}
+      aria-pressed={isMemorySidebarOpen}
+      className={isMemorySidebarOpen ? "text-accent" : undefined}
+      onClick={() => setIsMemorySidebarOpen(v => !v)}
+    />
+  ), [isMemorySidebarOpen])
+
+  const handleSendMemoryPrompt = React.useCallback((prompt: string) => {
+    if (!effectiveSessionId) return
+    onSendMessage(effectiveSessionId, prompt)
+  }, [effectiveSessionId, onSendMessage])
+
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
@@ -1700,7 +1780,7 @@ function AppShellContent({
     sessionStatuses: effectiveSessionStatuses,
     onSessionSourcesChange: handleSessionSourcesChange,
     onJumpToTaskSessions: handleJumpToTaskSessions,
-    rightSidebarButton: null,
+    rightSidebarButton: isAutoCompact || !isSessionsNavigation(navState) || isFeatureBlockWorkspace ? null : memorySidebarButton,
     isCompactMode: isAutoCompact,
     // Search state for ChatDisplay highlighting
     sessionListSearchQuery: searchActive ? searchQuery : undefined,
@@ -1714,7 +1794,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, memorySidebarButton, isAutoCompact, isFeatureBlockWorkspace, navState, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -2038,6 +2118,13 @@ function AppShellContent({
     // Inherit sole-active filter into the new session when unambiguous.
     const inherited = resolveInheritedNewSessionParams()
 
+    if (isFeatureBlockWorkspace && !newPanel) {
+      const sessionEntry = store.get(panelStackAtom).find((entry) => isSessionPanelRoute(entry.route))
+      if (sessionEntry) {
+        setFocusedPanel(sessionEntry.id)
+      }
+    }
+
     // Delegate to NavigationContext which handles session creation
     navigate(
       routes.action.newSession(inherited ?? undefined),
@@ -2046,7 +2133,7 @@ function AppShellContent({
 
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
-  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
+  }, [activeWorkspace, focusZone, isFeatureBlockWorkspace, navigate, resolveInheritedNewSessionParams, setFocusedPanel, store])
 
   // Create a brand new dedicated browser window and focus it.
   // Intentionally unbound: this action should always create a NEW window.
@@ -2061,6 +2148,17 @@ function AppShellContent({
       toast.error(t('toast.failedToCreateBrowser'))
     }
   }, [])
+
+  const handleOpenFeatureBlock = useCallback((block: FeatureBlock) => {
+    const featureRoute = routes.view.featureBlock(block.id)
+    reconcilePanelStack({
+      entries: [
+        { route: featureRoute, proportion: 0.68 },
+        { route: buildFeatureBlockChatRoute(), proportion: 0.32 },
+      ],
+      focusedIndex: 0,
+    })
+  }, [buildFeatureBlockChatRoute, reconcilePanelStack])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
@@ -2442,7 +2540,7 @@ function AppShellContent({
                       title: t("sidebar.allSessions"),
                       label: String(workspaceSessionMetas.length),
                       icon: Inbox,
-                      variant: sessionFilter?.kind === 'allSessions' ? "default" : "ghost",
+                      variant: !isFeatureBlockWorkspace && sessionFilter?.kind === 'allSessions' ? "default" : "ghost",
                       onClick: handleAllSessionsClick,
                       expandable: true,
                       expanded: isExpanded('nav:allSessions'),
@@ -2476,7 +2574,7 @@ function AppShellContent({
                           icon: state.icon,
                           iconColor: state.resolvedColor,
                           iconColorable: state.iconColorable,
-                          variant: (sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
+                          variant: (!isFeatureBlockWorkspace && sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
                           onClick: () => handleSessionStatusClick(state.id),
                           contextMenu: {
                             type: 'status' as const,
@@ -2492,7 +2590,7 @@ function AppShellContent({
                           title: t("sidebar.archived"),
                           label: archivedCount > 0 ? String(archivedCount) : undefined,
                           icon: Archive,
-                          variant: (sessionFilter?.kind === 'archived' ? "default" : "ghost") as "default" | "ghost",
+                          variant: (!isFeatureBlockWorkspace && sessionFilter?.kind === 'archived' ? "default" : "ghost") as "default" | "ghost",
                           onClick: handleArchivedClick,
                         },
                       ],
@@ -2503,7 +2601,7 @@ function AppShellContent({
                       title: t("sidebar.labels"),
                       icon: Tag,
                       // Only highlighted when "Labels" itself is selected (not sub-labels)
-                      variant: (sessionFilter?.kind === 'label' && sessionFilter.labelId === '__all__') ? "default" as const : "ghost" as const,
+                      variant: (!isFeatureBlockWorkspace && sessionFilter?.kind === 'label' && sessionFilter.labelId === '__all__') ? "default" as const : "ghost" as const,
                       // Clicking navigates to "all labeled sessions" view
                       onClick: () => handleLabelClick('__all__'),
                       expandable: true,
@@ -2658,6 +2756,28 @@ function AppShellContent({
                     },
                     // --- Separator ---
                     { id: "separator:skills-settings", type: "separator" },
+                    {
+                      id: "nav:featureBlocks",
+                      title: t("sidebar.featureBlocks", "功能块"),
+                      label: String(featureBlocks.filter((block) => block.pinned).length),
+                      icon: Blocks,
+                      variant: isFeatureBlockWorkspace ? "default" as const : "ghost" as const,
+                      onClick: () => handleSettingsClick("featureBlocks"),
+                      expandable: true,
+                      expanded: isExpanded('nav:featureBlocks'),
+                      onToggle: () => toggleExpanded('nav:featureBlocks'),
+                      items: featureBlocks
+                        .filter((block) => block.pinned)
+                        .map((block) => ({
+                          id: `nav:featureBlocks:${block.id}`,
+                          title: block.title,
+                          icon: block.id === 'figma' || block.title.toLowerCase().includes('figma') ? Figma : Globe,
+                          variant: featureBlockWorkspaceEntry?.route === routes.view.featureBlock(block.id) ? "default" as const : "ghost" as const,
+                          onClick: () => {
+                            handleOpenFeatureBlock(block)
+                          },
+                        })),
+                    },
                     // --- Settings ---
                     {
                       id: "nav:settings",
@@ -3584,12 +3704,22 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || isBoardView ? 0 : sessionListWidth)}
+          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || isBoardView || isFeatureBlockWorkspace ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
-          isRightSidebarVisible={false}
+          isRightSidebarVisible={isMemorySidebarVisible}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
         />
+
+        {isMemorySidebarVisible && (
+          <MemoryCardsSidebar
+            selectedSessionId={effectiveSessionId}
+            selectedSessionTitle={effectiveSessionMeta?.name ?? effectiveSessionMeta?.preview}
+            onClose={() => setIsMemorySidebarOpen(false)}
+            onOpenSettings={() => handleSettingsClick("memory")}
+            onSendPrompt={handleSendMemoryPrompt}
+          />
+        )}
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
         {!effectiveSidebarAndNavigatorHidden && (
@@ -3624,8 +3754,7 @@ function AppShellContent({
         </div>
         )}
 
-        {/* Session List Resize Handle (absolute, hidden in focused mode and board view) */}
-        {!effectiveSidebarAndNavigatorHidden && !isBoardView && (
+        {!effectiveSidebarAndNavigatorHidden && !isBoardView && !isFeatureBlockWorkspace && (
         <div
           ref={sessionListHandleRef}
           onMouseDown={(e) => { e.preventDefault(); setIsResizing('session-list') }}
