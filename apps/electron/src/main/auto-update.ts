@@ -19,7 +19,7 @@ import { app, BrowserWindow } from 'electron'
 import { platform } from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
-import { mainLog, autoUpdateLog } from './logger'
+import { autoUpdateLog } from './logger'
 import { getAppVersion } from '@craft-agent/shared/version'
 import {
   getDismissedUpdateVersion,
@@ -132,16 +132,16 @@ autoUpdater.autoInstallOnAppQuit = true
 
 // Use the logger for electron-updater internal logging
 autoUpdater.logger = {
-  info: (msg: unknown) => mainLog.info('[electron-updater]', msg),
-  warn: (msg: unknown) => mainLog.warn('[electron-updater]', msg),
-  error: (msg: unknown) => mainLog.error('[electron-updater]', msg),
-  debug: (msg: unknown) => mainLog.info('[electron-updater:debug]', msg),
+  info: (msg: unknown) => autoUpdateLog.info('[electron-updater]', msg),
+  warn: (msg: unknown) => autoUpdateLog.warn('[electron-updater]', msg),
+  error: (msg: unknown) => autoUpdateLog.error('[electron-updater]', msg),
+  debug: (msg: unknown) => autoUpdateLog.info('[electron-updater:debug]', msg),
 }
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
 
 autoUpdater.on('checking-for-update', () => {
-  mainLog.info('[auto-update] Checking for updates...')
+  autoUpdateLog.info('[auto-update] Checking for updates...')
 })
 
 autoUpdater.on('update-available', (info) => {
@@ -150,7 +150,7 @@ autoUpdater.on('update-available', (info) => {
   // First, check electron-updater's internal state (most reliable)
   const internalState = checkElectronUpdaterState()
   if (internalState.ready) {
-    mainLog.info(`[auto-update] electron-updater reports download ready`)
+    autoUpdateLog.info(`[auto-update] electron-updater reports download ready`)
     updateInfo = {
       ...updateInfo,
       available: true,
@@ -165,7 +165,7 @@ autoUpdater.on('update-available', (info) => {
   // Fallback: check if file exists in cache directory
   const existing = checkForExistingDownload()
   if (existing.exists) {
-    mainLog.info(`[auto-update] Update already downloaded (file check), setting state to ready`)
+    autoUpdateLog.info(`[auto-update] Update already downloaded (file check), setting state to ready`)
     updateInfo = {
       ...updateInfo,
       available: true,
@@ -188,7 +188,7 @@ autoUpdater.on('update-available', (info) => {
 })
 
 autoUpdater.on('update-not-available', (info) => {
-  mainLog.info(`[auto-update] Already up to date (${info.version})`)
+  autoUpdateLog.info(`[auto-update] Already up to date (${info.version})`)
 
   updateInfo = {
     ...updateInfo,
@@ -245,16 +245,16 @@ function checkElectronUpdaterState(): { ready: boolean; version?: string } {
     // @ts-expect-error - accessing internal API for reliability
     const helper = autoUpdater.downloadedUpdateHelper
     if (helper) {
-      mainLog.info(`[auto-update] downloadedUpdateHelper exists, cacheDir: ${helper.cacheDir}`)
+      autoUpdateLog.info(`[auto-update] downloadedUpdateHelper exists, cacheDir: ${helper.cacheDir}`)
       // @ts-expect-error - accessing internal API
       const versionInfo = helper.versionInfo
       if (versionInfo) {
-        mainLog.info(`[auto-update] electron-updater has validated download: ${JSON.stringify(versionInfo)}`)
+        autoUpdateLog.info(`[auto-update] electron-updater has validated download: ${JSON.stringify(versionInfo)}`)
         return { ready: true, version: versionInfo.version }
       }
     }
   } catch (error) {
-    mainLog.warn('[auto-update] Error checking electron-updater state:', error)
+    autoUpdateLog.warn('[auto-update] Error checking electron-updater state:', error)
   }
   return { ready: false }
 }
@@ -274,27 +274,27 @@ interface CheckOptions {
 function checkForExistingDownload(): { exists: boolean; version?: string } {
   try {
     const cacheDir = getUpdateCacheDir()
-    mainLog.info(`[auto-update] Checking cache directory: ${cacheDir}`)
+    autoUpdateLog.info(`[auto-update] Checking cache directory: ${cacheDir}`)
 
     if (!fs.existsSync(cacheDir)) {
-      mainLog.info(`[auto-update] Cache directory does not exist`)
+      autoUpdateLog.info(`[auto-update] Cache directory does not exist`)
       return { exists: false }
     }
 
     const files = fs.readdirSync(cacheDir)
-    mainLog.info(`[auto-update] Files in cache: ${JSON.stringify(files)}`)
+    autoUpdateLog.info(`[auto-update] Files in cache: ${JSON.stringify(files)}`)
 
     // Look for update info file that electron-updater creates
     const updateInfoFile = files.find(f => f === 'update-info.json')
     if (updateInfoFile) {
       const infoPath = path.join(cacheDir, updateInfoFile)
       const info = readJsonFileSync(infoPath) as Record<string, unknown> | null
-      mainLog.info(`[auto-update] update-info.json contents: ${JSON.stringify(info)}`)
+      autoUpdateLog.info(`[auto-update] update-info.json contents: ${JSON.stringify(info)}`)
 
       // electron-updater uses 'fileName' (not 'path') in update-info.json
       const fileName = (info?.fileName || info?.path) as string | undefined
       if (fileName && fs.existsSync(path.join(cacheDir, fileName))) {
-        mainLog.info(`[auto-update] Found existing download via update-info.json: ${fileName}`)
+        autoUpdateLog.info(`[auto-update] Found existing download via update-info.json: ${fileName}`)
         return { exists: true, version: info?.version as string }
       }
     }
@@ -308,14 +308,14 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
       f.endsWith('.nupkg')
     )
     if (downloadFile) {
-      mainLog.info(`[auto-update] Found existing download file: ${downloadFile}`)
+      autoUpdateLog.info(`[auto-update] Found existing download file: ${downloadFile}`)
       return { exists: true }
     }
 
-    mainLog.info(`[auto-update] No existing download found in cache`)
+    autoUpdateLog.info(`[auto-update] No existing download found in cache`)
     return { exists: false }
   } catch (error) {
-    mainLog.warn('[auto-update] Error checking for existing download:', error)
+    autoUpdateLog.warn('[auto-update] Error checking for existing download:', error)
     return { exists: false }
   }
 }
@@ -348,7 +348,7 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
       if (updateInfo.downloadState === 'downloading') {
         const existing = checkForExistingDownload()
         if (existing.exists) {
-          mainLog.info('[auto-update] Update already downloaded, updating state to ready')
+          autoUpdateLog.info('[auto-update] Update already downloaded, updating state to ready')
           updateInfo = {
             ...updateInfo,
             downloadState: 'ready',
@@ -455,7 +455,7 @@ export async function checkForUpdatesOnLaunch(): Promise<UpdateOnLaunchResult> {
   // Check if this version was dismissed by user
   const dismissedVersion = getDismissedUpdateVersion()
   if (dismissedVersion === info.latestVersion) {
-    mainLog.info(`[auto-update] Update ${info.latestVersion} was dismissed, skipping notification`)
+    autoUpdateLog.info(`[auto-update] Update ${info.latestVersion} was dismissed, skipping notification`)
     return { action: 'skipped', reason: 'dismissed', version: info.latestVersion }
   }
 

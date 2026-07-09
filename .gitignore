@@ -58,6 +58,9 @@ pnpm-lock.yaml
 # Craft Agent local data (sessions, credentials, config)
 .craft-agent/
 
+# WorkBuddy workspace memory (local agent state, conversation logs)
+.workbuddy/
+
 # SSH keys and secrets
 *.pem
 *.key

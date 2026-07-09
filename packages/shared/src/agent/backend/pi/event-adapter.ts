@@ -529,7 +529,10 @@ export class PiEventAdapter extends BaseEventAdapter {
           break;
         }
 
-        yield this.createToolResult(toolCallId, resolvedToolName, result, isError);
+        yield this.createToolResult(toolCallId, resolvedToolName, result, isError, undefined,
+          // Propagate originalContent from Write tool so the UI can show diff (#933)
+          resolvedToolName === 'Write' ? this.extractWriteDetails(event.result) : undefined,
+        );
         break;
       }
 
@@ -799,6 +802,18 @@ export class PiEventAdapter extends BaseEventAdapter {
     } catch {
       return String(result);
     }
+  }
+
+  /**
+   * Extract originalContent from Write tool result details for diff rendering (#933).
+   */
+  private extractWriteDetails(result: unknown): Record<string, unknown> | undefined {
+    if (!result || typeof result !== 'object') return undefined;
+    const typed = result as { details?: { originalContent?: unknown } };
+    if (typeof typed.details?.originalContent === 'string') {
+      return { originalContent: typed.details.originalContent };
+    }
+    return undefined;
   }
 
   /**

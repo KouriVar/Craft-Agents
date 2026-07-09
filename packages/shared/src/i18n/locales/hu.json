@@ -588,6 +588,8 @@
   "model.fableDesc": "Új generációs modell összetett feladatokhoz",
   "model.haikuDesc": "Leggyorsabb a rövid válaszokhoz",
   "model.opusDesc": "Legerősebb összetett feladatokhoz",
+  "model.opus48Desc": "Legerősebb Claude összetett gondolkodáshoz és programozáshoz",
+  "model.opus47Desc": "Előző Opus generáció",
   "model.sonnetDesc": "Ideális mindennapi feladatokhoz",
   "multiSelect.changeStatus": "Állapot módosítása",
   "multiSelect.clearSelection": "Nyomd meg az <kbd>Esc</kbd> gombot a kijelölés törléséhez",

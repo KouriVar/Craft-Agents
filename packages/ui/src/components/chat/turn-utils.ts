@@ -224,6 +224,7 @@ function messageToActivity(message: Message, existingActivities: ActivityItem[] 
     toolName: message.toolName,
     toolUseId: message.toolUseId,  // For parent-child matching
     toolInput: message.toolInput,
+    resultDetails: message.toolResultDetails,
     content: message.toolResult || message.content,
     intent: message.toolIntent,
     displayName: message.toolDisplayName,  // LLM-generated human-friendly name

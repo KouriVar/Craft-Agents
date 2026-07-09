@@ -588,6 +588,8 @@
   "model.fableDesc": "Modelo de nueva generación para trabajo complejo",
   "model.haikuDesc": "Lo más rápido para respuestas rápidas",
   "model.opusDesc": "Más capaz para trabajo complejo",
+  "model.opus48Desc": "Claude más capaz para razonamiento complejo y programación",
+  "model.opus47Desc": "Generación anterior de Opus",
   "model.sonnetDesc": "Lo mejor para tareas cotidianas",
   "multiSelect.changeStatus": "Cambiar estado",
   "multiSelect.clearSelection": "Presiona <kbd>Esc</kbd> para limpiar la selección",

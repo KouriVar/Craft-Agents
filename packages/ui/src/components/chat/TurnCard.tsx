@@ -242,6 +242,7 @@ export interface ActivityItem {
   toolName?: string
   toolUseId?: string  // For matching parent-child relationships
   toolInput?: Record<string, unknown>
+  resultDetails?: Record<string, unknown>
   content?: string
   intent?: string
   /** Optional backing message id (used by plan activities for branching/annotations) */

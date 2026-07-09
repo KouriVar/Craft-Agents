@@ -32,6 +32,24 @@
 
 `scripts/electron-build-subprocess.ts`：构建 session-mcp-server + pi-agent-server 子进程并复制到 resources，让 OSS 的 `electron:dist` 命令也能正确打包子进程（上游只在他的内部构建脚本里做这步）。
 
+## 更新日志
+
+详细修复记录见 [CHANGELOG.md](./CHANGELOG.md)。
+
+### 2026-07-09 上游 issue 修复（7 项）
+
+基于 upstream v0.11.0 的 bug 修复集合，涉及 21 文件（+126 / -36）：
+
+- #837 macOS 中文输入法自动大写干扰
+- #868 Opus 4.8 / 4.7 模型描述重复
+- #822 编辑连接时遮罩 API Key 被回传后端
+- #891 Auto-update 日志在生产环境丢失
+- #876 本地 `file://` 链接报 "URL is malformed"
+- #789 Skill 目录不支持符号链接
+- #933 Write 工具 diff 视图显示全量新增
+
+完整说明见 [docs/CHANGELOG-2026-07-09.md](./docs/CHANGELOG-2026-07-09.md)。
+
 ## 致谢
 
 感谢原项目 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss)。

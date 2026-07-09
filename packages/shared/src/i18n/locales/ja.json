@@ -588,6 +588,8 @@
   "model.fableDesc": "複雑な作業向けの次世代モデル",
   "model.haikuDesc": "素早い回答に最速",
   "model.opusDesc": "複雑な作業に最も対応",
+  "model.opus48Desc": "複雑な推論とコーディングに最強のClaude",
+  "model.opus47Desc": "先代Opus世代",
   "model.sonnetDesc": "日常的なタスクに最適",
   "multiSelect.changeStatus": "ステータスを変更",
   "multiSelect.clearSelection": "<kbd>Esc</kbd>を押して選択解除",

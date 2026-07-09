@@ -70,7 +70,7 @@ export function collectFileChangesFromActivities(activities: ActivityItem[]): Fi
         id: activity.id,
         filePath: getFilePath(input),
         toolType: 'Write',
-        original: '',
+        original: asString(activity.resultDetails?.originalContent) ?? '',
         modified: asString(input.content) || '',
         error: activity.error || undefined,
       })

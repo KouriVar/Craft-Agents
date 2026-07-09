@@ -173,10 +173,26 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
     optionsRef.current.openFileExternal(path)
   }, []) // Stable: uses optionsRef
 
-  /** URLs always open externally — no in-app browser for security */
+  /** URLs open externally — except file:// which routes to in-app preview (#876) */
   const handleOpenUrl = useCallback((url: string) => {
+    // file:// URLs should be treated as local files, not external URLs.
+    // The URL safety classifier blocks file: scheme for openExternal,
+    // so we intercept here and route to the file preview path.
+    if (url.startsWith('file://')) {
+      try {
+        const filePath = decodeURIComponent(new URL(url).pathname)
+        // On Windows, URL pathname starts with / before drive letter (e.g. /C:/Users/...)
+        const normalizedPath = process.platform === 'win32' && /^\/[A-Za-z]:/.test(filePath)
+          ? filePath.slice(1)
+          : filePath
+        handleOpenFile(normalizedPath)
+        return
+      } catch {
+        // Fall through to openUrl if URL parsing fails
+      }
+    }
     optionsRef.current.openUrl(url)
-  }, []) // Stable: uses optionsRef
+  }, [handleOpenFile]) // Stable: uses optionsRef + handleOpenFile
 
   const closePreview = useCallback(() => {
     setPreviewState(null)

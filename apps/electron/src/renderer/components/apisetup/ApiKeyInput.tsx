@@ -194,6 +194,9 @@ export function ApiKeyInput({
 
   const { t } = useTranslation()
   const [apiKey, setApiKey] = useState(initialValues?.apiKey ?? '')
+  // Track the initial value so we can detect "user didn't change the masked key"
+  // and avoid sending the masked placeholder back to the server (#822).
+  const initialApiKeyRef = useRef(initialValues?.apiKey ?? '')
   const [showValue, setShowValue] = useState(false)
   const [baseUrl, setBaseUrl] = useState(initialValues?.baseUrl ?? defaultPreset.url)
   const [activePreset, setActivePreset] = useState<PresetKey>(initialPreset)
@@ -346,7 +349,7 @@ export function ApiKeyInput({
       }
       const models: string[] = [bestModel, defaultModel, cheapModel]
       onSubmit({
-        apiKey: apiKey.trim(),
+        apiKey: apiKey.trim() === initialApiKeyRef.current ? '' : apiKey.trim(),
         baseUrl: baseUrl.trim() || undefined,
         connectionDefaultModel: bestModel,
         models,
@@ -409,7 +412,7 @@ export function ApiKeyInput({
     })
 
     onSubmit({
-      apiKey: apiKey.trim(),
+      apiKey: apiKey.trim() === initialApiKeyRef.current ? '' : apiKey.trim(),
       baseUrl: isUsingDefaultEndpoint ? undefined : effectiveBaseUrl,
       connectionDefaultModel: parsedModels[0],
       models: parsedModels.length > 0 ? parsedModels : undefined,

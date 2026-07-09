@@ -49,3 +49,27 @@ bun run electron:dist:dev:mac
 ### release
 
 `v0.11.0-local` 更新：mac `Craft-Agents-arm64.dmg` + win `Craft-Agents-x64.exe`，均含上述修复。
+
+## 2026-07-09 上游 issue 修复集合
+
+基于 upstream v0.11.0 的 7 项 bug 修复，涉及 21 文件（+126 / -36）。详细记录见 [docs/CHANGELOG-2026-07-09.md](./docs/CHANGELOG-2026-07-09.md)。
+
+### 快速修复
+
+- **#837** macOS 聊天输入框首字母自动大写，干扰中文 IME → contentEditable 加 `autoCapitalize="off"` / `autoComplete="off"` / `spellCheck={false}`
+- **#868** Opus 4.8 与 4.7 共用 `model.opusDesc` 显示相同描述 → 拆分 `opus48Desc` / `opus47Desc`，同步 7 语言
+- **#822** 编辑连接时遮罩 API Key 被当真实凭证回传 → `initialApiKeyRef` 记录初值，未改动则提交空串跳过更新
+
+### 中等修复
+
+- **#891** 生产环境 `mainLog` 的 file/console transport 被禁，auto-update 诊断日志全丢 → `auto-update.ts` 内 21 处 `mainLog` 调用替换为 `autoUpdateLog`（17 info + 3 warn + 1 error）
+- **#876** Agent 输出的 `file:///...` 链接被 URL 安全分类器拦截 → `handleOpenUrl` 拦截 file:// 解析本地路径（含 Windows 驱动器号），路由到应用内预览
+- **#789** `Dirent.isDirectory()` 对符号链接返回 false，`ln -s` 的 skill 目录被忽略 → 增加 `isSymbolicLink()` 判断 + `statSync` 跟随
+- **#933** Write 工具覆写已有文件时 diff 只显示全量新增 → 全链路透传 `originalContent`（pi-agent-server → 事件适配器 → Message → ActivityItem → file-changes），使 ShikiDiffViewer 渲染完整 before/after
+
+### 统计
+
+- 修改文件：21
+- 新增行数：126
+- 删除行数：36
+- 涉及上游 issue：7（#837, #868, #822, #891, #876, #789, #933）

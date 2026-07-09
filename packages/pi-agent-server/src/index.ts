@@ -17,7 +17,7 @@
 import http from 'node:http';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 // Pi SDK
@@ -757,7 +757,22 @@ function wrapSingleTool(tool: ToolDefinition<any, any>): ToolDefinition<any, any
     // even if a future pre-tool-use path returns `allow` without modification.
     inputObj = stripCraftMetadata(inputObj);
 
-    // Execute original tool with (potentially modified) input
+    // Execute original tool with (potentially modified) input.
+    // For Write tool: capture original content before the write so the UI
+    // can render a meaningful diff instead of showing the entire file as additions (#933).
+    // Inject into inputObj so it flows through as toolInput (which the event pipeline preserves).
+    if (sdkToolName === 'Write' && typeof inputObj.file_path === 'string') {
+      try {
+        const absPath = inputObj.file_path.startsWith('/')
+          ? inputObj.file_path
+          : join(process.cwd(), inputObj.file_path as string);
+        const originalContent = readFileSync(absPath, 'utf-8');
+        inputObj = { ...inputObj, originalContent };
+      } catch {
+        // File doesn't exist yet — new file, no original content
+      }
+    }
+
     const result = await originalExecute(toolCallId, inputObj, signal, onUpdate, ctx);
 
     // --- Post-execute: large response summarization ---

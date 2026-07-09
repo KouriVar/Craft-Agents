@@ -100,6 +100,7 @@ export function handleToolResult(
     // Update existing tool message
     let updatedSession = updateMessageAt(session, toolIndex, {
       toolResult: event.result,
+      toolResultDetails: event.resultDetails,
       toolStatus: newToolStatus,
       isError: effectiveIsError,
       errorCode: isPersistedOutput ? 'response_too_large' : undefined,
