@@ -79,6 +79,7 @@ export interface ToolResultEvent {
   toolUseId: string
   toolName?: string
   result: string
+  resultDetails?: Record<string, unknown>
   isError?: boolean
   turnId?: string
   parentToolUseId?: string

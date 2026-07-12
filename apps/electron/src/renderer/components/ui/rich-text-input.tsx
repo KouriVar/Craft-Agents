@@ -797,7 +797,6 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           autoCapitalize="off"
-          autoComplete="off"
           spellCheck={false}
           aria-disabled={disabled}
           aria-placeholder={Array.isArray(placeholder) ? placeholder[0] : placeholder}
