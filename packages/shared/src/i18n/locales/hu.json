@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "Nincsenek beállított címkék.",
   "settings.labels.noLabelsDesc": "A címkéket az ügynök is létrehozhatja, vagy a munkaterületen lévő labels/config.json szerkesztésével.",
   "settings.labels.title": "Címkék",
-  "settings.memory.description": "AI hosszú távú memória beállítása — automatikusan tanul a beszélgetésekből",
-  "settings.memory.title": "Memória",
   "settings.messaging.bindings.empty": "Nincsenek aktív kötések",
   "settings.messaging.bindings.openSession": "Megnyitás",
   "settings.messaging.bindings.title": "Aktív kötések",

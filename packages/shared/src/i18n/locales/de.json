@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "Keine Labels konfiguriert.",
   "settings.labels.noLabelsDesc": "Labels können vom Agenten oder durch Bearbeiten von labels/config.json in Ihrem Workspace erstellt werden.",
   "settings.labels.title": "Labels",
-  "settings.memory.description": "KI-Langzeitgedächtnis konfigurieren — lernt automatisch aus Gesprächen",
-  "settings.memory.title": "Speicher",
   "settings.messaging.bindings.empty": "Keine aktiven Bindungen",
   "settings.messaging.bindings.openSession": "Öffnen",
   "settings.messaging.bindings.title": "Aktive Bindungen",

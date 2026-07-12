@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "ラベルが設定されていません。",
   "settings.labels.noLabelsDesc": "ラベルはエージェントによって作成するか、Workspace内のlabels/config.jsonを編集して作成できます。",
   "settings.labels.title": "ラベル",
-  "settings.memory.description": "AI の長期メモリを設定 — 会話から自動的に学習します",
-  "settings.memory.title": "メモリ",
   "settings.messaging.bindings.empty": "アクティブなバインディングがありません",
   "settings.messaging.bindings.openSession": "開く",
   "settings.messaging.bindings.title": "アクティブなバインディング",

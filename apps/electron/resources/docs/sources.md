@@ -18,7 +18,7 @@ When a user wants to add a new source, follow this conversational setup process 
 mcp__craft-agents-docs__SearchCraftAgents({ query: "{service} source setup" })
 ```
 
-**Available guides:** GitHub, Linear, Slack, Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Outlook, Microsoft Calendar, Teams, SharePoint, Craft, Filesystem, Brave Search, Memory, TencentDB Agent Memory
+**Available guides:** GitHub, Linear, Slack, Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Outlook, Microsoft Calendar, Teams, SharePoint, Craft, Filesystem, Brave Search, Memory
 
 **If a guide exists for the service:**
 1. **Read the guide content** carefully

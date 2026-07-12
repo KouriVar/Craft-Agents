@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "未配置标签。",
   "settings.labels.noLabelsDesc": "标签可由智能体创建或通过编辑 Workspace 中的 labels/config.json 创建。",
   "settings.labels.title": "标签",
-  "settings.memory.description": "配置 AI 长期记忆 — 从对话中自动学习和提取",
-  "settings.memory.title": "记忆",
   "settings.messaging.bindings.empty": "暂无活跃绑定",
   "settings.messaging.bindings.openSession": "打开",
   "settings.messaging.bindings.title": "活跃绑定",

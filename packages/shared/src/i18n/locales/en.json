@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "No labels configured.",
   "settings.labels.noLabelsDesc": "Labels can be created by the agent or by editing labels/config.json in your workspace.",
   "settings.labels.title": "Labels",
-  "settings.memory.description": "Configure AI long-term memory — automatically learn from conversations",
-  "settings.memory.title": "Memory",
   "settings.messaging.bindings.empty": "No active bindings",
   "settings.messaging.bindings.openSession": "Open",
   "settings.messaging.bindings.title": "Active Bindings",

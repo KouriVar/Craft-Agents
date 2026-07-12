@@ -979,8 +979,6 @@
   "settings.labels.noLabels": "No hay etiquetas configuradas.",
   "settings.labels.noLabelsDesc": "El agente puede crear etiquetas, o puedes editarlas en labels/config.json en tu Workspace.",
   "settings.labels.title": "Etiquetas",
-  "settings.memory.description": "Configura la memoria a largo plazo de la IA — aprende automáticamente de las conversaciones",
-  "settings.memory.title": "Memoria",
   "settings.messaging.bindings.empty": "Sin enlaces activos",
   "settings.messaging.bindings.openSession": "Abrir",
   "settings.messaging.bindings.title": "Enlaces activos",

@@ -33,7 +33,6 @@ import {
   Info,
   MailOpen,
   FolderKanban,
-  Brain,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -124,7 +123,6 @@ import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
-import { MemoryCardsSidebar } from "../right-sidebar/MemoryCardsSidebar"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
 import { useProjects } from "@/hooks/useProjects"
@@ -550,7 +548,6 @@ function AppShellContent({
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
-  const [isMemorySidebarOpen, setIsMemorySidebarOpen] = React.useState(true)
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -1393,7 +1390,6 @@ function AppShellContent({
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const setSessionMetaMap = useSetAtom(sessionMetaMapAtom)
   const effectiveSessionMeta = effectiveSessionId ? sessionMetaMap.get(effectiveSessionId) : undefined
-  const isMemorySidebarVisible = !isAutoCompact && isMemorySidebarOpen && isSessionsNavigation(navState)
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
@@ -1692,22 +1688,7 @@ function AppShellContent({
     return onDeleteSession(sessionId, skipConfirmation)
   }, [session.selected, setSession, onDeleteSession])
 
-  // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
-  const memorySidebarButton = React.useMemo(() => (
-    <HeaderIconButton
-      icon={<Brain className="h-4 w-4" />}
-      tooltip={isMemorySidebarOpen ? "隐藏记忆卡片" : "显示记忆卡片"}
-      aria-pressed={isMemorySidebarOpen}
-      className={isMemorySidebarOpen ? "text-accent" : undefined}
-      onClick={() => setIsMemorySidebarOpen(v => !v)}
-    />
-  ), [isMemorySidebarOpen])
-
-  const handleSendMemoryPrompt = React.useCallback((prompt: string) => {
-    if (!effectiveSessionId) return
-    onSendMessage(effectiveSessionId, prompt)
-  }, [effectiveSessionId, onSendMessage])
-
+  // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
@@ -1720,7 +1701,7 @@ function AppShellContent({
     sessionStatuses: effectiveSessionStatuses,
     onSessionSourcesChange: handleSessionSourcesChange,
     onJumpToTaskSessions: handleJumpToTaskSessions,
-    rightSidebarButton: isAutoCompact || !isSessionsNavigation(navState) ? null : memorySidebarButton,
+    rightSidebarButton: null,
     isCompactMode: isAutoCompact,
     // Search state for ChatDisplay highlighting
     sessionListSearchQuery: searchActive ? searchQuery : undefined,
@@ -1734,7 +1715,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, memorySidebarButton, isAutoCompact, navState, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -3588,20 +3569,10 @@ function AppShellContent({
           }
           navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || isBoardView ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
-          isRightSidebarVisible={isMemorySidebarVisible}
+          isRightSidebarVisible={false}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
         />
-
-        {isMemorySidebarVisible && (
-          <MemoryCardsSidebar
-            selectedSessionId={effectiveSessionId}
-            selectedSessionTitle={effectiveSessionMeta?.name ?? effectiveSessionMeta?.preview}
-            onClose={() => setIsMemorySidebarOpen(false)}
-            onOpenSettings={() => handleSettingsClick("memory")}
-            onSendPrompt={handleSendMemoryPrompt}
-          />
-        )}
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
         {!effectiveSidebarAndNavigatorHidden && (

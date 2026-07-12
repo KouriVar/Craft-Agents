@@ -1,1 +1,0 @@
-apps/electron/resources/tdai-gateway/data/bm25_zh_default.json filter=lfs diff=lfs merge=lfs -text

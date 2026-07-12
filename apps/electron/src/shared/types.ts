@@ -58,8 +58,6 @@ export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 // Source types for session source selection
 import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
 export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
-import type { MemoryGatewayStatus, MemorySettings } from './memory-settings';
-export type { MemoryGatewayStatus, MemorySettings };
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -270,9 +268,6 @@ export interface ElectronAPI {
   relaunchApp(): Promise<void>
   removeWorkspace(workspaceId: string): Promise<boolean>
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
-  getMemoryConfig(): Promise<MemorySettings>
-  setMemoryConfig(settings: MemorySettings): Promise<void>
-  getMemoryStatus(): Promise<MemoryGatewayStatus>
 
   // Remote session transfer (main-process orchestrated, supports chunked upload)
   transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>

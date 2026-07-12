@@ -86,8 +86,6 @@ import { existsSync, readFileSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
-import { registerMemoryIpcHandlers } from './handlers/memory'
-import { startGateway, stopGateway } from './gateway-manager'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
@@ -539,9 +537,6 @@ app.whenReady().then(async () => {
         mainLog.info(message, context)
       }
     })
-
-    // Memory Gateway IPC (standalone, not part of RPC system)
-    registerMemoryIpcHandlers()
 
     // Dialog bridge — preload capability handlers use ipcRenderer.invoke to
     // call main-process-only dialog APIs (dialog, BrowserWindow).
@@ -1120,11 +1115,6 @@ app.whenReady().then(async () => {
       mainLog.info('Debug mode enabled - logs at:', getLogFilePath())
     }
     mainLog.info('Messaging gateway log path:', getMessagingGatewayLogFilePath())
-
-    // Start TDAI Memory Gateway in background (non-blocking)
-    startGateway().catch((err) => {
-      mainLog.warn('Memory Gateway failed to start:', err instanceof Error ? err.message : err)
-    })
   } catch (error) {
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
     // Continue anyway - the app will show errors in the UI
@@ -1244,9 +1234,6 @@ app.on('before-quit', async (event) => {
 
     // Stop all model refresh timers
     getModelRefreshService().stopAll()
-
-    // Stop TDAI Memory Gateway subprocess
-    await stopGateway().catch((err) => mainLog.error('[memory] stop failed:', err))
 
     // Stop messaging gateways so the WhatsApp worker subprocess exits cleanly.
     if (messagingHandle) {

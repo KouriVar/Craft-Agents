@@ -15,15 +15,6 @@
 
 前端通过 `WeChatConnectDialog` 连接，消息集成进主会话流。
 
-### agent 记忆 + 腾讯DB网关
-
-长期记忆功能：
-
-- 腾讯DB网关子进程（`tdai-gateway/gateway-server.cjs`）做向量检索后端
-- bm25 中文分词数据（81MB）走 Git LFS，仓库不膨胀
-- 记忆卡片侧栏（`MemoryCardsSidebar`）展示历史记忆
-- 设置页配置记忆开关
-
 ### app 图标改回经典
 
 上游用 macOS 26 的 `Assets.car`（Liquid Glass 图标），但渲染不一致。改 `afterPack.cjs` 移除 Assets.car 引用，用经典 `icon.icns`。
