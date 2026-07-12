@@ -1,5 +1,12 @@
 # 更新日志
 
+## 2026-07-12 同步 upstream v0.11.1
+
+- 同步 OpenAI GPT-5.6（Luna、Terra、Sol）连接支持
+- 支持模型原生 Max thinking level
+- Pi SDK 升级至 0.80.6，改进长上下文成本统计
+- 修复 Electron renderer 的工具结果事件类型与输入框属性类型检查
+
 ## 2026-07-08 初始整理
 
 基于 upstream v0.11.0 (`f4e172bf`) + 上游 Simplify session status navigation (`6eeb6d5f`)。
@@ -7,14 +14,9 @@
 ### 功能提交
 
 - `feat(messaging)` 微信接入（ilink 协议适配器）
-- `feat(memory)` agent 记忆 + 腾讯DB网关（bm25 走 Git LFS）
-- `core` 核心集成（路由/类型/设置/壳 接入 memory/wechat）
+- `core` 微信接入的路由、类型、设置与应用壳集成
 - `build` 打包脚本与配置
 - `i18n` 多语言文案
-
-### 大文件处理
-
-`bm25_zh_default.json`（81MB）转 Git LFS，仓库不再膨胀。
 
 ### 仓库形态
 
@@ -56,7 +58,7 @@ bun run electron:dist:dev:mac
 
 ### 快速修复
 
-- **#837** macOS 聊天输入框首字母自动大写，干扰中文 IME → contentEditable 加 `autoCapitalize="off"` / `autoComplete="off"` / `spellCheck={false}`
+- **#837** macOS 聊天输入框首字母自动大写，干扰中文 IME → contentEditable 加 `autoCapitalize="off"` / `spellCheck={false}`
 - **#868** Opus 4.8 与 4.7 共用 `model.opusDesc` 显示相同描述 → 拆分 `opus48Desc` / `opus47Desc`，同步 7 语言
 - **#822** 编辑连接时遮罩 API Key 被当真实凭证回传 → `initialApiKeyRef` 记录初值，未改动则提交空串跳过更新
 

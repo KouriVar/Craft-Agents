@@ -23,6 +23,12 @@
 
 `scripts/electron-build-subprocess.ts`：构建 session-mcp-server + pi-agent-server 子进程并复制到 resources，让 OSS 的 `electron:dist` 命令也能正确打包子进程（上游只在他的内部构建脚本里做这步）。
 
+### 已同步 upstream v0.11.1
+
+- 支持 OpenAI GPT-5.6（Luna、Terra、Sol）连接
+- 支持模型原生 Max thinking level
+- Pi SDK 升级至 0.80.6，改进长上下文成本统计
+
 ## 更新日志
 
 详细修复记录见 [CHANGELOG.md](./CHANGELOG.md)。
