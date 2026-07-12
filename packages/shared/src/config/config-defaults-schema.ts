@@ -17,6 +17,7 @@ export interface ConfigDefaults {
     autoCapitalisation: boolean;
     sendMessageKey: 'enter' | 'cmd-enter';
     spellCheck: boolean;
+    openConversationScroll: 'bottom' | 'top' | 'last';
     keepAwakeWhileRunning: boolean;
     richToolDescriptions: boolean;
     extendedPromptCache: boolean;

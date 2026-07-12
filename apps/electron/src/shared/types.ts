@@ -560,6 +560,8 @@ export interface ElectronAPI {
   setSendMessageKey(key: 'enter' | 'cmd-enter'): Promise<void>
   getSpellCheck(): Promise<boolean>
   setSpellCheck(enabled: boolean): Promise<void>
+  getOpenConversationScroll(): Promise<'bottom' | 'top' | 'last'>
+  setOpenConversationScroll(value: 'bottom' | 'top' | 'last'): Promise<void>
 
   // Power settings
   getKeepAwakeWhileRunning(): Promise<boolean>

@@ -523,9 +523,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const prevLastMessageIdRef = React.useRef<string | null>(null)
   const prevMessageCountRef = React.useRef(0)
   const prevSessionIdForCommitScrollRef = React.useRef<string | null>(null)
+  // In-memory cache of last scrollTop per session ID (for "last position" mode)
+  const lastScrollPositionMap = React.useRef<Map<string, number>>(new Map())
+  // Flag for ScrollOnMount: skip instant scroll when setting is 'top' or 'last'
+  const skipMountInstantScroll = React.useRef(false)
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
+  const [openConversationScrollSetting, setOpenConversationScrollSetting] = useState<'bottom' | 'top' | 'last'>('bottom')
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string
     annotationId: string
@@ -626,6 +631,19 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
 
     loadSendMessageKey()
+
+    // Load open conversation scroll setting
+    const loadOpenConversationScroll = async () => {
+      if (!window.electronAPI) return
+      try {
+        const value = await window.electronAPI.getOpenConversationScroll()
+        if (!isMounted) return
+        setOpenConversationScrollSetting(value ?? 'bottom')
+      } catch (error) {
+        console.error('[ChatDisplay] Failed to load open conversation scroll setting:', error)
+      }
+    }
+    loadOpenConversationScroll()
 
     return () => {
       isMounted = false
@@ -1105,6 +1123,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // 20px threshold for "at bottom" detection
     isStickToBottomRef.current = distanceFromBottom < 20
 
+    // Save scroll position for "last position" mode (debounced by natural scroll events).
+    const sid = session?.id ?? null
+    if (sid && openConversationScrollSetting === 'last') {
+      lastScrollPositionMap.current.set(sid, scrollTop)
+    }
+
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
       setVisibleTurnCount(prev => {
@@ -1124,7 +1148,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         return prev + TURNS_PER_PAGE
       })
     }
-  }, [])
+  }, [session?.id, openConversationScrollSetting])
 
   // Set up scroll event listener
   React.useEffect(() => {
@@ -1182,6 +1206,82 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [session?.id])
+
+  // --- Open conversation → scroll position based on setting ---
+  // Modes: 'bottom' = always scroll to last message; 'top' = stay at top;
+  //        'last' = restore to where the user last scrolled in this session.
+  const initialScrollSessionRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    const sid = session?.id ?? null
+    if (!sid) return
+    // Not ready yet: reset so we act once ready.
+    if (messagesLoading || messagesLoadError) {
+      initialScrollSessionRef.current = null
+      return
+    }
+    // Already handled for this session open.
+    if (initialScrollSessionRef.current === sid) return
+    initialScrollSessionRef.current = sid
+
+    const setting = openConversationScrollSetting
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+
+    // 'top' mode: suppress ScrollOnMount's instant scroll and do nothing else.
+    if (setting === 'top') {
+      skipMountInstantScroll.current = true
+      isStickToBottomRef.current = false
+      return
+    }
+
+    skipMountInstantScroll.current = false
+    isStickToBottomRef.current = true
+
+    let cancelled = false
+
+    if (setting === 'last') {
+      // 'last' mode: restore saved position, fallback to bottom if none saved.
+      const savedTop = lastScrollPositionMap.current.get(sid)
+      if (savedTop !== undefined && savedTop > 0) {
+        // Restore after layout settles.
+        const raf = requestAnimationFrame(() => {
+          if (!cancelled) viewport.scrollTop = savedTop
+        })
+        return () => { cancelled = true; cancelAnimationFrame(raf) }
+      }
+      // No saved position — fall through to bottom behavior below.
+    }
+
+    // 'bottom' mode (or 'last' fallback): multi-pass scroll to bottom.
+    const doScroll = () => {
+      if (cancelled) return
+      viewport.scrollTop = viewport.scrollHeight
+    }
+    const raf = requestAnimationFrame(doScroll)
+    const t1 = setTimeout(doScroll, 120)
+    const t2 = setTimeout(doScroll, 350)
+    // Re-settle as images finish loading.
+    const imgs = Array.from(viewport.querySelectorAll('img'))
+    const onImg = () => doScroll()
+    imgs.forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener('load', onImg, { once: true })
+        img.addEventListener('error', onImg, { once: true })
+      }
+    })
+    skipSmoothScrollUntilRef.current = Date.now() + 600
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+      clearTimeout(t1)
+      clearTimeout(t2)
+      imgs.forEach((img) => {
+        img.removeEventListener('load', onImg)
+        img.removeEventListener('error', onImg)
+      })
+    }
+  }, [session?.id, messagesLoading, messagesLoadError, openConversationScrollSetting])
 
   // Commit-time auto-scroll for new user messages.
   // This complements submit-time scrolling and covers cases where attachments delay
@@ -1496,7 +1596,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Compute if we should skip scroll-to-bottom (when search is active on session switch)
   // At render time, prevSessionIdForScrollRef still has the OLD session ID, so we can detect the switch
   const isSessionSwitchForScroll = prevSessionIdForScrollRef.current !== null && prevSessionIdForScrollRef.current !== session?.id
-  const skipScrollToBottom = isSessionSwitchForScroll && isSearchActive
+  const skipScrollToBottom = (isSessionSwitchForScroll && isSearchActive)
+    || openConversationScrollSetting === 'top'
+    || openConversationScrollSetting === 'last'
   const hasUnrenderedLoadedMessages = !messagesLoading
     && turns.length === 0
     && ((session?.messages?.length ?? 0) > 0 || (session?.messageCount ?? 0) > 0)

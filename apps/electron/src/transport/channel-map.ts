@@ -299,6 +299,8 @@ export const CHANNEL_MAP = {
   setSendMessageKey: invoke(RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY),
   getSpellCheck: invoke(RPC_CHANNELS.input.GET_SPELL_CHECK),
   setSpellCheck: invoke(RPC_CHANNELS.input.SET_SPELL_CHECK),
+  getOpenConversationScroll: invoke(RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL),
+  setOpenConversationScroll: invoke(RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL),
 
   // Power settings
   getKeepAwakeWhileRunning: invoke(RPC_CHANNELS.power.GET_KEEP_AWAKE),

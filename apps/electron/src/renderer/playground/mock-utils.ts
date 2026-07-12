@@ -307,6 +307,8 @@ export const mockElectronAPI = {
 
   getSendMessageKey: async () => 'enter',
   getSpellCheck: async () => true,
+  getOpenConversationScroll: async () => 'bottom',
+  setOpenConversationScroll: async () => {},
 
   // Pi provider discovery mocks
   getPiApiKeyProviders: async () => [

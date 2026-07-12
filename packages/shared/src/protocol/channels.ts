@@ -313,6 +313,8 @@ export const RPC_CHANNELS = {
     SET_SEND_MESSAGE_KEY: 'input:setSendMessageKey',
     GET_SPELL_CHECK: 'input:getSpellCheck',
     SET_SPELL_CHECK: 'input:setSpellCheck',
+    GET_OPEN_CONVERSATION_SCROLL: 'input:getOpenConversationScroll',
+    SET_OPEN_CONVERSATION_SCROLL: 'input:setOpenConversationScroll',
   },
   power: {
     GET_KEEP_AWAKE: 'power:getKeepAwake',

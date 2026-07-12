@@ -1,5 +1,19 @@
 # 更新日志
 
+## 2026-07-12 历史对话滚动位置
+
+### 修复
+
+- **打开历史对话默认停在顶部**：以前打开一个历史会话，视口会停在第一条消息，而不是最后结束的地方。根因是挂载时的即时滚动发生在内容（图片、代码高亮、字体、懒渲染的 turn）尚未铺开时，算出的"底部"其实是短内容的底部；随后用于补滚的 `ResizeObserver` 又被一个 500ms 的跳过窗口压制，内容若在此窗口内加载完便再也不会补滚。改为会话消息就绪后用多时机（`requestAnimationFrame` + 120ms + 350ms + 图片 `load` 监听）可靠地滚到底部，每次打开只触发一次，不干扰手动上滑与流式跟随。
+
+### 功能
+
+- **新增"历史对话"设置**（设置 → 输入 → 发送下方）：可选择打开对话时的滚动位置。
+  - **底部（最后一条消息）**：始终滚到底部，显示最后一条消息（默认）
+  - **顶部（第一条消息）**：从对话历史顶部开始
+  - **上次位置**：恢复到上次浏览的位置（内存缓存，App 重启后回落到底部）
+- 设置项贯穿数据层到 UI：`config-defaults` schema/JSON、`storage` getter/setter、RPC channel + handler、`channel-map`、`ElectronAPI` 类型、中英文 i18n，UI 复用现有 `SettingsSection` / `SettingsCard` / `SettingsMenuSelectRow` 样式。
+
 ## 2026-07-12 同步 upstream v0.11.1
 
 - 同步 OpenAI GPT-5.6（Luna、Terra、Sol）连接支持

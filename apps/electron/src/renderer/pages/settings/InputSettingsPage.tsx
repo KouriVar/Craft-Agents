@@ -46,19 +46,24 @@ export default function InputSettingsPage() {
   // Send message key state
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
 
+  // Open conversation scroll position state
+  const [openConversationScroll, setOpenConversationScrollState] = useState<'bottom' | 'top' | 'last'>('bottom')
+
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       if (!window.electronAPI) return
       try {
-        const [autoCapEnabled, spellCheckEnabled, sendKey] = await Promise.all([
+        const [autoCapEnabled, spellCheckEnabled, sendKey, scrollPos] = await Promise.all([
           window.electronAPI.getAutoCapitalisation(),
           window.electronAPI.getSpellCheck(),
           window.electronAPI.getSendMessageKey(),
+          window.electronAPI.getOpenConversationScroll(),
         ])
         setAutoCapitalisation(autoCapEnabled)
         setSpellCheck(spellCheckEnabled)
         setSendMessageKey(sendKey)
+        setOpenConversationScrollState(scrollPos)
       } catch (error) {
         console.error('Failed to load input settings:', error)
       }
@@ -80,6 +85,12 @@ export default function InputSettingsPage() {
     const key = value as 'enter' | 'cmd-enter'
     setSendMessageKey(key)
     window.electronAPI.setSendMessageKey(key)
+  }, [])
+
+  const handleOpenConversationScrollChange = useCallback((value: string) => {
+    const pos = value as 'bottom' | 'top' | 'last'
+    setOpenConversationScrollState(pos)
+    window.electronAPI.setOpenConversationScroll(pos)
   }, [])
 
   return (
@@ -118,6 +129,23 @@ export default function InputSettingsPage() {
                     options={[
                       { value: 'enter', label: t("settings.input.enterKey"), description: t("settings.input.enterKeyDesc") },
                       { value: 'cmd-enter', label: isMac ? t("settings.input.cmdEnterKey") : t("settings.input.ctrlEnterKey"), description: t("settings.input.cmdEnterKeyDesc") },
+                    ]}
+                  />
+                </SettingsCard>
+              </SettingsSection>
+
+              {/* History Conversation Scroll */}
+              <SettingsSection title={t("settings.input.historyConversation")} description={t("settings.input.historyConversationDesc")}>
+                <SettingsCard>
+                  <SettingsMenuSelectRow
+                    label={t("settings.input.openConversationScroll")}
+                    description={t("settings.input.openConversationScrollDesc")}
+                    value={openConversationScroll}
+                    onValueChange={handleOpenConversationScrollChange}
+                    options={[
+                      { value: 'bottom', label: t("settings.input.scrollBottom"), description: t("settings.input.scrollBottomDesc") },
+                      { value: 'top', label: t("settings.input.scrollTop"), description: t("settings.input.scrollTopDesc") },
+                      { value: 'last', label: t("settings.input.scrollLast"), description: t("settings.input.scrollLastDesc") },
                     ]}
                   />
                 </SettingsCard>

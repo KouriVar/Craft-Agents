@@ -426,6 +426,29 @@ export function setSpellCheck(enabled: boolean): void {
 }
 
 /**
+ * Get where to scroll when opening a conversation.
+ * Defaults to 'bottom' (scroll to last message) if not set.
+ */
+export function getOpenConversationScroll(): 'bottom' | 'top' | 'last' {
+  const config = loadStoredConfig();
+  if (config?.openConversationScroll !== undefined) {
+    return config.openConversationScroll;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.openConversationScroll;
+}
+
+/**
+ * Set where to scroll when opening a conversation.
+ */
+export function setOpenConversationScroll(value: 'bottom' | 'top' | 'last'): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.openConversationScroll = value;
+  saveConfig(config);
+}
+
+/**
  * Get whether screen should stay awake while sessions are running.
  * Defaults to false if not set.
  */

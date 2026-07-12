@@ -26,6 +26,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY,
   RPC_CHANNELS.input.GET_SPELL_CHECK,
   RPC_CHANNELS.input.SET_SPELL_CHECK,
+  RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL,
+  RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL,
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
   RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
@@ -261,6 +263,18 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.input.SET_SPELL_CHECK, async (_ctx, enabled: boolean) => {
     const { setSpellCheck } = await import('@craft-agent/shared/config/storage')
     setSpellCheck(enabled)
+  })
+
+  // Get open conversation scroll position setting
+  server.handle(RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL, async () => {
+    const { getOpenConversationScroll } = await import('@craft-agent/shared/config/storage')
+    return getOpenConversationScroll()
+  })
+
+  // Set open conversation scroll position setting
+  server.handle(RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL, async (_ctx, value: string) => {
+    const { setOpenConversationScroll } = await import('@craft-agent/shared/config/storage')
+    setOpenConversationScroll(value as 'bottom' | 'top' | 'last')
   })
 
   // ============================================================
