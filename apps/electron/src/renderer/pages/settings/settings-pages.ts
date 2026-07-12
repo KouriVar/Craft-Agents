@@ -25,7 +25,6 @@ import MessagingSettingsPage from './MessagingSettingsPage'
 import ServerSettingsPage from './ServerSettingsPage'
 import ShortcutsPage from './ShortcutsPage'
 import PreferencesPage from './PreferencesPage'
-import MemorySettingsPage from './MemorySettingsPage'
 
 /**
  * Map of settings subpage IDs to their page components.
