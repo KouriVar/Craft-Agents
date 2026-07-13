@@ -118,6 +118,7 @@ export const CHANNEL_MAP = {
   openUrl: invoke(RPC_CHANNELS.shell.OPEN_URL),
   openFile: invoke(RPC_CHANNELS.shell.OPEN_FILE),
   showInFolder: invoke(RPC_CHANNELS.shell.SHOW_IN_FOLDER),
+  openTerminal: invoke(RPC_CHANNELS.shell.OPEN_TERMINAL),
 
   // Menu event listeners
   onMenuNewChat: listener(RPC_CHANNELS.menu.NEW_CHAT),
@@ -301,6 +302,12 @@ export const CHANNEL_MAP = {
   setSpellCheck: invoke(RPC_CHANNELS.input.SET_SPELL_CHECK),
   getOpenConversationScroll: invoke(RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL),
   setOpenConversationScroll: invoke(RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL),
+  getRightSidebarMode: invoke(RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_MODE),
+  setRightSidebarMode: invoke(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_MODE),
+  getRightSidebarFollowSession: invoke(RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_FOLLOW_SESSION),
+  setRightSidebarFollowSession: invoke(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION),
+  getBrowserOpenMode: invoke(RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE),
+  setBrowserOpenMode: invoke(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE),
 
   // Power settings
   getKeepAwakeWhileRunning: invoke(RPC_CHANNELS.power.GET_KEEP_AWAKE),

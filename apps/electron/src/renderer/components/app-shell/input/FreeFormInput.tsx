@@ -640,6 +640,21 @@ export function FreeFormInput({
     return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
   }, [sessionId, isFocusedPanel, syncToParent, richInputRef])
 
+  React.useEffect(() => {
+    const handleOpenSourceSelector = (e: CustomEvent<{ sessionId?: string }>) => {
+      const targetSessionId = e.detail?.sessionId
+      if (!shouldHandleScopedInputEvent({ sessionId, isFocusedPanel, targetSessionId })) return
+
+      setSourceDropdownOpen(true)
+      setTimeout(() => {
+        sourceButtonRef.current?.focus()
+      }, 0)
+    }
+
+    window.addEventListener('craft:open-source-selector', handleOpenSourceSelector as EventListener)
+    return () => window.removeEventListener('craft:open-source-selector', handleOpenSourceSelector as EventListener)
+  }, [sessionId, isFocusedPanel])
+
   const clearInputDraft = React.useCallback(() => {
     setInput('')
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current)

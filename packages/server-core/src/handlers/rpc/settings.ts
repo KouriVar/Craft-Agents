@@ -28,6 +28,10 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.input.SET_SPELL_CHECK,
   RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL,
   RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL,
+  RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_MODE,
+  RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_MODE,
+  RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_FOLLOW_SESSION,
+  RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION,
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
   RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
@@ -275,6 +279,39 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL, async (_ctx, value: string) => {
     const { setOpenConversationScroll } = await import('@craft-agent/shared/config/storage')
     setOpenConversationScroll(value as 'bottom' | 'top' | 'last')
+  })
+
+  // Right sidebar mode
+  server.handle(RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_MODE, async () => {
+    const { getRightSidebarMode } = await import('@craft-agent/shared/config/storage')
+    return getRightSidebarMode()
+  })
+
+  server.handle(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_MODE, async (_ctx, value: string) => {
+    const { setRightSidebarMode } = await import('@craft-agent/shared/config/storage')
+    setRightSidebarMode(value as 'manual' | 'auto' | 'always')
+  })
+
+  // Manual browser opening mode
+  server.handle(RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE, async () => {
+    const { getBrowserOpenMode } = await import('@craft-agent/shared/config/storage')
+    return getBrowserOpenMode()
+  })
+
+  server.handle(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE, async (_ctx, value: string) => {
+    const { setBrowserOpenMode } = await import('@craft-agent/shared/config/storage')
+    setBrowserOpenMode(value as 'sidebar' | 'window')
+  })
+
+  // Right sidebar follow session
+  server.handle(RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_FOLLOW_SESSION, async () => {
+    const { getRightSidebarFollowSession } = await import('@craft-agent/shared/config/storage')
+    return getRightSidebarFollowSession()
+  })
+
+  server.handle(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION, async (_ctx, enabled: boolean) => {
+    const { setRightSidebarFollowSession } = await import('@craft-agent/shared/config/storage')
+    setRightSidebarFollowSession(enabled)
   })
 
   // ============================================================

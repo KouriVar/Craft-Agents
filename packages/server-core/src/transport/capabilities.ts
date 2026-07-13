@@ -16,6 +16,9 @@ export const CLIENT_OPEN_PATH = 'client:openPath'
 /** Capability: reveal a file in Finder / Explorer. */
 export const CLIENT_SHOW_IN_FOLDER = 'client:showItemInFolder'
 
+/** Capability: open a terminal at a given directory. */
+export const CLIENT_OPEN_TERMINAL = 'client:openTerminal'
+
 /** Capability: show a confirmation dialog (message box) on the client. */
 export const CLIENT_CONFIRM_DIALOG = 'client:confirmDialog'
 
@@ -30,6 +33,7 @@ export const LOCAL_CLIENT_CAPABILITIES: readonly string[] = [
   CLIENT_OPEN_EXTERNAL,
   CLIENT_OPEN_PATH,
   CLIENT_SHOW_IN_FOLDER,
+  CLIENT_OPEN_TERMINAL,
   CLIENT_CONFIRM_DIALOG,
   CLIENT_OPEN_FILE_DIALOG,
   CLIENT_BROWSER_INVOKE,
@@ -89,6 +93,18 @@ export async function requestClientShowInFolder(
   path: string,
 ): Promise<void> {
   await server.invokeClient(clientId, CLIENT_SHOW_IN_FOLDER, path)
+}
+
+/**
+ * Ask the client to open a terminal at a given directory.
+ * Spawns the OS-default terminal application cd'd to `path`.
+ */
+export async function requestClientOpenTerminal(
+  server: RpcServer,
+  clientId: string,
+  path: string,
+): Promise<void> {
+  await server.invokeClient(clientId, CLIENT_OPEN_TERMINAL, path)
 }
 
 /** Spec for a confirmation dialog (maps to Electron's MessageBoxOptions). */

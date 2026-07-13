@@ -524,8 +524,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     }
   })
 
-  // List directories in a given path (for remote directory browsing).
-  // Returns only directories (not files) — this is a folder picker.
+  // List entries in a given path (for remote directory browsing and in-app file trees).
   server.handle(RPC_CHANNELS.fs.LIST_DIRECTORY, async (_ctx, dirPath: string) => {
     // Resolve ~ to server's home directory (thin clients don't know the server's home)
     if (dirPath === '~' || dirPath.startsWith('~/')) {
@@ -541,22 +540,31 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     // Normalize (collapses .. segments, trailing slashes, etc.)
     const resolved = resolve(dirPath)
 
-    // Read entries, filter to directories
+    // Read entries
     const raw = await readdir(resolved, { withFileTypes: true })
 
-    const entries: Array<{ name: string; path: string; isSymlink: boolean }> = []
+    const entries: DirectoryListingResult['entries'] = []
     for (const entry of raw) {
       const fullPath = join(resolved, entry.name)
       const isSymlink = entry.isSymbolicLink()
 
       if (entry.isDirectory()) {
-        entries.push({ name: entry.name, path: fullPath, isSymlink: false })
+        entries.push({ name: entry.name, path: fullPath, isSymlink: false, type: 'directory' })
+      } else if (entry.isFile()) {
+        try {
+          const fileStats = await stat(fullPath)
+          entries.push({ name: entry.name, path: fullPath, isSymlink: false, type: 'file', size: fileStats.size })
+        } catch {
+          entries.push({ name: entry.name, path: fullPath, isSymlink: false, type: 'file' })
+        }
       } else if (isSymlink) {
-        // Follow symlink — check if target is a directory
+        // Follow symlink — check if target is a directory or file
         try {
           const target = await stat(fullPath)
           if (target.isDirectory()) {
-            entries.push({ name: entry.name, path: fullPath, isSymlink: true })
+            entries.push({ name: entry.name, path: fullPath, isSymlink: true, type: 'directory' })
+          } else if (target.isFile()) {
+            entries.push({ name: entry.name, path: fullPath, isSymlink: true, type: 'file', size: target.size })
           }
         } catch {
           // Broken symlink — skip silently
@@ -564,8 +572,13 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       }
     }
 
-    // Sort alphabetically (case-insensitive), cap at 500
-    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    // Sort directories first, then alphabetically (case-insensitive), cap at 500
+    entries.sort((a, b) => {
+      const aType = a.type ?? 'directory'
+      const bType = b.type ?? 'directory'
+      if (aType !== bType) return aType === 'directory' ? -1 : 1
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
     const totalEntries = entries.length
     const truncated = totalEntries > 500
     if (truncated) entries.length = 500

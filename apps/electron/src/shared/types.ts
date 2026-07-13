@@ -391,6 +391,14 @@ export interface ElectronAPI {
   openUrl(url: string): Promise<void>
   openFile(path: string): Promise<void>
   showInFolder(path: string): Promise<void>
+  openTerminal(path: string): Promise<void>
+  openTerminalPane(cwd: string): Promise<void>
+  createEmbeddedTerminal(cwd: string): Promise<string>
+  writeEmbeddedTerminal(id: string, data: string): void
+  resizeEmbeddedTerminal(id: string, cols: number, rows: number): void
+  closeEmbeddedTerminal(id: string): void
+  onEmbeddedTerminalData(callback: (event: { id: string; data: string }) => void): () => void
+  onEmbeddedTerminalExit(callback: (event: { id: string }) => void): () => void
 
   // Menu event listeners
   onMenuNewChat(callback: () => void): () => void
@@ -562,6 +570,14 @@ export interface ElectronAPI {
   setSpellCheck(enabled: boolean): Promise<void>
   getOpenConversationScroll(): Promise<'bottom' | 'top' | 'last'>
   setOpenConversationScroll(value: 'bottom' | 'top' | 'last'): Promise<void>
+
+  // Right sidebar settings
+  getRightSidebarMode(): Promise<'manual' | 'auto' | 'always'>
+  setRightSidebarMode(value: 'manual' | 'auto' | 'always'): Promise<void>
+  getRightSidebarFollowSession(): Promise<boolean>
+  setRightSidebarFollowSession(enabled: boolean): Promise<void>
+  getBrowserOpenMode(): Promise<'sidebar' | 'window'>
+  setBrowserOpenMode(value: 'sidebar' | 'window'): Promise<void>
 
   // Power settings
   getKeepAwakeWhileRunning(): Promise<boolean>
@@ -812,6 +828,7 @@ export type WeChatUiEvent =
 export type RightSidebarPanel =
   | { type: 'files'; path?: string }
   | { type: 'history' }
+  | { type: 'review' }
   | { type: 'none' }
 
 /**

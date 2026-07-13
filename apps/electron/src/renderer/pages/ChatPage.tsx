@@ -14,6 +14,7 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { CompactSessionMenu } from '@/components/app-shell/CompactSessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
+import { SessionResourcesPopover } from '@/components/app-shell/SessionResourcesPopover'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
@@ -23,6 +24,7 @@ import { useAppShellContext, usePendingPermission, usePendingCredential, useSess
 import { rendererPerf } from '@/lib/perf'
 import { navigate, routes } from '@/lib/navigate'
 import { coerceInputText } from '@/lib/input-text'
+import { cn } from '@/lib/utils'
 import { deriveSessionMessagesLoadState, formatSessionLoadFailure } from '@/lib/session-load'
 import { ensureSessionMessagesLoadedAtom, forceSessionMessagesReloadAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { kanbanEditorTargetAtom } from '@/atoms/kanban'
@@ -633,12 +635,35 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [isTaskOrchestrator, handleEditTask, t])
 
   const primaryHeaderAction = isCompactMode ? compactInfoButton : shareButton
+  const [resourcesPanelOpen, setResourcesPanelOpen] = React.useState(false)
+  React.useEffect(() => {
+    if (isCompactMode) setResourcesPanelOpen(false)
+  }, [isCompactMode])
+  const resourcesButton = React.useMemo(() => {
+    if (isCompactMode || !session) return undefined
+    return (
+      <SessionResourcesPopover
+        session={session}
+        open={resourcesPanelOpen}
+        onOpenChange={setResourcesPanelOpen}
+        alignOffset={-72}
+      />
+    )
+  }, [isCompactMode, resourcesPanelOpen, session])
+
   const headerActions = editTaskButton ? (
     <div className="flex items-center gap-1.5">
       {editTaskButton}
       {primaryHeaderAction}
     </div>
   ) : primaryHeaderAction
+
+  const headerRightSidebarButton = React.useMemo(() => (
+    <span className="inline-flex items-center gap-1.5">
+      {resourcesButton}
+      {rightSidebarButton}
+    </span>
+  ), [resourcesButton, rightSidebarButton])
 
   // Build title menu content for chat sessions using shared SessionMenu.
   // Desktop uses Radix DropdownMenu via PanelHeader; compact mode uses a
@@ -735,7 +760,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       return (
         <>
           <div className="h-full flex flex-col">
-            <PanelHeader  title={displayTitle} titleMenu={titleMenu} compactTitleMenu={compactTitleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <PanelHeader  title={displayTitle} titleMenu={titleMenu} compactTitleMenu={compactTitleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={headerRightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -796,7 +821,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader  title={t('chat.session')} leadingAction={leadingAction} rightSidebarButton={rightSidebarButton} />
+        <PanelHeader  title={t('chat.session')} leadingAction={leadingAction} rightSidebarButton={headerRightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
@@ -808,8 +833,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   return (
     <>
       <div className="h-full flex flex-col">
-        <PanelHeader  title={displayTitle} titleMenu={titleMenu} compactTitleMenu={compactTitleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
-        <div className="flex-1 flex flex-col min-h-0">
+        <PanelHeader  title={displayTitle} titleMenu={titleMenu} compactTitleMenu={compactTitleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={headerRightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <div
+          className={cn(
+            "flex-1 flex flex-col min-h-0 transition-[padding] duration-200 ease-out",
+            resourcesPanelOpen && !isCompactMode && "pr-[calc(var(--resources-panel-width,360px)+16px)]",
+          )}
+          style={{
+            '--resources-panel-width': 'min(360px, calc(100vw - 28px))',
+          } as React.CSSProperties}
+        >
           <ChatDisplay
             ref={chatDisplayRef}
             session={session}

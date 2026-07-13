@@ -68,7 +68,7 @@ export function SessionInfoPopover({
             <DrawerTitle className="text-sm font-medium">{t('chat.sessionInfo')}</DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <SessionInfoPopoverContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
+            <SessionInfoContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
           </div>
         </DrawerContent>
       </Drawer>
@@ -92,13 +92,13 @@ export function SessionInfoPopover({
           e.preventDefault()
         }}
       >
-        <SessionInfoPopoverContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
+        <SessionInfoContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
       </PopoverContent>
     </Popover>
   )
 }
 
-function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
+export function SessionInfoContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()

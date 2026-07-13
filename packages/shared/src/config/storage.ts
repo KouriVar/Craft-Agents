@@ -71,6 +71,10 @@ export interface StoredConfig {
   autoCapitalisation?: boolean;  // Auto-capitalize first letter when typing (default: true)
   sendMessageKey?: 'enter' | 'cmd-enter';  // Key to send messages (default: 'enter')
   spellCheck?: boolean;  // Enable spell check in input (default: false)
+  openConversationScroll?: 'bottom' | 'top' | 'last';  // Initial scroll position when opening a conversation
+  rightSidebarMode?: 'manual' | 'auto' | 'always';  // Right sidebar opening behavior
+  rightSidebarFollowSession?: boolean;  // Preserve right sidebar state while switching sessions
+  browserOpenMode?: 'sidebar' | 'window';  // Manual browser launch target
   // Power settings
   keepAwakeWhileRunning?: boolean;  // Prevent screen sleep while sessions are running (default: false)
   // Tool metadata
@@ -120,6 +124,10 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     autoCapitalisation: true,
     sendMessageKey: 'enter',
     spellCheck: false,
+    openConversationScroll: 'bottom',
+    rightSidebarMode: 'manual',
+    rightSidebarFollowSession: false,
+    browserOpenMode: 'sidebar',
     keepAwakeWhileRunning: false,
     richToolDescriptions: true,
     extendedPromptCache: false,
@@ -445,6 +453,66 @@ export function setOpenConversationScroll(value: 'bottom' | 'top' | 'last'): voi
   const config = loadStoredConfig();
   if (!config) return;
   config.openConversationScroll = value;
+  saveConfig(config);
+}
+
+/**
+ * Get right sidebar mode: 'manual' | 'auto' | 'always'.
+ * Defaults to 'manual' if not set.
+ */
+export function getRightSidebarMode(): 'manual' | 'auto' | 'always' {
+  const config = loadStoredConfig();
+  if (config?.rightSidebarMode !== undefined) {
+    return config.rightSidebarMode;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.rightSidebarMode;
+}
+
+export function setRightSidebarMode(value: 'manual' | 'auto' | 'always'): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.rightSidebarMode = value;
+  saveConfig(config);
+}
+
+/**
+ * Get manual browser opening mode: 'sidebar' | 'window'.
+ * Defaults to 'sidebar' if not set.
+ */
+export function getBrowserOpenMode(): 'sidebar' | 'window' {
+  const config = loadStoredConfig();
+  if (config?.browserOpenMode !== undefined) {
+    return config.browserOpenMode;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.browserOpenMode;
+}
+
+export function setBrowserOpenMode(value: 'sidebar' | 'window'): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.browserOpenMode = value;
+  saveConfig(config);
+}
+
+/**
+ * Get whether right sidebar follows session switch (inherit previous open/close state).
+ * Defaults to false if not set.
+ */
+export function getRightSidebarFollowSession(): boolean {
+  const config = loadStoredConfig();
+  if (config?.rightSidebarFollowSession !== undefined) {
+    return config.rightSidebarFollowSession;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.rightSidebarFollowSession;
+}
+
+export function setRightSidebarFollowSession(enabled: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.rightSidebarFollowSession = enabled;
   saveConfig(config);
 }
 

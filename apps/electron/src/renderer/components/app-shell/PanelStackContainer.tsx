@@ -22,14 +22,16 @@
  * feel rather than a CSS reflow.
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { useAtomValue } from 'jotai'
 import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { panelStackAtom, focusedPanelIdAtom, focusedPanelRouteAtom } from '@/atoms/panel-stack'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { isDetailNavState } from '@/lib/nav-helpers'
+import { isSessionsNavigation } from '../../../shared/types'
 import { PanelSlot } from './PanelSlot'
+import { RightReviewSidebar } from './RightReviewSidebar'
 import { CompactPanelTransition } from './CompactPanelTransition'
 import {
   PANEL_GAP,
@@ -37,6 +39,9 @@ import {
   PANEL_STACK_VERTICAL_OVERFLOW,
   RADIUS_EDGE,
   RADIUS_INNER,
+  PANEL_SASH_FLEX_MARGIN,
+  PANEL_SASH_HALF_HIT_WIDTH,
+  PANEL_SASH_LINE_WIDTH,
 } from './panel-constants'
 
 /** Spring transition matching AppShell's sidebar/navigator animation */
@@ -44,6 +49,11 @@ const PANEL_SPRING = { type: 'spring' as const, stiffness: 600, damping: 49 }
 
 /** Visual breathing room between the fixed compact TopBar and the first panel. */
 const COMPACT_PANEL_TOP_GAP = 8
+
+/** Default width of the right review sidebar (Codex-style panel). */
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 380
+const RIGHT_SIDEBAR_MIN_WIDTH = 280
+const RIGHT_SIDEBAR_MAX_WIDTH = 640
 
 interface PanelStackContainerProps {
   sidebarSlot: React.ReactNode
@@ -80,6 +90,8 @@ export function PanelStackContainer({
   const focusedNavState = focusedRoute ? parseRouteToNavigationState(focusedRoute) : null
   const isDetailFocused = isDetailNavState(focusedNavState)
   const hasSelectedContent = isCompact && isDetailFocused
+  const canShowRightSidebar = !!focusedNavState && isSessionsNavigation(focusedNavState) && !!focusedNavState.details
+  const effectiveRightSidebarVisible = !!isRightSidebarVisible && canShowRightSidebar
 
   const visiblePanels = isCompact
     ? contentPanels.filter(e => e.id === focusedPanelId).slice(0, 1)
@@ -87,6 +99,35 @@ export function PanelStackContainer({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(contentPanels.length)
+
+  // --- Right sidebar resize (drag sash) ---
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT_WIDTH)
+  const rightSidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const handleRightSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    rightSidebarDragRef.current = { startX: e.clientX, startWidth: rightSidebarWidth }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    const onMove = (ev: MouseEvent) => {
+      if (!rightSidebarDragRef.current) return
+      // Drag left → wider; drag right → narrower
+      const delta = rightSidebarDragRef.current.startX - ev.clientX
+      const w = Math.max(
+        RIGHT_SIDEBAR_MIN_WIDTH,
+        Math.min(RIGHT_SIDEBAR_MAX_WIDTH, rightSidebarDragRef.current.startWidth + delta),
+      )
+      setRightSidebarWidth(w)
+    }
+    const onUp = () => {
+      rightSidebarDragRef.current = null
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [rightSidebarWidth])
 
   const hasSidebar = sidebarWidth > 0
   // Desktop: navigator is shown when AppShell asks for it. Compact: navigator
@@ -163,7 +204,7 @@ export function PanelStackContainer({
                 isFocusedPanel={true}
                 isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
                 isAtLeftEdge={isLeftEdge}
-                isAtRightEdge={!isRightSidebarVisible}
+                isAtRightEdge={!effectiveRightSidebarVisible}
                 proportion={focusedEntry.proportion}
                 isCompact={true}
               />
@@ -255,11 +296,57 @@ export function PanelStackContainer({
               isFocusedPanel={true}
               isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
               isAtLeftEdge={index === 0 && isLeftEdge}
-              isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
+              isAtRightEdge={index === visiblePanels.length - 1 && !effectiveRightSidebarVisible}
               proportion={entry.proportion}
               isCompact={false}
             />
           ))
+        )}
+
+        {/* === RIGHT REVIEW SIDEBAR === */}
+        {effectiveRightSidebarVisible && (
+          <>
+            {/* Resize sash — drag to adjust right sidebar width */}
+            <div
+              className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0 group/sash"
+              style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
+              onMouseDown={handleRightSidebarResizeStart}
+            >
+              <div
+                className="absolute inset-y-0 flex justify-center cursor-col-resize"
+                style={{ left: -PANEL_SASH_HALF_HIT_WIDTH, right: -PANEL_SASH_HALF_HIT_WIDTH }}
+              >
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 w-[2px] bg-border/50 group-hover/sash:bg-accent/60 transition-colors"
+                  style={{
+                    top: PANEL_STACK_VERTICAL_OVERFLOW,
+                    bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+                  }}
+                />
+              </div>
+            </div>
+            <motion.div
+              data-panel-role="right-sidebar"
+              initial={false}
+              animate={{ width: rightSidebarWidth, opacity: 1 }}
+              transition={transition}
+              className="h-full relative shrink-0"
+              style={{ overflowX: 'clip', overflowY: 'visible' }}
+            >
+              <div
+                className="h-full bg-foreground-2 shadow-middle overflow-hidden"
+                style={{
+                  width: rightSidebarWidth,
+                  borderTopLeftRadius: RADIUS_INNER,
+                  borderBottomLeftRadius: RADIUS_INNER,
+                  borderTopRightRadius: RADIUS_EDGE,
+                  borderBottomRightRadius: RADIUS_EDGE,
+                }}
+              >
+                <RightReviewSidebar />
+              </div>
+            </motion.div>
+          </>
         )}
       </motion.div>
     </div>

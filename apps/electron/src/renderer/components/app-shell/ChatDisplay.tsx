@@ -129,6 +129,136 @@ function getTurnKey(turn: Turn): string {
   return `turn-${turn.turnId}-${turn.timestamp}`
 }
 
+interface TurnLocatorItem {
+  key: string
+  title: string
+  body: string
+}
+
+function sanitizeLocatorText(content?: string): string {
+  return (content || '')
+    .replace(/<edit_request>[\s\S]*?<\/edit_request>/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\[skill:(?:[\w-]+:)?[\w-]+\]/g, '')
+    .replace(/\[source:[\w-]+\]/g, '')
+    .replace(/\[(?:file|folder):[^\]]+\]/g, '')
+    .replace(/[#*_`>~-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function truncateLocatorText(content: string, maxLength: number): string {
+  const normalized = sanitizeLocatorText(content)
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength).trimEnd()}…`
+}
+
+function getMessageLocatorTitle(message: Message): string {
+  if (message.role === 'user') return 'You'
+  if (message.role === 'assistant') return 'Agent'
+  if (message.role === 'plan') return 'Plan'
+  if (message.role === 'tool') {
+    const name = message.toolDisplayName || message.toolName || 'Tool'
+    if (message.toolStatus === 'completed') return `${name} completed`
+    if (message.toolStatus === 'error') return `${name} failed`
+    return name
+  }
+  if (message.role === 'error') return message.errorTitle || 'Error'
+  return message.role
+}
+
+function getMessageLocatorBody(message: Message): string {
+  if (message.role === 'tool') {
+    const input = message.toolInput ? JSON.stringify(message.toolInput) : ''
+    return truncateLocatorText(message.toolResult || message.content || input || message.toolIntent || '', 170)
+  }
+  if (message.role === 'error') {
+    return truncateLocatorText(message.errorOriginal || message.content || message.errorDetails?.join(' ') || '', 170)
+  }
+  return truncateLocatorText(message.content, 170)
+}
+
+function getTurnLocatorItem(turn: Turn): TurnLocatorItem | null {
+  const key = getTurnKey(turn)
+  if (turn.type === 'assistant') {
+    const primaryActivity = turn.activities.find(activity => activity.displayName || activity.toolName)
+    const title = truncateLocatorText(turn.intent || primaryActivity?.displayName || primaryActivity?.toolName || 'Agent', 48)
+    const body = truncateLocatorText(turn.response?.text || turn.activities.map(activity => activity.content || activity.intent || activity.error || activity.toolName).filter(Boolean).join(' ') || '', 170)
+    if (!body && title === 'Agent') return null
+    return { key, title, body }
+  }
+
+  const message = turn.message
+  const body = getMessageLocatorBody(message)
+  if (!body) return null
+  return {
+    key,
+    title: truncateLocatorText(getMessageLocatorTitle(message), 48),
+    body,
+  }
+}
+
+function ChatScrollLocator({
+  items,
+  activeKey,
+  onSelect,
+}: {
+  items: TurnLocatorItem[]
+  activeKey: string | null
+  onSelect: (key: string) => void
+}) {
+  const [hoveredKey, setHoveredKey] = React.useState<string | null>(null)
+  const previewKey = hoveredKey || activeKey || items[0]?.key
+  const preview = items.find(item => item.key === previewKey) ?? items[0]
+
+  if (items.length < 2 || !preview) return null
+
+  return (
+    <div
+      className="pointer-events-none absolute left-10 top-1/2 z-20 hidden -translate-y-1/2 xl:flex items-center gap-4"
+    >
+      <div
+        className="pointer-events-auto flex w-8 flex-col items-center gap-[7px] py-2"
+        onMouseLeave={() => setHoveredKey(null)}
+      >
+        {items.map((item) => {
+          const isActive = item.key === activeKey
+          const isHovered = item.key === hoveredKey
+          return (
+            <button
+              key={item.key}
+              type="button"
+              aria-label={item.title}
+              onMouseEnter={() => setHoveredKey(item.key)}
+              onFocus={() => setHoveredKey(item.key)}
+              onClick={() => onSelect(item.key)}
+              className={cn(
+                "h-[2px] rounded-full transition-[width,background-color,opacity,transform] duration-200 ease-out",
+                isActive || isHovered
+                  ? "w-7 bg-foreground/85 opacity-100"
+                  : "w-3 bg-muted-foreground/30 opacity-80 hover:w-5 hover:bg-muted-foreground/45 hover:opacity-100"
+              )}
+            />
+          )
+        })}
+      </div>
+      <div
+        className={cn(
+          "pointer-events-none w-[420px] rounded-[14px] border border-border/70 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-xl transition-opacity",
+          hoveredKey ? "opacity-100" : "opacity-0"
+        )}
+      >
+        <div className="truncate text-sm font-semibold leading-snug text-foreground">
+          {preview.title}
+        </div>
+        <div className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+          {preview.body}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface ChatDisplayProps {
   session: Session | null
   onSendMessage: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
@@ -580,6 +710,27 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Current match index for navigation (internal state, exposed via ref)
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
   const turnRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
+  const [activeLocatorTurnKey, setActiveLocatorTurnKey] = useState<string | null>(null)
+  const updateActiveLocatorFromViewport = React.useCallback(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+    const viewportRect = viewport.getBoundingClientRect()
+    const targetY = viewportRect.top + Math.min(viewport.clientHeight * 0.34, 260)
+    let nextActiveKey: string | null = null
+    let nextDistance = Number.POSITIVE_INFINITY
+    turnRefs.current.forEach((element, turnKey) => {
+      const rect = element.getBoundingClientRect()
+      if (rect.bottom < viewportRect.top || rect.top > viewportRect.bottom) return
+      const distance = Math.abs(rect.top - targetY)
+      if (distance < nextDistance) {
+        nextDistance = distance
+        nextActiveKey = turnKey
+      }
+    })
+    if (nextActiveKey) {
+      setActiveLocatorTurnKey(current => current === nextActiveKey ? current : nextActiveKey)
+    }
+  }, [])
   // Inject ::highlight() styles at runtime to avoid LightningCSS build warnings
   // (the optimizer doesn't recognize ::highlight as a valid pseudo-element yet)
   React.useEffect(() => {
@@ -1129,6 +1280,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       lastScrollPositionMap.current.set(sid, scrollTop)
     }
 
+    updateActiveLocatorFromViewport()
+
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
       setVisibleTurnCount(prev => {
@@ -1148,7 +1301,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         return prev + TURNS_PER_PAGE
       })
     }
-  }, [session?.id, openConversationScrollSetting])
+  }, [session?.id, openConversationScrollSetting, updateActiveLocatorFromViewport])
 
   // Set up scroll event listener
   React.useEffect(() => {
@@ -1497,6 +1650,34 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const turns = allTurns.slice(startIndex)
   const hasMoreAbove = startIndex > 0
 
+  const locatorItems = React.useMemo(() => (
+    turns
+      .map(getTurnLocatorItem)
+      .filter((item): item is TurnLocatorItem => Boolean(item))
+  ), [turns])
+
+  React.useEffect(() => {
+    if (!locatorItems.length) {
+      setActiveLocatorTurnKey(null)
+      return
+    }
+    setActiveLocatorTurnKey(current => (
+      current && locatorItems.some(item => item.key === current)
+        ? current
+        : locatorItems[0].key
+    ))
+    requestAnimationFrame(() => {
+      updateActiveLocatorFromViewport()
+    })
+  }, [locatorItems, updateActiveLocatorFromViewport])
+
+  const handleLocatorSelect = React.useCallback((turnKey: string) => {
+    const element = turnRefs.current.get(turnKey)
+    if (!element) return
+    setActiveLocatorTurnKey(turnKey)
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [])
+
   // Fix: when opening a session, scroll to latest turn after messages load
   const prevSessionIdForInitialScrollRef = React.useRef(session?.id ?? null)
   React.useEffect(() => {
@@ -1611,6 +1792,13 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
+            {!compactMode && (
+              <ChatScrollLocator
+                items={locatorItems}
+                activeKey={activeLocatorTurnKey}
+                onSelect={handleLocatorSelect}
+              />
+            )}
             {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
             <div
               className="h-full"

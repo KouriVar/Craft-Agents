@@ -19,6 +19,25 @@ cpSync('resources', 'dist/resources', { recursive: true });
 
 console.log('✓ Copied resources/ → dist/resources/');
 
+mkdirSync(join('dist', 'resources', 'vendor', 'xterm'), { recursive: true });
+copyFileSync(
+  join('..', '..', 'node_modules', '@xterm', 'xterm', 'css', 'xterm.css'),
+  join('dist', 'resources', 'vendor', 'xterm', 'xterm.css'),
+);
+copyFileSync(
+  join('..', '..', 'node_modules', '@xterm', 'xterm', 'lib', 'xterm.js'),
+  join('dist', 'resources', 'vendor', 'xterm', 'xterm.js'),
+);
+copyFileSync(
+  join('..', '..', 'node_modules', '@xterm', 'addon-fit', 'lib', 'addon-fit.js'),
+  join('dist', 'resources', 'vendor', 'xterm', 'addon-fit.js'),
+);
+copyFileSync(
+  join('src', 'preload', 'terminal-preload.cjs'),
+  join('dist', 'terminal-preload.cjs'),
+);
+console.log('✓ Copied terminal pane assets');
+
 // Copy PowerShell parser script (for Windows command validation in Explore mode)
 // Source: packages/shared/src/agent/powershell-parser.ps1
 // Destination: dist/resources/powershell-parser.ps1

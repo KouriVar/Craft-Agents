@@ -521,10 +521,10 @@ export interface DirectoryListingResult {
   platform: 'win32' | 'darwin' | 'linux'
   /** Whether the server truncated the directory list for safety/performance. */
   truncated: boolean
-  /** Total number of matching child directories before truncation. */
+  /** Total number of matching child entries before truncation. */
   totalEntries: number
-  /** Child directory entries. */
-  entries: Array<{ name: string; path: string; isSymlink: boolean }>
+  /** Child entries. Older clients may treat omitted `type` as a directory. */
+  entries: Array<{ name: string; path: string; isSymlink: boolean; type?: 'file' | 'directory'; size?: number }>
 }
 
 // ---------------------------------------------------------------------------

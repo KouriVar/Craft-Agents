@@ -49,21 +49,32 @@ export default function InputSettingsPage() {
   // Open conversation scroll position state
   const [openConversationScroll, setOpenConversationScrollState] = useState<'bottom' | 'top' | 'last'>('bottom')
 
+  // Right sidebar mode state
+  const [rightSidebarMode, setRightSidebarModeState] = useState<'manual' | 'auto' | 'always'>('manual')
+  const [rightSidebarFollow, setRightSidebarFollow] = useState(false)
+  const [browserOpenMode, setBrowserOpenModeState] = useState<'sidebar' | 'window'>('sidebar')
+
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       if (!window.electronAPI) return
       try {
-        const [autoCapEnabled, spellCheckEnabled, sendKey, scrollPos] = await Promise.all([
+        const [autoCapEnabled, spellCheckEnabled, sendKey, scrollPos, rsMode, rsFollow, browserMode] = await Promise.all([
           window.electronAPI.getAutoCapitalisation(),
           window.electronAPI.getSpellCheck(),
           window.electronAPI.getSendMessageKey(),
           window.electronAPI.getOpenConversationScroll(),
+          window.electronAPI.getRightSidebarMode(),
+          window.electronAPI.getRightSidebarFollowSession(),
+          window.electronAPI.getBrowserOpenMode(),
         ])
         setAutoCapitalisation(autoCapEnabled)
         setSpellCheck(spellCheckEnabled)
         setSendMessageKey(sendKey)
         setOpenConversationScrollState(scrollPos)
+        setRightSidebarModeState(rsMode)
+        setRightSidebarFollow(rsFollow)
+        setBrowserOpenModeState(browserMode)
       } catch (error) {
         console.error('Failed to load input settings:', error)
       }
@@ -91,6 +102,23 @@ export default function InputSettingsPage() {
     const pos = value as 'bottom' | 'top' | 'last'
     setOpenConversationScrollState(pos)
     window.electronAPI.setOpenConversationScroll(pos)
+  }, [])
+
+  const handleRightSidebarModeChange = useCallback((value: string) => {
+    const mode = value as 'manual' | 'auto' | 'always'
+    setRightSidebarModeState(mode)
+    window.electronAPI.setRightSidebarMode(mode)
+  }, [])
+
+  const handleRightSidebarFollowChange = useCallback(async (enabled: boolean) => {
+    setRightSidebarFollow(enabled)
+    await window.electronAPI.setRightSidebarFollowSession(enabled)
+  }, [])
+
+  const handleBrowserOpenModeChange = useCallback((value: string) => {
+    const mode = value as 'sidebar' | 'window'
+    setBrowserOpenModeState(mode)
+    window.electronAPI.setBrowserOpenMode(mode)
   }, [])
 
   return (
@@ -146,6 +174,39 @@ export default function InputSettingsPage() {
                       { value: 'bottom', label: t("settings.input.scrollBottom"), description: t("settings.input.scrollBottomDesc") },
                       { value: 'top', label: t("settings.input.scrollTop"), description: t("settings.input.scrollTopDesc") },
                       { value: 'last', label: t("settings.input.scrollLast"), description: t("settings.input.scrollLastDesc") },
+                    ]}
+                  />
+                </SettingsCard>
+              </SettingsSection>
+
+              {/* Right Sidebar */}
+              <SettingsSection title={t("settings.input.rightSidebar")} description={t("settings.input.rightSidebarDesc")}>
+                <SettingsCard>
+                  <SettingsMenuSelectRow
+                    label={t("settings.input.rightSidebarMode")}
+                    description={t("settings.input.rightSidebarModeDesc")}
+                    value={rightSidebarMode}
+                    onValueChange={handleRightSidebarModeChange}
+                    options={[
+                      { value: 'manual', label: t("settings.input.rightSidebarManual"), description: t("settings.input.rightSidebarManualDesc") },
+                      { value: 'auto', label: t("settings.input.rightSidebarAuto"), description: t("settings.input.rightSidebarAutoDesc") },
+                      { value: 'always', label: t("settings.input.rightSidebarAlways"), description: t("settings.input.rightSidebarAlwaysDesc") },
+                    ]}
+                  />
+                  <SettingsToggle
+                    label={t("settings.input.rightSidebarFollow")}
+                    description={t("settings.input.rightSidebarFollowDesc")}
+                    checked={rightSidebarFollow}
+                    onCheckedChange={handleRightSidebarFollowChange}
+                  />
+                  <SettingsMenuSelectRow
+                    label={t("settings.input.browserOpenMode")}
+                    description={t("settings.input.browserOpenModeDesc")}
+                    value={browserOpenMode}
+                    onValueChange={handleBrowserOpenModeChange}
+                    options={[
+                      { value: 'sidebar', label: t("settings.input.browserOpenSidebar"), description: t("settings.input.browserOpenSidebarDesc") },
+                      { value: 'window', label: t("settings.input.browserOpenWindow"), description: t("settings.input.browserOpenWindowDesc") },
                     ]}
                   />
                 </SettingsCard>

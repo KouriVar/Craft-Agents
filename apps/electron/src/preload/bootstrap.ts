@@ -18,6 +18,7 @@
 
 import '@sentry/electron/preload'
 import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 import { WsRpcClient, type TransportConnectionState } from '../transport/client'
 import { RoutedClient } from '../transport/routed-client'
 import { buildClientApi } from '../transport/build-api'
@@ -28,6 +29,7 @@ import {
   CLIENT_OPEN_EXTERNAL,
   CLIENT_OPEN_PATH,
   CLIENT_SHOW_IN_FOLDER,
+  CLIENT_OPEN_TERMINAL,
   CLIENT_CONFIRM_DIALOG,
   CLIENT_OPEN_FILE_DIALOG,
   CLIENT_BROWSER_INVOKE,
@@ -167,6 +169,10 @@ client.handleCapability(CLIENT_OPEN_PATH, async (path: string) => {
 
 client.handleCapability(CLIENT_SHOW_IN_FOLDER, (path: string) => {
   shell.showItemInFolder(path)
+})
+
+client.handleCapability(CLIENT_OPEN_TERMINAL, (dir: string) => {
+  return ipcRenderer.invoke('terminal:open', dir)
 })
 
 client.handleCapability(CLIENT_CONFIRM_DIALOG, async (spec: ConfirmDialogSpec) => {
@@ -442,6 +448,23 @@ client.onConnectionStateChanged((state) => {
   } catch {
     return null
   }
+}
+
+// Terminal pane — opens an in-app embedded terminal window
+;(api as any).openTerminalPane = (cwd: string) => ipcRenderer.invoke('terminal:open', cwd)
+;(api as any).createEmbeddedTerminal = (cwd: string) => ipcRenderer.invoke('terminal:embedded:create', cwd)
+;(api as any).writeEmbeddedTerminal = (id: string, data: string) => ipcRenderer.send('terminal:embedded:input', { id, data })
+;(api as any).resizeEmbeddedTerminal = (id: string, cols: number, rows: number) => ipcRenderer.send('terminal:embedded:resize', { id, cols, rows })
+;(api as any).closeEmbeddedTerminal = (id: string) => ipcRenderer.send('terminal:embedded:close', id)
+;(api as any).onEmbeddedTerminalData = (callback: (event: { id: string; data: string }) => void) => {
+  const handler = (_event: IpcRendererEvent, payload: { id: string; data: string }) => callback(payload)
+  ipcRenderer.on('terminal:embedded:data', handler)
+  return () => ipcRenderer.removeListener('terminal:embedded:data', handler)
+}
+;(api as any).onEmbeddedTerminalExit = (callback: (event: { id: string }) => void) => {
+  const handler = (_event: IpcRendererEvent, payload: { id: string }) => callback(payload)
+  ipcRenderer.on('terminal:embedded:exit', handler)
+  return () => ipcRenderer.removeListener('terminal:embedded:exit', handler)
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

@@ -4,6 +4,8 @@ import {
   buildCompoundRoute,
   parseRouteToNavigationState,
   buildRouteFromNavigationState,
+  parseRightSidebarParam,
+  buildRightSidebarParam,
 } from '../route-parser'
 import { routes } from '../routes'
 import { isSessionsNavigation } from '../types'
@@ -46,5 +48,10 @@ describe('route-parser: label filter routes', () => {
     // Mirrors parseSessionIdFromRoute's segment logic (panel-stack.ts).
     const segments = 'label/task/session/abc123?stray=x'.split('?')[0].split('/')
     expect(segments[segments.indexOf('session') + 1]).toBe('abc123')
+  })
+
+  it('round-trips the review right sidebar param', () => {
+    expect(parseRightSidebarParam('review')).toEqual({ type: 'review' })
+    expect(buildRightSidebarParam({ type: 'review' })).toBe('review')
   })
 })

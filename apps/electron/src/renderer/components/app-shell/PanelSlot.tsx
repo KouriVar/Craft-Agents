@@ -17,13 +17,15 @@ import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSetAtom } from 'jotai'
 import { cn } from '@/lib/utils'
-import { X, ChevronLeft } from 'lucide-react'
+import { X, ChevronLeft, PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { closePanelAtom, focusedPanelIdAtom, type PanelStackEntry } from '@/atoms/panel-stack'
 import { useAppShellContext, AppShellProvider } from '@/context/AppShellContext'
+import { useNavigation, useNavigationState } from '@/contexts/NavigationContext'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { MainContentPanel } from './MainContentPanel'
 import { PANEL_MIN_WIDTH, RADIUS_EDGE, RADIUS_INNER } from './panel-constants'
+import { isSessionsNavigation } from '../../../shared/types'
 
 interface PanelSlotProps {
   entry: PanelStackEntry
@@ -59,6 +61,7 @@ export function PanelSlot({
   const setFocusedPanel = useSetAtom(focusedPanelIdAtom)
   const parentContext = useAppShellContext()
   const navState = parseRouteToNavigationState(entry.route)
+  const supportsRightSidebar = !!navState && isSessionsNavigation(navState) && !!navState.details
 
   const handleClose = useCallback(() => {
     closePanel(entry.id)
@@ -88,12 +91,33 @@ export function PanelSlot({
     )
   }, [isCompact, handleClose])
 
+  // Right sidebar toggle — opens/closes the review panel on the right.
+  const { toggleRightSidebar } = useNavigation()
+  const globalNavState = useNavigationState()
+  const isRightSidebarOpen = !!globalNavState.rightSidebar && globalNavState.rightSidebar.type !== 'none'
+  const handleToggleRightSidebar = useCallback(() => {
+    toggleRightSidebar()
+  }, [toggleRightSidebar])
+  const rightSidebarToggleButton = useMemo(() => (
+    <PanelHeaderCenterButton
+      aria-label={isRightSidebarOpen ? t('common.closeRightPanel') : t('common.openRightPanel')}
+      aria-pressed={isRightSidebarOpen}
+      icon={isRightSidebarOpen
+        ? <PanelRightClose className="h-4 w-4" />
+        : <PanelRightOpen className="h-4 w-4" />}
+      onClick={handleToggleRightSidebar}
+      tooltip={isRightSidebarOpen ? t('common.closeRightPanel') : t('common.openRightPanel')}
+      className={isRightSidebarOpen ? 'opacity-100 text-accent' : undefined}
+    />
+  ), [isRightSidebarOpen, handleToggleRightSidebar, t])
+
   const rightSidebarButton = useMemo(() => (
     <span className="inline-flex items-center gap-1.5">
       {parentContext.rightSidebarButton}
+      {supportsRightSidebar && rightSidebarToggleButton}
       {closeButton}
     </span>
-  ), [parentContext.rightSidebarButton, closeButton])
+  ), [parentContext.rightSidebarButton, rightSidebarToggleButton, closeButton, supportsRightSidebar])
 
   // Override AppShellContext so ChatPage/PanelHeader gets our per-panel close button,
   // back button (compact mode), and isFocusedPanel for input field appearance

@@ -238,13 +238,15 @@ export function ServerDirectoryBrowser({
             </div>
           )}
 
-          {!loading && !error && listing && listing.entries.length === 0 && (
+          {!loading && !error && listing && listing.entries.filter(entry => (entry.type ?? 'directory') === 'directory').length === 0 && (
             <div className="px-3 py-4 text-sm text-muted-foreground">
               No subdirectories. Use the path input above to navigate.
             </div>
           )}
 
-          {!loading && !error && listing && listing.entries.map(entry => (
+          {!loading && !error && listing && listing.entries
+            .filter(entry => (entry.type ?? 'directory') === 'directory')
+            .map(entry => (
             <button
               key={entry.path}
               type="button"

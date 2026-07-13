@@ -247,7 +247,11 @@ npx electron-builder $BUILDER_ARGS
 # 8. Verify the DMG was built
 # electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg
 DMG_NAME="Craft-Agents-${ARCH}.dmg"
-DMG_PATH="$ELECTRON_DIR/release/$DMG_NAME"
+# Look for DMG in both old and new output directories
+DMG_PATH="$HOME/Downloads/$DMG_NAME"
+if [ ! -f "$DMG_PATH" ]; then
+    DMG_PATH="$ELECTRON_DIR/release/$DMG_NAME"
+fi
 
 if [ ! -f "$DMG_PATH" ]; then
     echo "ERROR: Expected DMG not found at $DMG_PATH"
@@ -256,13 +260,6 @@ if [ ! -f "$DMG_PATH" ]; then
     exit 1
 fi
 
-echo ""
-echo "=== Build Complete ==="
-echo "DMG: $ELECTRON_DIR/release/${DMG_NAME}"
-echo "Size: $(du -h "$ELECTRON_DIR/release/${DMG_NAME}" | cut -f1)"
-
-# 9. Create manifest.json for upload script
-# Read version from package.json
 ELECTRON_VERSION=$(cat "$ELECTRON_DIR/package.json" | grep '"version"' | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 echo "Creating manifest.json (version: $ELECTRON_VERSION)..."
 mkdir -p "$ROOT_DIR/.build/upload"

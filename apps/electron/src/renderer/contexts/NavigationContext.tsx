@@ -1178,10 +1178,14 @@ export function NavigationProvider({
 
   const toggleRightSidebar = useCallback((panel?: RightSidebarPanel) => {
     const currentSidebar = rightSidebarRef.current
-    const newPanel = panel || (currentSidebar && currentSidebar.type !== 'none'
-      ? { type: 'none' as const }
-      : { type: 'none' as const })
-    updateRightSidebar(newPanel)
+    // Explicit panel requested → use it directly
+    if (panel) {
+      updateRightSidebar(panel)
+      return
+    }
+    // Toggle: open the review panel when closed, close it when open
+    const isOpen = !!currentSidebar && currentSidebar.type !== 'none'
+    updateRightSidebar(isOpen ? undefined : { type: 'review' as const })
   }, [updateRightSidebar])
 
   // =========================================================================

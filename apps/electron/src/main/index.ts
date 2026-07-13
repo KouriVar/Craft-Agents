@@ -897,6 +897,14 @@ app.whenReady().then(async () => {
         app.exit(0)
       })
 
+      // Terminal pane — opens an in-app embedded terminal (xterm.js + node-pty)
+      const { registerTerminalIpc } = await import('./terminal-pane-manager')
+      registerTerminalIpc()
+      ipcMain.handle('terminal:open', async (_event, cwd: string) => {
+        const { openTerminalPane } = await import('./terminal-pane-manager')
+        openTerminalPane(cwd)
+      })
+
       // Language change: sync from renderer to main process, persist, and rebuild native menu.
       // Persistence here is what lets the next app launch hydrate main's i18n correctly —
       // see the `getPersistedUiLanguage()` block at the top of this file.

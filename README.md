@@ -1,75 +1,130 @@
 # Craft Agents（个人二开版）
 
-基于 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) 的个人本地化分支，自用为主。
+基于 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) 的个人本地化分支。这个版本以本地桌面体验为主，在原版 Agent、会话、来源、技能、消息平台能力之上，补了一批更适合日常使用的审阅、侧栏、输入和打包能力。
 
-## 相比原版的改动
+当前分支：`my-changes`
 
-### 微信接入
+当前版本：`0.11.1-beta10`
 
-在 messaging-gateway 包里新增 ilink 协议适配器（`packages/messaging-gateway/src/adapters/wechat/`），支持：
+## 近期重点
 
-- 扫码登录 + 多账号管理
-- 消息收发（文本/图片/语音/视频）
-- 媒体上传下载 + CDN
-- 会话同步
+### 2026-07-13 界面与工作流改版
 
-前端通过 `WeChatConnectDialog` 连接，消息集成进主会话流。
+- 新增 Codex 风格右侧审阅栏，支持信息、文件、终端、浏览器等工作区辅助视图。
+- 新增会话资源悬浮面板，把标题、上下文、会话文件、输出、来源统一收纳到顶部按钮中。
+- 新增对话内容定位器，在聊天区左侧用轻量刻度显示当前滚动位置，悬停时显示对应片段摘要。
+- 新增内嵌终端能力，可在审阅栏内直接打开当前工作区终端。
+- 优化主聊天区与悬浮面板的宽度适配，避免面板覆盖消息、滚动条和输入区。
+- 优化消息列表 hover 预览，改为简洁的会话摘要，不再展示完整消息和文件清单。
+- 优化设置页布局与中文文案：`Workspace` 改为「空间」，`Messaging` 改为「消息」，`AI` 改为「模型」。
 
-### 历史对话滚动位置
+### 2026-07-12 历史对话滚动设置
 
-打开历史对话时不再默认停在第一条消息。新增"设置 → 输入 → 历史对话"模块，可选择打开对话时的滚动位置：
+- 新增「设置 → 输入 → 历史对话」配置。
+- 支持打开历史对话时定位到底部、顶部或上次阅读位置。
+- 修复历史会话内容尚未完全布局时误停在顶部的问题。
 
-- **底部（最后一条消息）**：始终定位到最后结束处（默认）
-- **顶部（第一条消息）**：从对话历史顶部开始
-- **上次位置**：恢复到上次浏览的位置
+### 微信与消息平台接入
 
-同时修复了打开历史对话因布局未稳定（图片/代码块/懒渲染）而误停在顶部的问题。
+在 `packages/messaging-gateway/src/adapters/wechat/` 新增 ilink 协议适配器，支持：
 
-### app 图标改回经典
+- 微信扫码登录与多账号管理
+- 文本、图片、语音、视频收发
+- 媒体上传下载与 CDN 处理
+- 会话同步与消息平台绑定
 
-上游用 macOS 26 的 `Assets.car`（Liquid Glass 图标），但渲染不一致。改 `afterPack.cjs` 移除 Assets.car 引用，用经典 `icon.icns`。
+前端通过消息设置页连接微信，同时保留 Telegram、WhatsApp、飞书 / Lark 等平台入口。
 
-### 打包脚本
+### 打包与运行时补齐
 
-`scripts/electron-build-subprocess.ts`：构建 session-mcp-server + pi-agent-server 子进程并复制到 resources，让 OSS 的 `electron:dist` 命令也能正确打包子进程（上游只在他的内部构建脚本里做这步）。
+- Electron 打包流程会复制子进程、终端页面、preload 与运行时资源。
+- macOS 打包继续使用经典 `icon.icns`，避免 Liquid Glass 图标在不同环境下渲染不一致。
+- `electron:dist:dev:mac` 走 `build-dmg.sh`，更稳定地包含 SDK 与子进程资源。
 
-### 已同步 upstream v0.11.1
+### 上游同步
 
-- 支持 OpenAI GPT-5.6（Luna、Terra、Sol）连接
-- 支持模型原生 Max thinking level
-- Pi SDK 升级至 0.80.6，改进长上下文成本统计
+已同步 upstream `v0.11.1` 相关能力：
 
-## 更新日志
+- OpenAI GPT-5.6（Luna、Terra、Sol）连接支持
+- 模型原生 Max thinking level
+- Pi SDK 0.80.6 及长上下文成本统计改进
 
-详细修复记录见 [CHANGELOG.md](./CHANGELOG.md)。
+## 功能概览
 
-### 2026-07-09 上游 issue 修复（7 项）
-
-基于 upstream v0.11.0 的 bug 修复集合，涉及 21 文件（+126 / -36）：
-
-- #837 macOS 中文输入法自动大写干扰
-- #868 Opus 4.8 / 4.7 模型描述重复
-- #822 编辑连接时遮罩 API Key 被回传后端
-- #891 Auto-update 日志在生产环境丢失
-- #876 本地 `file://` 链接报 "URL is malformed"
-- #789 Skill 目录不支持符号链接
-- #933 Write 工具 diff 视图显示全量新增
-
-完整说明见 [docs/CHANGELOG-2026-07-09.md](./docs/CHANGELOG-2026-07-09.md)。
-
-## 致谢
-
-感谢原项目 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss)。
+- 多会话 Agent 桌面应用
+- 本地 Workspace / 空间管理
+- Sources、Skills、Labels、Projects、Views
+- 右侧审阅栏：信息、文件浏览、内嵌终端、浏览器控制
+- 会话资源悬浮面板：上下文、会话文件、输出、来源
+- 对话滚动定位器与历史滚动位置设置
+- Telegram、WhatsApp、飞书 / Lark、微信消息接入
+- macOS / Windows / Linux Electron 打包
 
 ## 下载
 
 见 [Releases](../../releases)：
 
-- **macOS（Apple Silicon）**：Craft-Agents-arm64.dmg
-- **Windows（Intel/AMD x64）**：Craft-Agents-x64.exe
+- macOS（Apple Silicon）：`Craft-Agents-arm64.dmg`
+- Windows（Intel/AMD x64）：`Craft-Agents-x64.exe`
 
-## 自用备注
+## 开发
 
-- 打包（mac，不签名）：`bun run electron:dist:dev:mac`
-- 同步上游：`git fetch upstream && git merge upstream/main`
-- 主分支：`my-changes`
+```bash
+bun install
+bun run electron:dev
+```
+
+常用检查：
+
+```bash
+bun run typecheck:electron
+bun run typecheck:all
+```
+
+## 打包
+
+macOS 本地开发包：
+
+```bash
+bun run electron:dist:dev:mac
+```
+
+Windows 本地开发包：
+
+```bash
+bun run electron:dist:dev:win
+```
+
+Linux 本地开发包：
+
+```bash
+bun run electron:dist:dev:linux
+```
+
+## 同步上游
+
+如果本地还没有 `upstream` remote：
+
+```bash
+git remote add upstream https://github.com/craft-ai-agents/craft-agents-oss.git
+```
+
+```bash
+git fetch upstream
+git merge upstream/main
+bun run typecheck:electron
+```
+
+同步到个人仓库：
+
+```bash
+git push origin my-changes
+```
+
+## 更新日志
+
+详细记录见 [CHANGELOG.md](./CHANGELOG.md)。
+
+## 致谢
+
+感谢原项目 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss)。

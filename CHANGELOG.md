@@ -1,91 +1,110 @@
 # 更新日志
 
-## 2026-07-12 历史对话滚动位置
+## 2026-07-13 界面、审阅与资源面板改版
+
+### 新增
+
+- 新增右侧审阅栏，支持在会话旁边查看信息、工作区文件、内嵌终端和浏览器控制面板。
+- 新增内嵌终端窗口与审阅栏终端视图，支持创建、输入、resize、关闭和进程退出回传。
+- 新增会话资源悬浮面板，统一展示标题、上下文、会话文件、输出和来源。
+- 新增对话内容定位器，在聊天区左侧显示轻量刻度，滚动时同步当前片段，悬停时展示标题与内容摘要。
+- 新增会话列表轻量 hover 摘要卡，显示会话标题、摘要、空间 / 工作目录和 Git 分支。
+
+### 改版
+
+- 将原会话信息弹窗中的核心数据复制到会话资源悬浮面板中，信息入口保留但不再作为主要操作路径。
+- 将“来源 +”接入底部输入框已有来源选择器，复用原 Craft 样式和选择逻辑。
+- 将“输出 +”接入当前输入框，用于快速生成当前会话的可交付输出文件或站点。
+- 右侧审阅栏默认展示信息视图，并保留文件、终端、浏览器快速切换。
+- 聊天主区域在资源面板打开时自动让出宽度，避免悬浮面板压住消息卡、滚动条或输入区。
+
+### 优化
+
+- 优化资源悬浮面板布局，使其靠近右上角工具按钮，并与关闭按钮区域保持视觉对齐。
+- 优化对话定位器样式：默认刻度更细、更短、更轻，选中态更克制，并加入宽度、颜色和透明度过渡。
+- 优化消息列表 hover 预览，不再加载完整消息和会话文件，避免展示标题、文件和大量消息摘要造成干扰。
+- 优化设置页 Messaging 内容区宽度，补齐左右留白，与其他设置页保持一致。
+- 优化中文设置列表文案：`Workspace` 改为「空间」，`Messaging` 改为「消息」，`AI` 改为「模型」，消息副标题改为「连接移动设备」。
+- 优化浏览器打开策略，可按设置在右侧栏或独立窗口中打开。
 
 ### 修复
 
-- **打开历史对话默认停在顶部**：以前打开一个历史会话，视口会停在第一条消息，而不是最后结束的地方。根因是挂载时的即时滚动发生在内容（图片、代码高亮、字体、懒渲染的 turn）尚未铺开时，算出的"底部"其实是短内容的底部；随后用于补滚的 `ResizeObserver` 又被一个 500ms 的跳过窗口压制，内容若在此窗口内加载完便再也不会补滚。改为会话消息就绪后用多时机（`requestAnimationFrame` + 120ms + 350ms + 图片 `load` 监听）可靠地滚到底部，每次打开只触发一次，不干扰手动上滑与流式跟随。
+- 修复会话资源面板与主聊天区重叠的问题。
+- 修复右侧栏展开时主对话内容没有跟随宽度适配的问题。
+- 修复会话资源面板点击外部即关闭的问题，使面板保持可持续操作。
+- 修复来源和输出入口未接入实际交互的问题。
+- 修复消息设置页内容区贴边的问题。
 
-### 功能
+### 构建与协议
 
-- **新增"历史对话"设置**（设置 → 输入 → 发送下方）：可选择打开对话时的滚动位置。
-  - **底部（最后一条消息）**：始终滚到底部，显示最后一条消息（默认）
-  - **顶部（第一条消息）**：从对话历史顶部开始
-  - **上次位置**：恢复到上次浏览的位置（内存缓存，App 重启后回落到底部）
-- 设置项贯穿数据层到 UI：`config-defaults` schema/JSON、`storage` getter/setter、RPC channel + handler、`channel-map`、`ElectronAPI` 类型、中英文 i18n，UI 复用现有 `SettingsSection` / `SettingsCard` / `SettingsMenuSelectRow` 样式。
+- 补齐终端相关 Electron IPC、preload API、通道映射和类型定义。
+- 补齐右侧审阅栏相关路由、导航状态、面板容器和设置项。
+- 打包流程复制终端页面、终端 preload 和运行时资源，确保发布包可用。
+
+## 2026-07-12 历史对话滚动位置
+
+### 新增
+
+- 新增「设置 → 输入 → 历史对话」设置项，可选择打开对话时的滚动位置：
+  - 底部：始终定位到最后一条消息。
+  - 顶部：从对话历史顶部开始。
+  - 上次位置：恢复到上次浏览位置。
+
+### 修复
+
+- 修复打开历史会话时默认停在顶部的问题。
+- 修复图片、代码块和懒渲染 turn 尚未完成布局时，初始滚动位置计算不准确的问题。
+- 修复自动滚动补偿与流式跟随之间的冲突，使用户手动上滑时不会被强行拉回底部。
+
+### 配置
+
+- 补齐 `config-defaults`、配置 schema、存储读写、RPC handler、通道映射、ElectronAPI 类型和设置页 UI。
+- 补齐多语言文案。
 
 ## 2026-07-12 同步 upstream v0.11.1
 
-- 同步 OpenAI GPT-5.6（Luna、Terra、Sol）连接支持
-- 支持模型原生 Max thinking level
-- Pi SDK 升级至 0.80.6，改进长上下文成本统计
-- 修复 Electron renderer 的工具结果事件类型与输入框属性类型检查
+### 同步
 
-## 2026-07-08 初始整理
-
-基于 upstream v0.11.0 (`f4e172bf`) + 上游 Simplify session status navigation (`6eeb6d5f`)。
-
-### 功能提交
-
-- `feat(messaging)` 微信接入（ilink 协议适配器）
-- `core` 微信接入的路由、类型、设置与应用壳集成
-- `build` 打包脚本与配置
-- `i18n` 多语言文案
-
-### 仓库形态
-
-从 fork 改为独立仓库（GitHub fork 不能上传新 LFS 对象，报 `can not upload new objects to public fork`）。
-
-### 同步上游的方法
-
-```bash
-git fetch upstream
-git merge upstream/main   # 在 my-changes 上合并
-# 解冲突 → 测试 → 打包
-bun run electron:dist:dev:mac
-```
-
-不用 GitHub 网页的 Sync fork，本地 git 更可控。
-
-## 2026-07-09 优化版
+- 同步 OpenAI GPT-5.6（Luna、Terra、Sol）连接支持。
+- 同步模型原生 Max thinking level。
+- 升级 Pi SDK 至 0.80.6。
+- 改进长上下文成本统计。
 
 ### 修复
 
-- **删多面板/双栏窗口**：聊天区只剩单主面板，不再出现第二个会话窗口（之前为浏览器模块加的"新面板"入口，没收干净）
-- **修打包后启动崩溃**：打包缺 `@anthropic-ai/claude-agent-sdk`，根因是打包命令绕过了会复制 SDK 的 `build-dmg.sh`。mac 打包命令改走 `build-dmg.sh`，并修了 arm64/x64 混打
-- **修 dock 图标深色模式变浅**（十几个版本的老 bug）：`notifications.ts` 启动时调 `updateBadgeCount(0)` → `dock.setIcon(originalIcon)` 用固定图片覆盖系统图标，深色模式不跟随。改为 count=0 时不覆盖，让 macOS 自己管理图标
-- **Win 打包补 SDK**：Win 打包同样缺 SDK（`electron:dist:dev:win` 也不走 build-dmg.sh），手动复制 SDK core + npm 拉 win32-x64 binary + alias
+- 修复 Electron renderer 的工具结果事件类型。
+- 修复输入框属性相关类型检查问题。
 
-### 打包备注
+## 2026-07-09 本地打包与上游问题修复
 
-- mac：`bun run electron:dist:dev:mac`（已走 build-dmg.sh，自动复制 SDK）
-- win：需先复制 SDK（core + win32-x64 binary alias 到 claude-agent-sdk-binary），再 `bun run electron:dist:dev:win`。建议后续写 `build-win.sh` 一劳永逸
-- mac 交叉打包 win 需要 Rosetta 2（`softwareupdate --install-rosetta --agree-to-license`），否则 wine64 跑不了
+### 修复
 
-### release
+- 修复 macOS 中文输入法场景下自动大写干扰输入的问题。
+- 修复 Opus 4.8 / 4.7 模型描述重复的问题。
+- 修复编辑连接时遮罩 API Key 被误作为真实凭证回传的问题。
+- 修复生产环境 auto-update 诊断日志不可见的问题。
+- 修复 `file://` 本地链接被 URL 安全分类拦截的问题。
+- 修复 Skill 目录为符号链接时无法识别的问题。
+- 修复 Write 工具覆写已有文件时 diff 只显示全量新增的问题。
+- 修复打包后缺少 SDK 或子进程资源导致启动失败的问题。
+- 修复 macOS Dock 图标在深色模式下被固定图标覆盖的问题。
 
-`v0.11.0-local` 更新：mac `Craft-Agents-arm64.dmg` + win `Craft-Agents-x64.exe`，均含上述修复。
+### 构建
 
-## 2026-07-09 上游 issue 修复集合
+- macOS 打包改走 `build-dmg.sh`，自动复制 SDK 与子进程资源。
+- Windows 打包补齐 SDK core、win32-x64 binary 和 binary alias。
+- Electron 打包保留经典 `icon.icns`，避免 Liquid Glass 图标渲染不一致。
 
-基于 upstream v0.11.0 的 7 项 bug 修复，涉及 21 文件（+126 / -36）。详细记录见 [docs/CHANGELOG-2026-07-09.md](./docs/CHANGELOG-2026-07-09.md)。
+## 2026-07-08 初始整理
 
-### 快速修复
+### 新增
 
-- **#837** macOS 聊天输入框首字母自动大写，干扰中文 IME → contentEditable 加 `autoCapitalize="off"` / `spellCheck={false}`
-- **#868** Opus 4.8 与 4.7 共用 `model.opusDesc` 显示相同描述 → 拆分 `opus48Desc` / `opus47Desc`，同步 7 语言
-- **#822** 编辑连接时遮罩 API Key 被当真实凭证回传 → `initialApiKeyRef` 记录初值，未改动则提交空串跳过更新
+- 基于 upstream v0.11.0 建立个人本地化分支。
+- 新增微信 ilink 协议适配器，支持扫码登录、多账号、消息收发、媒体处理和会话同步。
+- 新增消息平台配置与会话绑定相关前端入口。
+- 新增本地打包脚本与资源复制流程。
 
-### 中等修复
+### 仓库
 
-- **#891** 生产环境 `mainLog` 的 file/console transport 被禁，auto-update 诊断日志全丢 → `auto-update.ts` 内 21 处 `mainLog` 调用替换为 `autoUpdateLog`（17 info + 3 warn + 1 error）
-- **#876** Agent 输出的 `file:///...` 链接被 URL 安全分类器拦截 → `handleOpenUrl` 拦截 file:// 解析本地路径（含 Windows 驱动器号），路由到应用内预览
-- **#789** `Dirent.isDirectory()` 对符号链接返回 false，`ln -s` 的 skill 目录被忽略 → 增加 `isSymbolicLink()` 判断 + `statSync` 跟随
-- **#933** Write 工具覆写已有文件时 diff 只显示全量新增 → 全链路透传 `originalContent`（pi-agent-server → 事件适配器 → Message → ActivityItem → file-changes），使 ShikiDiffViewer 渲染完整 before/after
-
-### 统计
-
-- 修改文件：21
-- 新增行数：126
-- 删除行数：36
-- 涉及上游 issue：7（#837, #868, #822, #891, #876, #789, #933）
+- 从 fork 形态调整为独立仓库，避免 GitHub LFS 对象上传限制。
+- 主开发分支为 `my-changes`。

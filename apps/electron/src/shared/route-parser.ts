@@ -843,6 +843,9 @@ export function parseRightSidebarParam(sidebarStr?: string): RightSidebarPanel |
   if (sidebarStr === 'history') {
     return { type: 'history' }
   }
+  if (sidebarStr === 'review') {
+    return { type: 'review' }
+  }
   if (sidebarStr.startsWith('files')) {
     const path = sidebarStr.substring(6) // Remove 'files/' prefix
     return { type: 'files', path: path || undefined }
@@ -865,6 +868,8 @@ export function buildRightSidebarParam(panel?: RightSidebarPanel): string | unde
   switch (panel.type) {
     case 'history':
       return 'history'
+    case 'review':
+      return 'review'
     case 'files':
       return panel.path ? `files/${panel.path}` : 'files'
     default:

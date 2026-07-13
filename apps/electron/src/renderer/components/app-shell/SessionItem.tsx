@@ -13,6 +13,7 @@ import { CompactSessionMenu } from "./CompactSessionMenu"
 import { SessionStatusIcon } from "./SessionStatusIcon"
 import { SessionBadges } from "./SessionBadges"
 import { SessionProjectColorWrapper } from "./SessionProjectColorWrapper"
+import { SessionHoverPreview } from "./SessionHoverPreview"
 import { useProjectColorTreatment } from "@/hooks/useProjectColorTreatment"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
@@ -115,6 +116,7 @@ export function SessionItem({
   }
 
   return (
+    <SessionHoverPreview item={item} disabled={isCompactMode}>
     <SessionProjectColorWrapper color={projectColor} treatment={projectColorTreatment}>
     <EntityRow
       className="session-item"
@@ -267,5 +269,6 @@ export function SessionItem({
       badges={hasLabels ? <SessionBadges item={item} /> : undefined}
     />
     </SessionProjectColorWrapper>
+    </SessionHoverPreview>
   )
 }

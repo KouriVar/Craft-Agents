@@ -28,6 +28,13 @@ type ApiToChannelMapKeys = Exclude<
   | 'onTransferProgress' // direct IPC listener — chunk upload progress
   | 'changeLanguage' // direct IPC to main process — syncs i18n language
   | 'getFilePath' // renderer-local — webUtils.getPathForFile, no IPC round-trip
+  | 'openTerminalPane' // direct IPC to main process — opens embedded terminal window
+  | 'createEmbeddedTerminal' // direct IPC to main process — creates right-sidebar terminal process
+  | 'writeEmbeddedTerminal' // direct IPC to main process — terminal stdin
+  | 'resizeEmbeddedTerminal' // direct IPC to main process — terminal pty resize
+  | 'closeEmbeddedTerminal' // direct IPC to main process — terminal lifecycle cleanup
+  | 'onEmbeddedTerminalData' // direct IPC listener — terminal stdout/stderr
+  | 'onEmbeddedTerminalExit' // direct IPC listener — terminal exit
 > | BrowserPaneKeys
 type ChannelMapKeys = keyof typeof CHANNEL_MAP & string
 

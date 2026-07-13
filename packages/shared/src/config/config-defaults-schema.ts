@@ -18,6 +18,9 @@ export interface ConfigDefaults {
     sendMessageKey: 'enter' | 'cmd-enter';
     spellCheck: boolean;
     openConversationScroll: 'bottom' | 'top' | 'last';
+    rightSidebarMode: 'manual' | 'auto' | 'always';
+    rightSidebarFollowSession: boolean;
+    browserOpenMode: 'sidebar' | 'window';
     keepAwakeWhileRunning: boolean;
     richToolDescriptions: boolean;
     extendedPromptCache: boolean;

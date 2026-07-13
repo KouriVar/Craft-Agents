@@ -113,8 +113,8 @@ export default function MessagingSettingsPage() {
   return (
     <div className="flex h-full flex-col">
       <PanelHeader title={t('settings.messaging.title')} />
-      <ScrollArea className="flex-1">
-        <div className="space-y-6 p-6">
+      <ScrollArea className="h-full">
+        <div className="space-y-6 px-5 py-7 max-w-3xl mx-auto">
           <SettingsSection title={t('settings.messaging.title')}>
             <SettingsCard>
               <PlatformRow platform="telegram" workspaceId={activeWorkspace.id} />

@@ -145,6 +145,7 @@ export const RPC_CHANNELS = {
     OPEN_URL: 'shell:openUrl',
     OPEN_FILE: 'shell:openFile',
     SHOW_IN_FOLDER: 'shell:showInFolder',
+    OPEN_TERMINAL: 'shell:openTerminal',
   },
   menu: {
     NEW_CHAT: 'menu:newChat',
@@ -315,6 +316,12 @@ export const RPC_CHANNELS = {
     SET_SPELL_CHECK: 'input:setSpellCheck',
     GET_OPEN_CONVERSATION_SCROLL: 'input:getOpenConversationScroll',
     SET_OPEN_CONVERSATION_SCROLL: 'input:setOpenConversationScroll',
+    GET_RIGHT_SIDEBAR_MODE: 'input:getRightSidebarMode',
+    SET_RIGHT_SIDEBAR_MODE: 'input:setRightSidebarMode',
+    GET_RIGHT_SIDEBAR_FOLLOW_SESSION: 'input:getRightSidebarFollowSession',
+    SET_RIGHT_SIDEBAR_FOLLOW_SESSION: 'input:setRightSidebarFollowSession',
+    GET_BROWSER_OPEN_MODE: 'input:getBrowserOpenMode',
+    SET_BROWSER_OPEN_MODE: 'input:setBrowserOpenMode',
   },
   power: {
     GET_KEEP_AWAKE: 'power:getKeepAwake',

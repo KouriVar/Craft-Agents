@@ -13,6 +13,7 @@ import {
   requestClientOpenExternal,
   requestClientOpenPath,
   requestClientShowInFolder,
+  requestClientOpenTerminal,
   requestClientOpenFileDialog,
 } from '@craft-agent/server-core/transport'
 
@@ -25,6 +26,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.shell.OPEN_URL,
   RPC_CHANNELS.shell.OPEN_FILE,
   RPC_CHANNELS.shell.SHOW_IN_FOLDER,
+  RPC_CHANNELS.shell.OPEN_TERMINAL,
   RPC_CHANNELS.releaseNotes.GET,
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
   RPC_CHANNELS.git.GET_BRANCH,
@@ -356,6 +358,20 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
       const message = error instanceof Error ? error.message : 'Unknown error'
       deps.platform.logger.error('showInFolder error:', message)
       throw new Error(`Failed to show in folder: ${message}`)
+    }
+  })
+
+  server.handle(RPC_CHANNELS.shell.OPEN_TERMINAL, async (ctx, path: string) => {
+    assertLocalWorkspace(ctx, 'Open terminal')
+    try {
+      const expanded = path.startsWith('~') ? path.replace(/^~/, homedir()) : path
+      const absolutePath = resolve(expanded)
+      const safePath = await validateFilePath(absolutePath, getWorkspaceAllowedDirs(ctx.workspaceId))
+      await requestClientOpenTerminal(server, ctx.clientId, safePath)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      deps.platform.logger.error('openTerminal error:', message)
+      throw new Error(`Failed to open terminal: ${message}`)
     }
   })
 }

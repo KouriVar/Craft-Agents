@@ -271,6 +271,14 @@ export const mockElectronAPI = {
     console.log('[Playground] showInFolder called:', path)
     alert(`Would reveal in file manager:\n${path}`)
   },
+  openTerminal: async (path: string) => {
+    console.log('[Playground] openTerminal called:', path)
+    alert(`Would open terminal at:\n${path}`)
+  },
+  openTerminalPane: async (cwd: string) => {
+    console.log('[Playground] openTerminalPane called:', cwd)
+    alert(`Would open terminal pane at:\n${cwd}`)
+  },
 
   // NavigationProvider subscribes to deep-link IPC on mount; in the playground
   // there is no main process firing these events, so the listener is a no-op.
@@ -309,6 +317,12 @@ export const mockElectronAPI = {
   getSpellCheck: async () => true,
   getOpenConversationScroll: async () => 'bottom',
   setOpenConversationScroll: async () => {},
+  getRightSidebarMode: async () => 'manual',
+  setRightSidebarMode: async () => {},
+  getRightSidebarFollowSession: async () => false,
+  setRightSidebarFollowSession: async () => {},
+  getBrowserOpenMode: async () => 'sidebar',
+  setBrowserOpenMode: async () => {},
 
   // Pi provider discovery mocks
   getPiApiKeyProviders: async () => [
