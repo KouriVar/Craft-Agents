@@ -1,7 +1,10 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Globe, Loader2, Plus, X } from 'lucide-react'
+import { Globe, Loader2, Pin, Plus, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { BrowserToolbar } from '@/components/browser/BrowserToolbar'
 import type { BrowserInstanceInfo } from '../../../shared/types'
+import { cn } from '@/lib/utils'
+import { PANEL_GAP, RADIUS_INNER } from './panel-constants'
 
 type EmbeddedWebview = HTMLElement & {
   loadURL(url: string): Promise<void>
@@ -26,15 +29,19 @@ interface EmbeddedBrowserTab {
 
 interface RightSidebarBrowserPanelProps {
   className?: string
+  initialUrl?: string
+  initialTitle?: string
+  showTabStrip?: boolean
+  onTitleChange?: (title: string) => void
 }
 
 const NEW_TAB_URL = 'about:blank'
 
-function createTab(): EmbeddedBrowserTab {
+function createTab(url = NEW_TAB_URL, title?: string): EmbeddedBrowserTab {
   return {
     id: crypto.randomUUID(),
-    url: NEW_TAB_URL,
-    title: 'New Tab',
+    url,
+    title: title ?? getHostLabel(url),
     isLoading: false,
     canGoBack: false,
     canGoForward: false,
@@ -49,6 +56,19 @@ function normalizeUrl(input: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`
 }
 
+function loadWebviewUrl(webview: EmbeddedWebview | undefined, url: string): void {
+  if (!webview) return
+  try {
+    if (typeof webview.loadURL === 'function') {
+      void webview.loadURL(url)
+      return
+    }
+  } catch (error) {
+    console.warn('[RightSidebarBrowserPanel] webview loadURL failed:', error)
+  }
+  webview.setAttribute('src', url)
+}
+
 function getHostLabel(url: string): string {
   if (!url || url === NEW_TAB_URL) return 'New Tab'
   try {
@@ -56,6 +76,16 @@ function getHostLabel(url: string): string {
   } catch {
     return url
   }
+}
+
+function isBlankUrl(url: string): boolean {
+  return !url || url === NEW_TAB_URL
+}
+
+function getTabLabel(tab: EmbeddedBrowserTab, newTabLabel: string): string {
+  if (isBlankUrl(tab.url)) return newTabLabel
+  if (!tab.title || tab.title === NEW_TAB_URL) return getHostLabel(tab.url)
+  return tab.title
 }
 
 function toBrowserInfo(tab: EmbeddedBrowserTab | null): BrowserInstanceInfo | null {
@@ -199,10 +229,29 @@ function EmbeddedBrowserView({ tab, active, register, updateTab }: EmbeddedBrows
   )
 }
 
-export function RightSidebarBrowserPanel({ className = '' }: RightSidebarBrowserPanelProps) {
-  const [tabs, setTabs] = useState<EmbeddedBrowserTab[]>(() => [createTab()])
+export function RightSidebarBrowserPanel({
+  className = '',
+  initialUrl = NEW_TAB_URL,
+  initialTitle,
+  showTabStrip = true,
+  onTitleChange,
+}: RightSidebarBrowserPanelProps) {
+  const { t } = useTranslation()
+  const [tabs, setTabs] = useState<EmbeddedBrowserTab[]>(() => [createTab(initialUrl, initialTitle)])
   const [activeTabId, setActiveTabId] = useState(() => tabs[0]?.id ?? '')
+  const [toolbarPinned, setToolbarPinned] = useState(false)
+  const [toolbarRevealed, setToolbarRevealed] = useState(false)
+  const [toolbarFocused, setToolbarFocused] = useState(false)
   const webviewsRef = useRef(new Map<string, EmbeddedWebview>())
+  const initialUrlRef = useRef(initialUrl)
+
+  useEffect(() => {
+    if (initialUrlRef.current === initialUrl) return
+    initialUrlRef.current = initialUrl
+    const tab = createTab(initialUrl, initialTitle)
+    setTabs((current) => [...current, tab])
+    setActiveTabId(tab.id)
+  }, [initialTitle, initialUrl])
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
@@ -246,6 +295,7 @@ export function RightSidebarBrowserPanel({ className = '' }: RightSidebarBrowser
     if (!activeTab) return
     const url = normalizeUrl(input)
     updateTab(activeTab.id, { url, title: getHostLabel(url), isLoading: url !== NEW_TAB_URL })
+    loadWebviewUrl(webviewsRef.current.get(activeTab.id), url)
   }, [activeTab, updateTab])
 
   const goBack = useCallback(() => {
@@ -268,85 +318,146 @@ export function RightSidebarBrowserPanel({ className = '' }: RightSidebarBrowser
     webviewsRef.current.get(activeTab.id)?.stop()
   }, [activeTab])
 
+  const newTabLabel = t('browser.newTab', { defaultValue: '新标签页' })
+  const toolbarVisible = toolbarPinned || toolbarRevealed || toolbarFocused
+
+  useEffect(() => {
+    if (!activeTab || !onTitleChange) return
+    onTitleChange(getTabLabel(activeTab, newTabLabel))
+  }, [activeTab, newTabLabel, onTitleChange])
+
   return (
     <div className={`flex h-full min-h-0 flex-col ${className}`}>
-      <div className="shrink-0 border-b border-border/50">
-        <BrowserToolbar
-          instanceInfo={activeInfo}
-          onNavigate={navigateActive}
-          onGoBack={goBack}
-          onGoForward={goForward}
-          onReload={reload}
-          onStop={stop}
-          compact
-        />
-      </div>
-
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 border-b border-border/50">
-        <div className="min-w-0 text-xs font-medium text-muted-foreground">
-          Browser
-        </div>
-        <button
-          type="button"
-          onClick={createBrowser}
-          className="h-7 w-7 shrink-0 rounded-[4px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          aria-label="New browser tab"
-          title="New browser tab"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="shrink-0 overflow-x-auto border-b border-border/50 px-2 py-2">
-        <div className="flex min-w-0 gap-1">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTab?.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTabId(tab.id)}
-                className={[
-                  'group flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left text-xs transition-colors',
-                  isActive ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
-                ].join(' ')}
-                title={tab.url}
-              >
-                {tab.isLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                ) : (
-                  <Globe className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span className="min-w-0 flex-1 truncate">{tab.title || getHostLabel(tab.url)}</span>
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    closeBrowser(tab.id)
-                  }}
-                  className="hidden h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive group-hover:flex"
-                  aria-label="Close browser tab"
-                  title="Close browser tab"
+      {showTabStrip && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-2">
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTab?.id
+              const label = getTabLabel(tab, newTabLabel)
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTabId(tab.id)}
+                  className={cn(
+                    'group flex h-9 min-w-[150px] max-w-[250px] flex-1 items-center gap-2 rounded-[8px] px-3 text-left text-sm transition-colors',
+                    isActive
+                      ? 'bg-foreground/[0.08] text-foreground shadow-minimal'
+                      : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
+                  )}
+                  title={label}
                 >
-                  <X className="h-3.5 w-3.5" />
-                </span>
-              </button>
-            )
-          })}
+                  {tab.isLoading ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  ) : (
+                    <Globe className="h-4 w-4 shrink-0" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      closeBrowser(tab.id)
+                    }}
+                    className={cn(
+                      'hidden h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive group-hover:flex',
+                      isActive && tabs.length > 1 ? 'sm:flex sm:opacity-60 sm:hover:opacity-100' : '',
+                    )}
+                    aria-label="Close tab"
+                    title="Close tab"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={createBrowser}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label={newTabLabel}
+            title={newTabLabel}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
-      </div>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-hidden bg-background">
-        {tabs.map((tab) => (
-          <EmbeddedBrowserView
-            key={tab.id}
-            tab={tab}
-            active={tab.id === activeTab?.id}
-            register={registerWebview}
-            updateTab={updateTab}
-          />
-        ))}
+      <div className="min-h-0 flex-1" style={{ padding: PANEL_GAP }}>
+        <div
+          className="relative flex h-full min-h-0 flex-col overflow-hidden bg-foreground-2 shadow-minimal"
+          style={{ borderRadius: RADIUS_INNER }}
+        >
+          {!toolbarPinned && (
+            <div
+              className="absolute inset-x-0 top-0 z-20 h-4"
+              onMouseEnter={() => setToolbarRevealed(true)}
+            />
+          )}
+          <div
+            className={cn(
+              toolbarPinned
+                ? 'shrink-0 border-b border-border/50 px-2 py-2'
+                : 'absolute left-2 right-2 top-2 z-30 rounded-[10px] border border-border/60 bg-background/95 px-2 py-2 shadow-modal-small backdrop-blur-xl transition-[opacity,transform] duration-150 ease-out',
+              !toolbarPinned && (toolbarVisible
+                ? 'translate-y-0 opacity-100'
+                : 'pointer-events-none -translate-y-[calc(100%+16px)] opacity-0'),
+            )}
+            onMouseEnter={() => setToolbarRevealed(true)}
+            onMouseLeave={() => setToolbarRevealed(false)}
+            onFocusCapture={() => setToolbarFocused(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setToolbarFocused(false)
+              }
+            }}
+          >
+            <BrowserToolbar
+              instanceInfo={activeInfo}
+              onNavigate={navigateActive}
+              onGoBack={goBack}
+              onGoForward={goForward}
+              onReload={reload}
+              onStop={stop}
+              compact
+              trailingContent={(
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolbarPinned((current) => !current)
+                    setToolbarRevealed(false)
+                  }}
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                    toolbarPinned && 'bg-foreground/[0.08] text-foreground',
+                  )}
+                  aria-label={toolbarPinned
+                    ? t('rightSidebar.unpinToolbar', { defaultValue: '取消固定工具栏' })
+                    : t('rightSidebar.pinToolbar', { defaultValue: '固定工具栏' })}
+                  title={toolbarPinned
+                    ? t('rightSidebar.unpinToolbar', { defaultValue: '取消固定工具栏' })
+                    : t('rightSidebar.pinToolbar', { defaultValue: '固定工具栏' })}
+                >
+                  <Pin className={cn('h-4 w-4', !toolbarPinned && 'rotate-45')} />
+                </button>
+              )}
+            />
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-hidden bg-background">
+            {tabs.map((tab) => (
+              <EmbeddedBrowserView
+                key={tab.id}
+                tab={tab}
+                active={tab.id === activeTab?.id}
+                register={registerWebview}
+                updateTab={updateTab}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

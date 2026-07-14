@@ -16,6 +16,7 @@ interface BrowserToolbarProps {
   onReload: () => void
   onStop: () => void
   compact?: boolean
+  trailingContent?: React.ReactNode
 }
 
 export function BrowserToolbar({
@@ -26,6 +27,7 @@ export function BrowserToolbar({
   onReload,
   onStop,
   compact = false,
+  trailingContent,
 }: BrowserToolbarProps) {
   return (
     <BrowserControls
@@ -40,9 +42,11 @@ export function BrowserToolbar({
       onStop={onStop}
       compact={compact}
       showProgressBar={!compact}
+      borderlessAddressBar={compact}
+      trailingContent={trailingContent}
       className={
         compact
-          ? 'h-auto px-1.5 py-0.5 rounded-[8px] border border-foreground/10 bg-background/70 min-w-0'
+          ? 'h-auto px-0 py-0 rounded-none bg-transparent shadow-none min-w-0'
           : 'h-auto px-2 py-1.5 border-b border-border bg-background/80'
       }
     />

@@ -24,9 +24,9 @@ import { getFileManagerName } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import type { Message, Session, SessionFile } from '../../../shared/types'
 
-type ResourceKind = 'context' | 'output' | 'attachment' | 'folder' | 'source' | 'skill' | 'url'
+export type ResourceKind = 'context' | 'output' | 'attachment' | 'folder' | 'source' | 'skill' | 'url'
 
-interface ResourceItem {
+export interface ResourceItem {
   id: string
   kind: ResourceKind
   name: string
@@ -201,7 +201,7 @@ function collectUrls(session: Session): ResourceItem[] {
   return items
 }
 
-function ResourceIcon({ item }: { item: ResourceItem }) {
+export function ResourceIcon({ item }: { item: ResourceItem }) {
   const { enabledSources, skills, activeWorkspaceId } = useAppShellContext()
 
   if (item.kind === 'context') return <Info className="h-4 w-4 text-muted-foreground" />
@@ -220,7 +220,7 @@ function ResourceIcon({ item }: { item: ResourceItem }) {
   return fileIconForName(item.name)
 }
 
-function ResourceRow({ item, onOpen }: { item: ResourceItem; onOpen: (item: ResourceItem) => void }) {
+export function ResourceRow({ item, onOpen }: { item: ResourceItem; onOpen: (item: ResourceItem) => void }) {
   const clickable = !!item.path || !!item.url
 
   return (
@@ -257,6 +257,9 @@ function ResourceSection({
   actionLabel,
   onAction,
   actionIcon,
+  visibleCount = 4,
+  viewAllLabel,
+  onViewAll,
 }: {
   title: string
   empty: string
@@ -265,11 +268,21 @@ function ResourceSection({
   actionLabel?: string
   onAction?: () => void
   actionIcon?: React.ReactNode
+  visibleCount?: number
+  viewAllLabel?: string
+  onViewAll?: () => void
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = React.useState(false)
-  const visibleItems = expanded ? items : items.slice(0, 4)
+  const visibleItems = expanded && !onViewAll ? items : items.slice(0, visibleCount)
   const hiddenCount = Math.max(0, items.length - visibleItems.length)
+  const handleViewMore = React.useCallback(() => {
+    if (onViewAll) {
+      onViewAll()
+      return
+    }
+    setExpanded(true)
+  }, [onViewAll])
 
   return (
     <section className="min-w-0">
@@ -299,11 +312,11 @@ function ResourceSection({
           {hiddenCount > 0 && (
             <button
               type="button"
-              onClick={() => setExpanded(true)}
+              onClick={handleViewMore}
               className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-sm text-muted-foreground hover:bg-sidebar-hover hover:text-foreground"
             >
               <ListTree className="h-4 w-4" />
-              <span>{t('resources.viewMore', { count: hiddenCount })}</span>
+              <span>{viewAllLabel ?? t('resources.viewMore', { count: hiddenCount })}</span>
             </button>
           )}
         </div>
@@ -499,6 +512,13 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
     onOpenChange(false)
   }, [onOpenChange, session.id])
 
+  const handleViewAllSources = React.useCallback(() => {
+    window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-sources', {
+      detail: { sessionId: session.id, items: sourceItems },
+    }))
+    onOpenChange(false)
+  }, [onOpenChange, session.id, sourceItems])
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -566,6 +586,9 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
               empty={t('resources.noSources')}
               items={sourceItems}
               onOpen={handleOpen}
+              visibleCount={3}
+              viewAllLabel={t('resources.viewAll')}
+              onViewAll={sourceItems.length > 3 ? handleViewAllSources : undefined}
               actionLabel={t('resources.addSource')}
               onAction={handleAddSource}
             />

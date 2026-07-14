@@ -452,6 +452,7 @@ client.onConnectionStateChanged((state) => {
 
 // Terminal pane — opens an in-app embedded terminal window
 ;(api as any).openTerminalPane = (cwd: string) => ipcRenderer.invoke('terminal:open', cwd)
+;(api as any).startCowartCanvas = (projectDir: string) => ipcRenderer.invoke('__cowart:start-canvas', projectDir)
 ;(api as any).createEmbeddedTerminal = (cwd: string) => ipcRenderer.invoke('terminal:embedded:create', cwd)
 ;(api as any).writeEmbeddedTerminal = (id: string, data: string) => ipcRenderer.send('terminal:embedded:input', { id, data })
 ;(api as any).resizeEmbeddedTerminal = (id: string, cols: number, rows: number) => ipcRenderer.send('terminal:embedded:resize', { id, cols, rows })

@@ -47,7 +47,11 @@ interface TopBarProps {
   canGoBack: boolean
   canGoForward: boolean
   onToggleSidebar: () => void
+  onToggleSessionList: () => void
   onToggleFocusMode: () => void
+  isSidebarVisible?: boolean
+  isSessionListVisible?: boolean
+  isFocusModeActive?: boolean
   /** When true, hides controls that don't apply in compact/mobile layout */
   isCompact?: boolean
 }
@@ -70,7 +74,11 @@ export function TopBar({
   canGoBack,
   canGoForward,
   onToggleSidebar,
+  onToggleSessionList,
   onToggleFocusMode,
+  isSidebarVisible = true,
+  isSessionListVisible = true,
+  isFocusModeActive = false,
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
@@ -100,14 +108,42 @@ export function TopBar({
       >
         <div className="flex items-center gap-0.5">
         {!isCompact && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <TopBarButton onClick={onToggleSidebar} aria-label={t("menu.toggleSidebar")}>
-              <PanelLeftRounded className="h-[18px] w-[18px] text-foreground/70" />
-            </TopBarButton>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t("menu.toggleSidebar")}</TooltipContent>
-        </Tooltip>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <TopBarButton aria-label={t("menu.layoutCollapse")}>
+                  <PanelLeftRounded className="h-[18px] w-[18px] text-foreground/70" />
+                </TopBarButton>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t("menu.layoutCollapse")}</TooltipContent>
+          </Tooltip>
+          <StyledDropdownMenuContent align="start" minWidth="min-w-[190px]">
+            <StyledDropdownMenuItem onClick={onToggleSidebar}>
+              <PanelLeftRounded className="h-4 w-4" />
+              <span className="flex-1">{t("menu.collapseSidebar")}</span>
+              {!isFocusModeActive && !isSidebarVisible && (
+                <Icons.Check className="h-4 w-4 text-muted-foreground" />
+              )}
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem onClick={onToggleSessionList}>
+              <Icons.List className="h-4 w-4" />
+              <span className="flex-1">{t("menu.collapseSessionList")}</span>
+              {!isFocusModeActive && !isSessionListVisible && (
+                <Icons.Check className="h-4 w-4 text-muted-foreground" />
+              )}
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuSeparator />
+            <StyledDropdownMenuItem onClick={onToggleFocusMode}>
+              <Icons.PanelLeftClose className="h-4 w-4" />
+              <span className="flex-1">{t("menu.collapseAll")}</span>
+              {isFocusModeActive && (
+                <Icons.Check className="h-4 w-4 text-muted-foreground" />
+              )}
+            </StyledDropdownMenuItem>
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
         )}
 
         <AppMenu

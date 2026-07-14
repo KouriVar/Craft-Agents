@@ -172,8 +172,14 @@ interface AppShellProps {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
+type ResizeTarget = 'sidebar' | 'session-list' | 'right-sidebar'
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 380
+const RIGHT_SIDEBAR_MIN_WIDTH = 220
+const RIGHT_SIDEBAR_MAX_WIDTH = 960
+const RIGHT_SIDEBAR_NARROW_MIN_WIDTH = 180
+const CONTENT_WITH_RIGHT_SIDEBAR_MIN_WIDTH = 240
 
 /** Wraps children in a Tooltip that shows instantly on hover — only rendered when `show` is true. */
 function AltExcludeTooltip({ show, children }: { show: boolean; children: React.ReactNode }) {
@@ -541,12 +547,18 @@ function AppShellContent({
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
   })
+  const [isSessionListVisible, setIsSessionListVisible] = React.useState(() => {
+    return storage.get(storage.KEYS.sessionListVisible, true)
+  })
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarWidth, 220)
   })
   // Session list width in pixels (min 240, max 480)
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
+  })
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.rightSidebarWidth, RIGHT_SIDEBAR_DEFAULT_WIDTH)
   })
 
   // Hides both sidebar and navigator (CMD+. toggle)
@@ -579,14 +591,22 @@ function AppShellContent({
     })
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<ResizeTarget | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
+  const [rightSidebarHandleY, setRightSidebarHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
+  const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
+  const rightSidebarResizeStartRef = React.useRef<{ startX: number; startWidth: number } | null>(null)
+  const rightSidebarWidthRef = React.useRef(rightSidebarWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+
+  React.useEffect(() => {
+    rightSidebarWidthRef.current = rightSidebarWidth
+  }, [rightSidebarWidth])
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
@@ -632,6 +652,37 @@ function AppShellContent({
   // Board view replaces the session-list navigator with the full-width Kanban panel,
   // so the navigator (and its resize handle) collapse to zero width while it's active.
   const isBoardView = isSessionsNavigation(navState) && navState.viewMode === 'board'
+
+  const getRightSidebarBounds = useCallback(() => {
+    const shellAvailableWidth = shellRef.current?.clientWidth ?? shellWidth
+    if (!shellAvailableWidth) {
+      return { min: RIGHT_SIDEBAR_MIN_WIDTH, max: RIGHT_SIDEBAR_MAX_WIDTH }
+    }
+
+    const sidebarVisibleWidth = effectiveSidebarAndNavigatorHidden || !isSidebarVisible
+      ? 0
+      : sidebarWidth + PANEL_GAP
+    const navigatorVisibleWidth = effectiveSidebarAndNavigatorHidden || isBoardView || !isSessionListVisible
+      ? 0
+      : sessionListWidth + PANEL_GAP
+    const chromeWidth = sidebarVisibleWidth + navigatorVisibleWidth + PANEL_EDGE_INSET + PANEL_GAP
+    const contentAreaWidth = Math.max(0, shellAvailableWidth - chromeWidth)
+
+    const min = contentAreaWidth < 760 ? RIGHT_SIDEBAR_NARROW_MIN_WIDTH : RIGHT_SIDEBAR_MIN_WIDTH
+    const maxByContent = Math.max(min, contentAreaWidth - CONTENT_WITH_RIGHT_SIDEBAR_MIN_WIDTH)
+    return {
+      min,
+      max: Math.max(min, Math.min(RIGHT_SIDEBAR_MAX_WIDTH, maxByContent)),
+    }
+  }, [
+    effectiveSidebarAndNavigatorHidden,
+    isBoardView,
+    isSessionListVisible,
+    isSidebarVisible,
+    sessionListWidth,
+    shellWidth,
+    sidebarWidth,
+  ])
 
   // Derive source filter from navigation state (only when in sources navigator)
   const sourceFilter: SourceFilter | null = isSourcesNavigation(navState) ? navState.filter ?? null : null
@@ -1209,12 +1260,14 @@ function AppShellContent({
   })
 
   const handleToggleSidebar = useCallback(() => {
-    if (isSidebarAndNavigatorHidden) {
-      setIsSidebarAndNavigatorHidden(false)
-      return
-    }
+    setIsSidebarAndNavigatorHidden(false)
     setIsSidebarVisible(v => !v)
-  }, [isSidebarAndNavigatorHidden])
+  }, [])
+
+  const handleToggleSessionList = useCallback(() => {
+    setIsSidebarAndNavigatorHidden(false)
+    setIsSessionListVisible(v => !v)
+  }, [])
 
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
@@ -1333,6 +1386,9 @@ function AppShellContent({
   React.useEffect(() => {
     if (!isResizing) return
 
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizing === 'sidebar') {
         const newWidth = Math.min(Math.max(e.clientX, 180), 320)
@@ -1349,6 +1405,19 @@ function AppShellContent({
           const rect = sessionListHandleRef.current.getBoundingClientRect()
           setSessionListHandleY(e.clientY - rect.top)
         }
+      } else if (isResizing === 'right-sidebar' && rightSidebarResizeStartRef.current) {
+        const delta = rightSidebarResizeStartRef.current.startX - e.clientX
+        const bounds = getRightSidebarBounds()
+        const newWidth = Math.max(
+          bounds.min,
+          Math.min(bounds.max, rightSidebarResizeStartRef.current.startWidth + delta),
+        )
+        rightSidebarWidthRef.current = newWidth
+        setRightSidebarWidth(newWidth)
+        if (rightSidebarHandleRef.current) {
+          const rect = rightSidebarHandleRef.current.getBoundingClientRect()
+          setRightSidebarHandleY(e.clientY - rect.top)
+        }
       }
     }
 
@@ -1359,23 +1428,47 @@ function AppShellContent({
       } else if (isResizing === 'session-list') {
         storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
         setSessionListHandleY(null)
+      } else if (isResizing === 'right-sidebar') {
+        storage.set(storage.KEYS.rightSidebarWidth, rightSidebarWidthRef.current)
+        rightSidebarResizeStartRef.current = null
+        setRightSidebarHandleY(null)
       }
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
       setIsResizing(null)
     }
 
     document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('mouseup', handleMouseUp, true)
+    document.addEventListener('pointerup', handleMouseUp, true)
+    document.addEventListener('pointercancel', handleMouseUp, true)
+    window.addEventListener('blur', handleMouseUp)
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('mouseup', handleMouseUp, true)
+      document.removeEventListener('pointerup', handleMouseUp, true)
+      document.removeEventListener('pointercancel', handleMouseUp, true)
+      window.removeEventListener('blur', handleMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
     }
   }, [
+    getRightSidebarBounds,
     isResizing,
     sidebarWidth,
     sessionListWidth,
     isSidebarVisible,
   ])
+
+  React.useEffect(() => {
+    const bounds = getRightSidebarBounds()
+    setRightSidebarWidth((width) => {
+      const next = Math.max(bounds.min, Math.min(bounds.max, width))
+      rightSidebarWidthRef.current = next
+      return next
+    })
+  }, [getRightSidebarBounds])
 
   // Spring transition config - shared between sidebar and header
   // Critical damping (no bounce): damping = 2 * sqrt(stiffness * mass)
@@ -1727,6 +1820,11 @@ function AppShellContent({
   React.useEffect(() => {
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
+
+  // Persist session list visibility to localStorage
+  React.useEffect(() => {
+    storage.set(storage.KEYS.sessionListVisible, isSessionListVisible)
+  }, [isSessionListVisible])
 
   // Persist focus mode state to localStorage
   React.useEffect(() => {
@@ -2353,7 +2451,11 @@ function AppShellContent({
           canGoBack={canGoBack}
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
+          onToggleSessionList={handleToggleSessionList}
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
+          isSidebarVisible={isSidebarVisible}
+          isSessionListVisible={isSessionListVisible}
+          isFocusModeActive={effectiveSidebarAndNavigatorHidden}
           isCompact={isAutoCompact}
         />
 
@@ -3567,9 +3669,25 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || isBoardView ? 0 : sessionListWidth)}
+          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || isBoardView || !isSessionListVisible ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={!!navState.rightSidebar}
+          rightSidebarWidth={rightSidebarWidth}
+          rightSidebarHandleY={rightSidebarHandleY}
+          rightSidebarHandleRef={rightSidebarHandleRef}
+          onRightSidebarResizeStart={(e) => {
+            e.preventDefault()
+            rightSidebarResizeStartRef.current = { startX: e.clientX, startWidth: rightSidebarWidth }
+            setIsResizing('right-sidebar')
+          }}
+          onRightSidebarHandleMove={(e) => {
+            if (rightSidebarHandleRef.current) {
+              const rect = rightSidebarHandleRef.current.getBoundingClientRect()
+              setRightSidebarHandleY(e.clientY - rect.top)
+            }
+          }}
+          onRightSidebarHandleLeave={() => { if (isResizing !== 'right-sidebar') setRightSidebarHandleY(null) }}
+          rightSidebarHandleStyle={getResizeGradientStyle(rightSidebarHandleY, rightSidebarHandleRef.current?.clientHeight ?? null)}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
         />
@@ -3607,7 +3725,7 @@ function AppShellContent({
         </div>
         )}
 
-        {!effectiveSidebarAndNavigatorHidden && !isBoardView && (
+        {!effectiveSidebarAndNavigatorHidden && !isBoardView && isSessionListVisible && (
         <div
           ref={sessionListHandleRef}
           onMouseDown={(e) => { e.preventDefault(); setIsResizing('session-list') }}

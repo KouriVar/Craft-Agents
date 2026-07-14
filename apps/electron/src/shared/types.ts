@@ -578,6 +578,7 @@ export interface ElectronAPI {
   setRightSidebarFollowSession(enabled: boolean): Promise<void>
   getBrowserOpenMode(): Promise<'sidebar' | 'window'>
   setBrowserOpenMode(value: 'sidebar' | 'window'): Promise<void>
+  startCowartCanvas(projectDir: string): Promise<{ ok: true; url: string } | { ok: false; error: string }>
 
   // Power settings
   getKeepAwakeWhileRunning(): Promise<boolean>

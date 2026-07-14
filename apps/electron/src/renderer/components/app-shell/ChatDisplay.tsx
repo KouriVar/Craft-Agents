@@ -9,7 +9,9 @@ import {
   ChevronUp,
   CircleAlert,
   ExternalLink,
+  FileText,
   Info,
+  Plug,
   X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
@@ -133,6 +135,29 @@ interface TurnLocatorItem {
   key: string
   title: string
   body: string
+  files?: string[]
+  sources?: string[]
+}
+
+function uniqueCompact(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value))))
+}
+
+function getDisplayFileName(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  return normalized.split('/').filter(Boolean).pop() || normalized || 'unknown'
+}
+
+function getSourceRefsFromText(content?: string): string[] {
+  if (!content) return []
+  return uniqueCompact(Array.from(content.matchAll(/\[source:([^\]]+)\]/g), match => match[1]))
+}
+
+function getSourceRefsFromActivities(activities: ActivityItem[]): string[] {
+  return uniqueCompact(activities.map(activity => {
+    const match = activity.toolName?.match(/^mcp__([^_]+)__/)
+    return match?.[1]
+  }))
 }
 
 function sanitizeLocatorText(content?: string): string {
@@ -184,8 +209,10 @@ function getTurnLocatorItem(turn: Turn): TurnLocatorItem | null {
     const primaryActivity = turn.activities.find(activity => activity.displayName || activity.toolName)
     const title = truncateLocatorText(turn.intent || primaryActivity?.displayName || primaryActivity?.toolName || 'Agent', 48)
     const body = truncateLocatorText(turn.response?.text || turn.activities.map(activity => activity.content || activity.intent || activity.error || activity.toolName).filter(Boolean).join(' ') || '', 170)
+    const files = uniqueCompact(collectFileChangesFromActivities(turn.activities).map(change => change.filePath))
+    const sources = getSourceRefsFromActivities(turn.activities)
     if (!body && title === 'Agent') return null
-    return { key, title, body }
+    return { key, title, body, files, sources }
   }
 
   const message = turn.message
@@ -195,6 +222,7 @@ function getTurnLocatorItem(turn: Turn): TurnLocatorItem | null {
     key,
     title: truncateLocatorText(getMessageLocatorTitle(message), 48),
     body,
+    sources: getSourceRefsFromText(message.content),
   }
 }
 
@@ -202,28 +230,69 @@ function ChatScrollLocator({
   items,
   activeKey,
   onSelect,
+  placement = 'side',
 }: {
   items: TurnLocatorItem[]
   activeKey: string | null
   onSelect: (key: string) => void
+  placement?: 'side' | 'bottom'
 }) {
   const [hoveredKey, setHoveredKey] = React.useState<string | null>(null)
   const previewKey = hoveredKey || activeKey || items[0]?.key
   const preview = items.find(item => item.key === previewKey) ?? items[0]
+  const isBottom = placement === 'bottom'
 
   if (items.length < 2 || !preview) return null
 
   return (
     <div
-      className="pointer-events-none absolute left-10 top-1/2 z-20 hidden -translate-y-1/2 xl:flex items-center gap-4"
+      className={cn(
+        "pointer-events-none z-20 hidden xl:flex",
+        isBottom
+          ? "relative items-center"
+          : "absolute left-10 top-1/2 -translate-y-1/2 items-center gap-4"
+      )}
     >
       <div
-        className="pointer-events-auto flex w-8 flex-col items-center gap-[7px] py-2"
+        className={cn(
+          "pointer-events-auto flex items-center gap-[8px]",
+          isBottom ? "h-[30px] w-[360px] max-w-[40vw] flex-row-reverse justify-start px-2" : "w-7 flex-col py-2"
+        )}
         onMouseLeave={() => setHoveredKey(null)}
       >
-        {items.map((item) => {
+        {items.map((item, index) => {
           const isActive = item.key === activeKey
           const isHovered = item.key === hoveredKey
+          const focusKey = hoveredKey || (isBottom ? null : activeKey)
+          const focusIndex = Math.max(
+            0,
+            items.findIndex(({ key }) => key === focusKey),
+          )
+          const distance = focusKey ? Math.abs(index - focusIndex) : Number.POSITIVE_INFINITY
+          const sizeClass = isBottom
+            ? !focusKey
+              ? "h-3.5"
+              : distance === 0
+                ? "h-5"
+                : distance === 1
+                  ? "h-4"
+                  : distance === 2
+                    ? "h-3.5"
+                    : "h-3"
+            : distance === 0
+              ? "w-5"
+              : distance === 1
+                ? "w-4"
+                : distance === 2
+                  ? "w-3"
+                  : "w-2.5"
+          const toneClass = distance === 0
+            ? (isActive ? "bg-foreground/70 opacity-100" : "bg-foreground/48 opacity-100")
+            : distance === 1
+              ? "bg-foreground/34 opacity-95"
+              : distance === 2
+                ? "bg-foreground/25 opacity-90"
+                : "bg-foreground/18 opacity-75"
           return (
             <button
               key={item.key}
@@ -233,10 +302,11 @@ function ChatScrollLocator({
               onFocus={() => setHoveredKey(item.key)}
               onClick={() => onSelect(item.key)}
               className={cn(
-                "h-[2px] rounded-full transition-[width,background-color,opacity,transform] duration-200 ease-out",
-                isActive || isHovered
-                  ? "w-7 bg-foreground/85 opacity-100"
-                  : "w-3 bg-muted-foreground/30 opacity-80 hover:w-5 hover:bg-muted-foreground/45 hover:opacity-100"
+                "rounded-full transition-[width,height,background-color,opacity] duration-150 ease-out",
+                isBottom ? "w-[2px]" : "h-[2px]",
+                sizeClass,
+                toneClass,
+                isHovered && "bg-foreground/55"
               )}
             />
           )
@@ -245,6 +315,7 @@ function ChatScrollLocator({
       <div
         className={cn(
           "pointer-events-none w-[420px] rounded-[14px] border border-border/70 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-xl transition-opacity",
+          isBottom ? "absolute bottom-full right-0 mb-3" : "",
           hoveredKey ? "opacity-100" : "opacity-0"
         )}
       >
@@ -254,6 +325,43 @@ function ChatScrollLocator({
         <div className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
           {preview.body}
         </div>
+        {(() => {
+          const chips = [
+            ...(preview.files ?? []).map(filePath => ({
+              key: `file:${filePath}`,
+              label: getDisplayFileName(filePath),
+              title: filePath,
+              icon: FileText,
+            })),
+            ...(preview.sources ?? []).map(source => ({
+              key: `source:${source}`,
+              label: source,
+              title: source,
+              icon: Plug,
+            })),
+          ]
+          if (chips.length === 0) return null
+          const visibleChips = chips.slice(0, 3)
+          const hiddenCount = chips.length - visibleChips.length
+
+          return (
+            <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-border/60 pt-2">
+              {visibleChips.map(({ key, label, title, icon: Icon }) => (
+                <div
+                  key={key}
+                  title={title}
+                  className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                  <span className="max-w-[120px] truncate">{label}</span>
+                </div>
+              ))}
+              {hiddenCount > 0 && (
+                <span className="shrink-0 text-sm text-muted-foreground">+{hiddenCount}</span>
+              )}
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
@@ -1792,13 +1900,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
-            {!compactMode && (
-              <ChatScrollLocator
-                items={locatorItems}
-                activeKey={activeLocatorTurnKey}
-                onSelect={handleLocatorSelect}
-              />
-            )}
             {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
             <div
               className="h-full"
@@ -2232,6 +2333,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             sessionStatuses={sessionStatuses}
             currentSessionStatus={session.sessionStatus || 'todo'}
             onSessionStatusChange={onSessionStatusChange}
+            rightAccessory={!compactMode ? (
+              <ChatScrollLocator
+                items={locatorItems}
+                activeKey={activeLocatorTurnKey}
+                onSelect={handleLocatorSelect}
+                placement="bottom"
+              />
+            ) : null}
             inputProps={{
               placeholder,
               disabled: isInputDisabled,

@@ -32,13 +32,57 @@ interface PanelResizeSashProps {
   rightIndex: number
 }
 
+interface ResizeSashFrameProps {
+  onMouseDown: (e: React.MouseEvent) => void
+  onDoubleClick?: (e: React.MouseEvent) => void
+}
+
+export function ResizeSashFrame({
+  onMouseDown,
+  onDoubleClick,
+}: ResizeSashFrameProps) {
+  const { ref, handlers, gradientStyle } = useResizeGradient()
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    handlers.onMouseDown()
+    onMouseDown(e)
+  }, [handlers, onMouseDown])
+
+  return (
+    <div
+      ref={ref}
+      className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"
+      style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handlers.onMouseMove}
+      onMouseLeave={handlers.onMouseLeave}
+      onDoubleClick={onDoubleClick}
+    >
+      {/* Touch area — wider than visible line for easier grabbing */}
+      <div
+        className="absolute inset-y-0 flex justify-center cursor-col-resize"
+        style={{ left: -PANEL_SASH_HALF_HIT_WIDTH, right: -PANEL_SASH_HALF_HIT_WIDTH }}
+      >
+        <div
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{
+            ...gradientStyle,
+            width: PANEL_SASH_LINE_WIDTH,
+            top: PANEL_STACK_VERTICAL_OVERFLOW,
+            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function PanelResizeSash({
   leftIndex,
   rightIndex,
 }: PanelResizeSashProps) {
   const resizePanels = useSetAtom(resizePanelsAtom)
   const panelStack = useAtomValue(panelStackAtom)
-  const { ref, handlers, gradientStyle } = useResizeGradient()
   const startXRef = useRef(0)
   const startLeftWidthRef = useRef(0)
   const startRightWidthRef = useRef(0)
@@ -46,9 +90,8 @@ export function PanelResizeSash({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    handlers.onMouseDown()
 
-    const sashEl = ref.current
+    const sashEl = e.currentTarget
     if (!sashEl) return
 
     // Measure sibling panel widths from the DOM
@@ -103,7 +146,7 @@ export function PanelResizeSash({
     document.body.style.cursor = 'col-resize'
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-  }, [leftIndex, rightIndex, panelStack, resizePanels, handlers, ref])
+  }, [leftIndex, rightIndex, panelStack, resizePanels])
 
   const handleDoubleClick = useCallback(() => {
     // Reset the two adjacent panels to equal share of their combined proportion
@@ -121,30 +164,9 @@ export function PanelResizeSash({
   }, [leftIndex, rightIndex, panelStack, resizePanels])
 
   return (
-    <div
-      ref={ref}
-      className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"
-      style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
+    <ResizeSashFrame
       onMouseDown={handleMouseDown}
-      onMouseMove={handlers.onMouseMove}
-      onMouseLeave={handlers.onMouseLeave}
       onDoubleClick={handleDoubleClick}
-    >
-      {/* Touch area — wider than visible line for easier grabbing */}
-      <div
-        className="absolute inset-y-0 flex justify-center cursor-col-resize"
-        style={{ left: -PANEL_SASH_HALF_HIT_WIDTH, right: -PANEL_SASH_HALF_HIT_WIDTH }}
-      >
-        <div
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{
-            ...gradientStyle,
-            width: PANEL_SASH_LINE_WIDTH,
-            top: PANEL_STACK_VERTICAL_OVERFLOW,
-            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-          }}
-        />
-      </div>
-    </div>
+    />
   )
 }

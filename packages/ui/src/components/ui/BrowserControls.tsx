@@ -69,6 +69,8 @@ export interface BrowserControlsProps {
   showProgressBar?: boolean
   /** Additional CSS classes on the URL bar group (reload + form) */
   urlBarClassName?: string
+  /** Render the URL area without default chrome until focused */
+  borderlessAddressBar?: boolean
   /**
    * Minimum left clearance in px. When set, enables window-center mode:
    * back/forward are absolutely positioned and the reload + URL bar
@@ -144,6 +146,16 @@ function colorLuminance(color: string): number | null {
 /** Half of the default URL bar max-width (600px), used for CSS max() centering calc */
 const HALF_MAX_WIDTH = 300
 
+function formatCompactUrlLabel(url: string): string {
+  if (!url || url === 'about:blank') return ''
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname.replace(/^www\./, '') || url
+  } catch {
+    return url
+  }
+}
+
 export function BrowserControls({
   url: controlledUrl,
   loading = false,
@@ -160,6 +172,7 @@ export function BrowserControls({
   trailingContent,
   showProgressBar = true,
   urlBarClassName,
+  borderlessAddressBar = false,
   leftClearance,
   themeColor,
   className,
@@ -222,6 +235,8 @@ export function BrowserControls({
   const themeLum = safeThemeColor ? colorLuminance(safeThemeColor) : null
   const isDarkBg = themeLum != null && themeLum < 0.4
   const useWindowCenter = leftClearance != null
+  const displayUrl = borderlessAddressBar && !isFocused ? formatCompactUrlLabel(localUrl) : localUrl
+  const showAddressIcon = !borderlessAddressBar || isFocused
 
   /* Shared: reload / stop button */
   const reloadButton = (
@@ -244,18 +259,23 @@ export function BrowserControls({
         <input
           ref={inputRef}
           type="text"
-          value={localUrl}
+          value={displayUrl}
           onChange={handleChange}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           placeholder={t('browser.urlPlaceholder')}
           className={cn(
-            'w-full rounded-[8px] bg-transparent px-3 pl-8 text-[13px] text-foreground/70 outline-none transition-all',
+            'w-full rounded-[8px] bg-transparent px-3 text-[13px] text-foreground/70 outline-none transition-all',
+            showAddressIcon ? 'pl-8' : 'pl-3 text-center',
             compact ? 'h-[28px]' : 'h-[30px]',
-            !safeThemeColor && (isFocused
-              ? 'bg-background border border-transparent shadow-minimal'
-              : 'border border-foreground/5'),
+            !safeThemeColor && (borderlessAddressBar
+              ? (isFocused
+                ? 'border border-border/70 bg-background shadow-minimal'
+                : 'border border-transparent shadow-none')
+              : (isFocused
+                ? 'bg-background border border-transparent shadow-minimal'
+                : 'border border-foreground/5')),
             safeThemeColor && 'border border-transparent',
           )}
           style={safeThemeColor ? {
@@ -268,15 +288,17 @@ export function BrowserControls({
           autoCorrect="off"
           autoCapitalize="off"
         />
-        <span className="absolute inset-y-0 left-3 flex items-center justify-center">
-          {loading ? (
-            <span className="flex items-center justify-center h-3.5 w-3.5" style={safeThemeColor ? { color: isFocused ? 'var(--tb-fg)' : 'var(--tb-fg-muted)' } : undefined}>
-              <Spinner className="text-[11px] text-foreground/40" />
-            </span>
-          ) : (
-            <Globe className="h-3.5 w-3.5 text-foreground/30" style={safeThemeColor ? { color: isFocused ? 'var(--tb-fg)' : 'var(--tb-fg-muted)' } : undefined} />
-          )}
-        </span>
+        {showAddressIcon && (
+          <span className="absolute inset-y-0 left-3 flex items-center justify-center">
+            {loading ? (
+              <span className="flex items-center justify-center h-3.5 w-3.5" style={safeThemeColor ? { color: isFocused ? 'var(--tb-fg)' : 'var(--tb-fg-muted)' } : undefined}>
+                <Spinner className="text-[11px] text-foreground/40" />
+              </span>
+            ) : (
+              <Globe className="h-3.5 w-3.5 text-foreground/30" style={safeThemeColor ? { color: isFocused ? 'var(--tb-fg)' : 'var(--tb-fg-muted)' } : undefined} />
+            )}
+          </span>
+        )}
       </div>
     </form>
   )

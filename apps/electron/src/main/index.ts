@@ -6,6 +6,7 @@ loadShellEnv()
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
+import { spawn, type ChildProcess } from 'child_process'
 import * as Sentry from '@sentry/electron/main'
 
 // Initialize Sentry error tracking as early as possible after app import.
@@ -75,6 +76,53 @@ if (persistedUiLanguage) {
   void i18n.changeLanguage(persistedUiLanguage)
 }
 // Note: deferred startup log lives below where mainLog is available (after log.initialize()).
+
+let cowartCanvasProcess: ChildProcess | null = null
+
+function startCowartCanvas(projectDir: string): { ok: true; url: string } | { ok: false; error: string } {
+  const pluginRoot = join(homedir(), 'plugins', 'cowart')
+  const scriptPath = join(pluginRoot, 'scripts', 'start-canvas.sh')
+  const port = process.env.COWART_PORT || '43217'
+  const url = `http://127.0.0.1:${port}`
+
+  if (cowartCanvasProcess && !cowartCanvasProcess.killed) {
+    return { ok: true, url }
+  }
+
+  if (!existsSync(scriptPath)) {
+    return { ok: false, error: `Cowart launcher not found at ${scriptPath}` }
+  }
+
+  const cwd = projectDir && existsSync(projectDir) ? projectDir : homedir()
+  const processHandle = spawn(scriptPath, [cwd], {
+    cwd: pluginRoot,
+    env: {
+      ...process.env,
+      COWART_PROJECT_DIR: cwd,
+      COWART_CANVAS_DIR: join(cwd, 'canvas'),
+      COWART_PORT: port,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  cowartCanvasProcess = processHandle
+
+  processHandle.stdout?.on('data', (chunk) => {
+    mainLog.info(`[cowart] ${String(chunk).trim()}`)
+  })
+  processHandle.stderr?.on('data', (chunk) => {
+    mainLog.warn(`[cowart] ${String(chunk).trim()}`)
+  })
+  processHandle.on('exit', (code, signal) => {
+    mainLog.info('[cowart] canvas process exited', { code, signal })
+    cowartCanvasProcess = null
+  })
+  processHandle.on('error', (error) => {
+    mainLog.warn('[cowart] failed to start canvas process', { error })
+    cowartCanvasProcess = null
+  })
+
+  return { ok: true, url }
+}
 
 // Set anonymous machine ID for Sentry user tracking (no PII — just a hash).
 // Uses hostname + homedir to produce a stable per-machine identifier.
@@ -553,6 +601,9 @@ app.whenReady().then(async () => {
         || BrowserWindow.getAllWindows()[0]
       const result = await dialog.showOpenDialog(win, spec)
       return { canceled: result.canceled, filePaths: result.filePaths }
+    })
+    ipcMain.handle('__cowart:start-canvas', async (_event, projectDir: string) => {
+      return startCowartCanvas(projectDir)
     })
 
     if (!isClientOnly) {

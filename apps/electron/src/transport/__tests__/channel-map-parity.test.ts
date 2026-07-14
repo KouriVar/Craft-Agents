@@ -28,6 +28,7 @@ type ApiToChannelMapKeys = Exclude<
   | 'onTransferProgress' // direct IPC listener — chunk upload progress
   | 'changeLanguage' // direct IPC to main process — syncs i18n language
   | 'getFilePath' // renderer-local — webUtils.getPathForFile, no IPC round-trip
+  | 'startCowartCanvas' // direct IPC to main process — starts local Cowart canvas fallback
   | 'openTerminalPane' // direct IPC to main process — opens embedded terminal window
   | 'createEmbeddedTerminal' // direct IPC to main process — creates right-sidebar terminal process
   | 'writeEmbeddedTerminal' // direct IPC to main process — terminal stdin
