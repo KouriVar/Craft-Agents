@@ -120,6 +120,29 @@ mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
 rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
 cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
 
+# 5a. Resolve koffi's Windows native package for the Pi agent subprocess.
+# Bun only installs optional dependencies for the host platform, so macOS
+# cross-builds need to fetch the win32 package explicitly.
+KOFFI_BIN_PKG="koffi-win32-${ARCH}"
+KOFFI_BIN_SOURCE="$ROOT_DIR/node_modules/@koromix/${KOFFI_BIN_PKG}"
+if [ ! -d "$KOFFI_BIN_SOURCE" ]; then
+    echo "Cross-arch build: @koromix/${KOFFI_BIN_PKG} not in node_modules — fetching from npm..."
+    KOFFI_VERSION=$(node -p "require('$ROOT_DIR/package.json').dependencies['koffi']" | tr -d '"')
+    KOFFI_TMP=$(mktemp -d)
+    (
+        cd "$KOFFI_TMP"
+        npm pack "@koromix/${KOFFI_BIN_PKG}@${KOFFI_VERSION}" >/dev/null
+        TARBALL=$(ls koromix-*.tgz | head -1)
+        tar -xzf "$TARBALL"
+    )
+    mkdir -p "$KOFFI_BIN_SOURCE"
+    cp -r "$KOFFI_TMP/package/." "$KOFFI_BIN_SOURCE/"
+    rm -rf "$KOFFI_TMP"
+fi
+
+require_path "$KOFFI_BIN_SOURCE/win32_${ARCH}" "koffi native binary package (@koromix/${KOFFI_BIN_PKG})" \
+  "Check your network for the npm cross-fetch."
+
 # 6. Copy network interceptor sources (needed for the Pi subprocess)
 INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/unified-network-interceptor.ts"
 require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/unified-network-interceptor.ts exists."
@@ -136,6 +159,12 @@ done
 echo "Building Electron app..."
 cd "$ROOT_DIR"
 CRAFT_DEV_RUNTIME=1 bun run electron:build
+
+# electron:build runs on the host platform, so a macOS cross-build would copy
+# darwin subprocess resources. Overwrite them with Windows-targeted resources
+# before electron-builder packages the app.
+echo "Rebuilding bundled subprocess resources for win32-${ARCH}..."
+bun run scripts/electron-build-subprocess.ts --platform=win32 --arch=${ARCH}
 
 # 8. Package with electron-builder (win nsis x64)
 #    On non-Windows hosts electron-builder auto-downloads wine (run via Rosetta
