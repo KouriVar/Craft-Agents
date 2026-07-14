@@ -176,16 +176,17 @@ npx electron-builder --win --x64
 
 # 9. Verify the EXE was built
 EXE_NAME="Craft-Agents-x64.exe"
-EXE_PATH="$ELECTRON_DIR/release/$EXE_NAME"
+OUTPUT_DIR="$HOME/Downloads"
+EXE_PATH="$OUTPUT_DIR/$EXE_NAME"
 
 if [ ! -f "$EXE_PATH" ]; then
     echo "ERROR: Expected EXE not found at $EXE_PATH"
-    echo "Contents of release directory:"
-    ls -la "$ELECTRON_DIR/release/"
+    echo "Contents of output directory:"
+    ls -la "$OUTPUT_DIR"
     exit 1
 fi
 
 echo ""
 echo "=== Build Complete ==="
-echo "EXE: $ELECTRON_DIR/release/${EXE_NAME}"
-echo "Size: $(du -h "$ELECTRON_DIR/release/${EXE_NAME}" | cut -f1)"
+echo "EXE: $EXE_PATH"
+echo "Size: $(du -h "$EXE_PATH" | cut -f1)"
