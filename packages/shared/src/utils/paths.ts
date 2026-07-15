@@ -198,7 +198,8 @@ export function setBundledAssetsRoot(dir: string): void {
  * Tries candidates in order:
  * 1. Electron packaged app: <assetsRoot>/resources/<subfolder>
  * 2. Dev: electron app resources folder (when running from apps/electron)
- * 3. Dev: dist output (after build:copy)
+ * 3. Dev: monorepo Electron resources folder
+ * 4. Dev: dist output (after build:copy)
  *
  * Returns the first candidate that exists on disk, or undefined if none found.
  *
@@ -210,6 +211,8 @@ export function getBundledAssetsDir(subfolder: string): string | undefined {
     ...(_assetsRoot ? [join(_assetsRoot, 'resources', subfolder)] : []),
     // Dev: electron app resources folder (when cwd is apps/electron)
     join(process.cwd(), 'resources', subfolder),
+    // Dev/tests: monorepo root
+    join(process.cwd(), 'apps', 'electron', 'resources', subfolder),
     // Dev: dist output (after build:copy)
     join(process.cwd(), 'dist', 'resources', subfolder),
   ];

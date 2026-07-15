@@ -28,8 +28,8 @@ export interface SkillMetadata {
   requiredSources?: string[];
 }
 
-/** Source of a loaded skill */
-export type SkillSource = 'global' | 'workspace' | 'project';
+/** Source of a loaded skill, ordered from lowest to highest override priority. */
+export type SkillSource = 'builtin' | 'global' | 'workspace' | 'project';
 
 /**
  * Plugin name for project-level and global skills.

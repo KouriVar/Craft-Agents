@@ -78,6 +78,7 @@ import { useStaleSessionRecovery } from '@/hooks/useStaleSessionRecovery'
 import { TransportConnectionBanner, shouldShowTransportConnectionBanner } from '@/components/app-shell/TransportConnectionBanner'
 import { getFileManagerName } from '@/lib/platform'
 import { rendererLog } from '@/lib/logger'
+import { widgetDescriptorFromHostCommand } from '@/lib/widget-runtime/host-command'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
 
@@ -908,6 +909,12 @@ export default function App() {
             toast.error(effect.message, { duration: 5000 })
             break
           }
+          case 'open_widget': {
+            window.dispatchEvent(new CustomEvent('craft:widget-open', {
+              detail: { descriptor: effect.descriptor, sessionId },
+            }))
+            break
+          }
         }
       }
 
@@ -1265,6 +1272,18 @@ export default function App() {
 
   const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], externalBadges?: ContentBadge[]) => {
     try {
+      const activeSession = store.get(sessionAtomFamily(sessionId))
+      const sessionWorkspace = workspaces.find((workspace) => workspace.id === activeSession?.workspaceId)
+      const projectDir = activeSession?.workingDirectory || sessionWorkspace?.rootPath
+      const hostCommandDescriptor = projectDir
+        ? widgetDescriptorFromHostCommand(message, { projectDir })
+        : null
+      if (hostCommandDescriptor) {
+        window.dispatchEvent(new CustomEvent('craft:widget-open', {
+          detail: { descriptor: hostCommandDescriptor, sessionId },
+        }))
+      }
+
       // Capture pre-send processing state so we can flag mid-stream sends
       // for the queued badge (#616 follow-up — covers Pi steer path which
       // returns status 'accepted', not 'queued').
@@ -1427,7 +1446,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId])
+  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId, workspaces])
 
   /**
    * Unified handler for all session option changes.

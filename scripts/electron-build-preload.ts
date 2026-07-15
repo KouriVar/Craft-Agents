@@ -1,7 +1,7 @@
 /**
  * Cross-platform preload build script with verification.
  *
- * Builds BOTH preload entry points:
+ * Builds preload entry points:
  * - apps/electron/src/preload/bootstrap.ts -> dist/bootstrap-preload.cjs
  * - apps/electron/src/preload/browser-toolbar.ts -> dist/browser-toolbar-preload.cjs
  */
@@ -23,6 +23,11 @@ const OUTPUTS = [
     entry: "apps/electron/src/preload/browser-toolbar.ts",
     outfile: "apps/electron/dist/browser-toolbar-preload.cjs",
     label: "browser-toolbar-preload.cjs",
+  },
+  {
+    entry: "apps/electron/src/preload/cowart.ts",
+    outfile: "apps/electron/dist/cowart-preload.cjs",
+    label: "cowart-preload.cjs",
   },
 ] as const;
 

@@ -1,5 +1,34 @@
 # 更新日志
 
+## 2026-07-15 对话内可视化与 Cowart Widget 宿主
+
+### 新增
+
+- 新增 Codex-compatible Inline Visualization Runtime，可识别回答中的 `::codex-inline-vis` 指令并直接渲染交互式 HTML 组件。
+- 内置 Visualize 技能及完整资源包，安装应用后即可生成图表、模拟器、数据探索器和交互工具，无需单独复制 Skill。
+- 新增 Widget Host、主题切换、自适应高度、Lucide 图标、Tooltip 和 `window.openai.sendFollowUpMessage` 对话回传能力。
+- 新增 Cowart Widget 打开链：Agent 调用 `render_cowart_canvas_widget` 后，可自动在右侧审阅栏打开绑定当前项目和会话的画布标签页。
+- 新增本地与远程会话统一的 Widget 文件读取接口，支持从当前项目的 `.craft/visualizations/` 安全加载可视化文件。
+
+### 兼容与安全
+
+- Visualize 内部样式和交互运行时直接复用 Codex 原版资源；Craft Agent 仅负责外层容器、主题模式、安全沙箱和确认弹窗。
+- iframe 禁用 Node、同源权限、弹窗、顶层导航和嵌套页面，并通过 CSP 限制脚本、资源和网络访问。
+- Widget 文件读取限制在当前会话允许的工作目录，拒绝路径穿越、越界绝对路径和符号链接逃逸。
+- Cowart 本地服务加入项目目录校验、运行实例 ID、页面 ID 校验、启动就绪检测和可信回传校验。
+
+### 技能与构建
+
+- 新增内置技能来源层级：内置技能优先级最低，可继续由全局、空间或项目中的同名技能覆盖。
+- 技能列表为内置技能显示只读来源状态，并补齐全部界面语言文案。
+- 新增打包资源验证脚本，逐文件校验 `resources/` 与 `dist/resources/`，并检查 Electron、preload、renderer 和终端必需产物。
+
+### 修复
+
+- 修复流式与非流式回答走不同 Markdown 渲染路径时，内联可视化只能在部分消息中显示的问题。
+- 修复完整 HTML 与 HTML 片段在 Widget 容器中重复嵌套文档的问题。
+- 修复可视化内容高度超过旧上限后被截断，以及主题切换后组件未同步更新的问题。
+
 ## 2026-07-14 审阅栏、浏览器与 Cowart 集成优化
 
 ### 新增

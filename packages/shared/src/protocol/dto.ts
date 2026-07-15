@@ -833,3 +833,20 @@ export interface DeepLinkNavigation {
   action?: string
   actionParams?: Record<string, string>
 }
+
+// ---------------------------------------------------------------------------
+// Inline visualization widget types
+// ---------------------------------------------------------------------------
+
+export interface ReadWidgetFileRequest {
+  sessionId: string
+  file: string
+}
+
+export type ReadWidgetFileResult =
+  | { ok: true; html: string; resolvedPath: string }
+  | {
+      ok: false
+      error: string
+      code: 'invalid-request' | 'session-not-found' | 'access-denied' | 'not-found' | 'read-failed'
+    }

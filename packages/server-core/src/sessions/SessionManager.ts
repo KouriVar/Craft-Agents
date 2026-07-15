@@ -609,6 +609,7 @@ async function resolveToolDisplayMeta(
           'source_credential_prompt': 'Enter Credentials',
           'transform_data': 'Transform Data',
           'render_template': 'Render Template',
+          'render_cowart_canvas_widget': 'Cowart Canvas',
           'update_user_preferences': 'Update Preferences',
           'send_developer_feedback': 'Send Feedback',
           'browser_tool': 'Browser',
@@ -7718,7 +7719,10 @@ export class SessionManager implements ISessionManager {
         const toolName = event.toolName || 'unknown'
 
         // Format absolute paths to relative paths for better readability
-        const rawFormattedResult = event.result ? formatPathsToRelative(event.result) : ''
+        const isWidgetDescriptorResult = event.result?.startsWith('__CRAFT_WIDGET_DESCRIPTOR__')
+        const rawFormattedResult = event.result
+          ? (isWidgetDescriptorResult ? event.result : formatPathsToRelative(event.result))
+          : ''
 
         // Safety net: prevent massive tool results from bloating session JSONL (protects all backends)
         const MAX_PERSISTED_RESULT_CHARS = 200_000 // ~50K tokens

@@ -20,6 +20,9 @@ This folder contains assets that are bundled with the Electron app and synced to
 | `release-notes/` | `~/.craft-agent/release-notes/` | Always overwrite on launch |
 | `config-defaults.json` | `~/.craft-agent/config-defaults.json` | Always overwrite on launch |
 
+`skills/` is loaded directly from the app bundle as the read-only, lowest-priority
+skill tier. User global, workspace, and project skills can override it by slug.
+
 ## Why Sync on Every Launch?
 
 - Ensures users always have the latest defaults/docs when the app updates

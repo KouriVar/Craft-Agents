@@ -15,6 +15,7 @@
 import type { SessionState, AgentEvent, ProcessResult } from './types'
 import { handleTextDelta, handleTextComplete } from './handlers/text'
 import { handleToolStart, handleToolResult, handleTaskBackgrounded, handleShellBackgrounded, handleTaskProgress, handleTaskCompleted } from './handlers/tool'
+import { widgetDescriptorFromToolResultText } from '@/lib/widget-runtime/parser'
 import {
   handleComplete,
   handleError,
@@ -83,7 +84,11 @@ export function processEvent(
 
     case 'tool_result': {
       const newState = handleToolResult(state, event)
-      return { state: newState, effects: [] }
+      const descriptor = event.isError ? null : widgetDescriptorFromToolResultText(event.result)
+      return {
+        state: newState,
+        effects: descriptor ? [{ type: 'open_widget', descriptor }] : [],
+      }
     }
 
     case 'task_backgrounded': {

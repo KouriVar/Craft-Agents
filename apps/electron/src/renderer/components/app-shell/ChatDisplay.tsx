@@ -77,6 +77,7 @@ import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 import { handleErrorMessageAction } from "./error-message-actions"
+import { WidgetMessageContent } from "@/components/widgets/WidgetMessageContent"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -735,6 +736,21 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   connectionUnavailable = false,
 }, ref) {
   const { t } = useTranslation()
+
+  const renderWidgetResponseContent = useCallback((content: string) => {
+    if (!session?.id) {
+      return <Markdown mode="minimal" onUrlClick={onOpenUrl} onFileClick={onOpenFile}>{content}</Markdown>
+    }
+    return (
+      <WidgetMessageContent
+        content={content}
+        sessionId={session.id}
+        mode="minimal"
+        onOpenUrl={onOpenUrl}
+        onOpenFile={onOpenFile}
+      />
+    )
+  }, [session?.id, onOpenFile, onOpenUrl])
 
   // Panel focus state (for multi-panel auto-scroll behavior)
   const appShellContext = useAppShellContext()
@@ -2129,6 +2145,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         todos={turn.todos}
                         onOpenFile={onOpenFile}
                         onOpenUrl={onOpenUrl}
+                        renderResponseContent={renderWidgetResponseContent}
                         isLastResponse={isLastResponse}
                         compactMode={compactMode}
                         sendMessageKey={sendMessageKey}
@@ -2686,16 +2703,28 @@ function MessageBubble({
             />
           ) : (
             <CollapsibleMarkdownProvider>
-              <Markdown
-                mode={renderMode}
-                onUrlClick={onOpenUrl}
-                onFileClick={onOpenFile}
-                id={message.id}
-                className="text-sm"
-                collapsible
-              >
-                {message.content}
-              </Markdown>
+              {sessionId ? (
+                <WidgetMessageContent
+                  content={message.content}
+                  sessionId={sessionId}
+                  mode={renderMode}
+                  onOpenUrl={onOpenUrl}
+                  onOpenFile={onOpenFile}
+                  markdownId={message.id}
+                  collapsible
+                />
+              ) : (
+                <Markdown
+                  mode={renderMode}
+                  onUrlClick={onOpenUrl}
+                  onFileClick={onOpenFile}
+                  id={message.id}
+                  className="text-sm"
+                  collapsible
+                >
+                  {message.content}
+                </Markdown>
+              )}
             </CollapsibleMarkdownProvider>
           )}
         </div>

@@ -57,6 +57,7 @@ interface SessionConfig {
   sessionId: string;
   workspaceRootPath: string;
   plansFolderPath: string;
+  workingDirectory?: string;
   callbackPort?: string;
 }
 
@@ -153,7 +154,7 @@ function createCredentialManager(workspaceRootPath: string): CredentialManagerIn
  * This provides the context needed by all handlers.
  */
 function createCodexContext(config: SessionConfig): SessionToolContext {
-  const { sessionId, workspaceRootPath, plansFolderPath } = config;
+  const { sessionId, workspaceRootPath, plansFolderPath, workingDirectory } = config;
 
   // File system implementation
   const fs = {
@@ -203,6 +204,7 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     get sourcesPath() { return join(workspaceRootPath, 'sources'); },
     get skillsPath() { return join(workspaceRootPath, 'skills'); },
     plansFolderPath,
+    workingDirectory,
     sessionPath: sessionsDir,
     dataPath: sessionDataDir,
     callbacks,
@@ -472,6 +474,7 @@ async function main() {
   let workspaceRootPath: string | undefined;
   let plansFolderPath: string | undefined;
   let callbackPort: string | undefined;
+  let workingDirectory: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--session-id' && args[i + 1]) {
@@ -486,6 +489,9 @@ async function main() {
     } else if (args[i] === '--callback-port' && args[i + 1]) {
       callbackPort = args[i + 1];
       i++;
+    } else if (args[i] === '--working-directory' && args[i + 1]) {
+      workingDirectory = args[i + 1];
+      i++;
     }
   }
 
@@ -498,6 +504,7 @@ async function main() {
     sessionId,
     workspaceRootPath,
     plansFolderPath,
+    workingDirectory: workingDirectory || process.env.CRAFT_WORKING_DIRECTORY,
     // CLI arg takes priority, env var as fallback (Copilot CLI may not forward env to subprocesses)
     callbackPort: callbackPort || process.env.CRAFT_LLM_CALLBACK_PORT,
   };

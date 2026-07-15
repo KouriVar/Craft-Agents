@@ -33,6 +33,7 @@ interface RightSidebarBrowserPanelProps {
   initialTitle?: string
   showTabStrip?: boolean
   onTitleChange?: (title: string) => void
+  guestPreload?: string
 }
 
 const NEW_TAB_URL = 'about:blank'
@@ -113,9 +114,10 @@ interface EmbeddedBrowserViewProps {
   active: boolean
   register: (id: string, element: EmbeddedWebview | null) => void
   updateTab: (id: string, patch: Partial<EmbeddedBrowserTab>) => void
+  guestPreload?: string
 }
 
-function EmbeddedBrowserView({ tab, active, register, updateTab }: EmbeddedBrowserViewProps) {
+function EmbeddedBrowserView({ tab, active, register, updateTab, guestPreload }: EmbeddedBrowserViewProps) {
   const ref = useRef<EmbeddedWebview | null>(null)
   const isReadyRef = useRef(false)
 
@@ -221,6 +223,7 @@ function EmbeddedBrowserView({ tab, active, register, updateTab }: EmbeddedBrows
         ref: setRef,
         src: tab.url || NEW_TAB_URL,
         partition: 'persist:browser-pane',
+        preload: guestPreload,
         className: 'h-full w-full bg-background',
         webpreferences: 'contextIsolation=yes,nodeIntegration=no,sandbox=yes',
         allowpopups: 'false',
@@ -235,6 +238,7 @@ export function RightSidebarBrowserPanel({
   initialTitle,
   showTabStrip = true,
   onTitleChange,
+  guestPreload,
 }: RightSidebarBrowserPanelProps) {
   const { t } = useTranslation()
   const [tabs, setTabs] = useState<EmbeddedBrowserTab[]>(() => [createTab(initialUrl, initialTitle)])
@@ -454,6 +458,7 @@ export function RightSidebarBrowserPanel({
                 active={tab.id === activeTab?.id}
                 register={registerWebview}
                 updateTab={updateTab}
+                guestPreload={guestPreload}
               />
             ))}
           </div>

@@ -165,6 +165,8 @@ export {
   handleScriptSandbox,
   // Render Template
   handleRenderTemplate,
+  handleRenderCowartCanvasWidget,
+  CRAFT_WIDGET_RESULT_PREFIX,
   // Send Developer Feedback
   handleSendDeveloperFeedback,
 } from './handlers/index.ts';
@@ -184,6 +186,7 @@ export type {
   TransformDataArgs,
   ScriptSandboxArgs,
   RenderTemplateArgs,
+  RenderCowartCanvasWidgetArgs,
   SendDeveloperFeedbackArgs,
 } from './handlers/index.ts';
 
@@ -202,6 +205,7 @@ export {
   TransformDataSchema,
   ScriptSandboxSchema,
   RenderTemplateSchema,
+  RenderCowartCanvasWidgetSchema,
   // Browser tool schema
   BrowserToolSchema,
   // Developer feedback schema

@@ -78,33 +78,146 @@ if (persistedUiLanguage) {
 // Note: deferred startup log lives below where mainLog is available (after log.initialize()).
 
 let cowartCanvasProcess: ChildProcess | null = null
+let cowartCanvasProjectDir: string | null = null
+let cowartCanvasRuntimeId: string | null = null
+let cowartCanvasReady: Promise<void> | null = null
+let cowartCanvasLaunchQueue: Promise<void> = Promise.resolve()
+let cowartCanvasSessionId: string | null = null
 
-function startCowartCanvas(projectDir: string): { ok: true; url: string } | { ok: false; error: string } {
+type CowartCanvasLaunchRequest = { projectDir: string; pageId?: string; sessionId?: string }
+type CowartCanvasLaunchResult = { ok: true; url: string; preload: string } | { ok: false; error: string }
+
+function normalizeCowartPageId(pageId?: string): string | undefined {
+  const value = pageId?.trim()
+  if (!value) return undefined
+  const normalized = value.startsWith('page:') ? value : `page:${value}`
+  return /^page:[A-Za-z0-9_-]+$/.test(normalized) ? normalized : undefined
+}
+
+function cowartCanvasUrl(port: string, runtimeId: string, pageId?: string): string {
+  const url = new URL(`http://127.0.0.1:${port}`)
+  url.searchParams.set('runtime', runtimeId)
+  if (pageId) url.searchParams.set('pageId', pageId)
+  return url.toString()
+}
+
+async function waitForCowartCanvas(url: string, expectedProjectDir: string, expectedRuntimeId: string): Promise<void> {
+  const deadline = Date.now() + 15_000
+  const runtimeUrl = new URL('/api/runtime', url)
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(runtimeUrl)
+      if (response.ok) {
+        const runtime = await response.json() as { projectDir?: string; runtimeId?: string }
+        if (runtime.projectDir === expectedProjectDir && runtime.runtimeId === expectedRuntimeId) return
+      }
+    } catch {
+      // Vite is still starting.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 150))
+  }
+  throw new Error('Timed out waiting for the Cowart canvas service.')
+}
+
+async function stopCowartCanvas(): Promise<void> {
+  const processHandle = cowartCanvasProcess
+  if (!processHandle || processHandle.exitCode !== null) return
+  await new Promise<void>((resolveExit) => {
+    const timeout = setTimeout(() => {
+      signalCowartCanvasProcess(processHandle, 'SIGKILL')
+      resolveExit()
+    }, 2_000)
+    processHandle.once('exit', () => {
+      clearTimeout(timeout)
+      resolveExit()
+    })
+    signalCowartCanvasProcess(processHandle, 'SIGTERM')
+  })
+}
+
+function signalCowartCanvasProcess(processHandle: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (processHandle.pid) {
+      process.kill(-processHandle.pid, signal)
+      return
+    }
+  } catch {
+    // Fall back to signaling the launcher process directly.
+  }
+  processHandle.kill(signal)
+}
+
+function resolveCowartProjectDir(projectDir: string): string | null {
+  try {
+    return existsSync(projectDir) && statSync(projectDir).isDirectory()
+      ? realpathSync(projectDir)
+      : null
+  } catch {
+    return null
+  }
+}
+
+async function startCowartCanvas(request: CowartCanvasLaunchRequest): Promise<CowartCanvasLaunchResult> {
   const pluginRoot = join(homedir(), 'plugins', 'cowart')
   const scriptPath = join(pluginRoot, 'scripts', 'start-canvas.sh')
   const port = process.env.COWART_PORT || '43217'
-  const url = `http://127.0.0.1:${port}`
-
-  if (cowartCanvasProcess && !cowartCanvasProcess.killed) {
-    return { ok: true, url }
-  }
 
   if (!existsSync(scriptPath)) {
     return { ok: false, error: `Cowart launcher not found at ${scriptPath}` }
   }
 
-  const cwd = projectDir && existsSync(projectDir) ? projectDir : homedir()
+  if (!request || typeof request.projectDir !== 'string') {
+    return { ok: false, error: 'Cowart project directory is required.' }
+  }
+  const cwd = resolveCowartProjectDir(request.projectDir)
+  if (!cwd) return { ok: false, error: 'Cowart project directory does not exist.' }
+  const requestedPageId = request.pageId?.trim()
+  const pageId = normalizeCowartPageId(requestedPageId)
+  if (requestedPageId && !pageId) return { ok: false, error: 'Cowart pageId is invalid.' }
+
+  if (cowartCanvasProcess && cowartCanvasProcess.exitCode === null && cowartCanvasProjectDir === cwd) {
+    try {
+      await cowartCanvasReady
+      cowartCanvasSessionId = request.sessionId?.trim() || null
+      return {
+        ok: true,
+        url: cowartCanvasUrl(port, cowartCanvasRuntimeId!, pageId),
+        preload: pathToFileURL(join(__dirname, 'cowart-preload.cjs')).toString(),
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  await stopCowartCanvas()
+  cowartCanvasProjectDir = cwd
+  cowartCanvasRuntimeId = randomUUID()
+  cowartCanvasSessionId = request.sessionId?.trim() || null
   const processHandle = spawn(scriptPath, [cwd], {
     cwd: pluginRoot,
+    detached: true,
     env: {
       ...process.env,
       COWART_PROJECT_DIR: cwd,
       COWART_CANVAS_DIR: join(cwd, 'canvas'),
       COWART_PORT: port,
+      COWART_RUNTIME_ID: cowartCanvasRuntimeId,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   cowartCanvasProcess = processHandle
+  const url = cowartCanvasUrl(port, cowartCanvasRuntimeId, pageId)
+  const launchFailure = new Promise<never>((_resolve, reject) => {
+    processHandle.once('error', reject)
+    processHandle.once('exit', (code, signal) => {
+      reject(new Error(`Cowart canvas service exited before it was ready (${code ?? signal ?? 'unknown'}).`))
+    })
+  })
+  const readyPromise = Promise.race([
+    waitForCowartCanvas(url, cwd, cowartCanvasRuntimeId),
+    launchFailure,
+  ])
+  cowartCanvasReady = readyPromise
 
   processHandle.stdout?.on('data', (chunk) => {
     mainLog.info(`[cowart] ${String(chunk).trim()}`)
@@ -114,14 +227,42 @@ function startCowartCanvas(projectDir: string): { ok: true; url: string } | { ok
   })
   processHandle.on('exit', (code, signal) => {
     mainLog.info('[cowart] canvas process exited', { code, signal })
-    cowartCanvasProcess = null
+    if (cowartCanvasProcess === processHandle) {
+      cowartCanvasProcess = null
+      cowartCanvasProjectDir = null
+      cowartCanvasRuntimeId = null
+      cowartCanvasReady = null
+      cowartCanvasSessionId = null
+    }
   })
   processHandle.on('error', (error) => {
     mainLog.warn('[cowart] failed to start canvas process', { error })
-    cowartCanvasProcess = null
+    if (cowartCanvasProcess === processHandle) {
+      cowartCanvasProcess = null
+      cowartCanvasProjectDir = null
+      cowartCanvasRuntimeId = null
+      cowartCanvasReady = null
+      cowartCanvasSessionId = null
+    }
   })
 
-  return { ok: true, url }
+  try {
+    await readyPromise
+    return {
+      ok: true,
+      url,
+      preload: pathToFileURL(join(__dirname, 'cowart-preload.cjs')).toString(),
+    }
+  } catch (error) {
+    await stopCowartCanvas()
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function queueCowartCanvasStart(request: CowartCanvasLaunchRequest): Promise<CowartCanvasLaunchResult> {
+  const launch = cowartCanvasLaunchQueue.then(() => startCowartCanvas(request))
+  cowartCanvasLaunchQueue = launch.then(() => undefined, () => undefined)
+  return launch
 }
 
 // Set anonymous machine ID for Sentry user tracking (no PII — just a hash).
@@ -130,7 +271,8 @@ const machineId = createHash('sha256').update(hostname() + homedir()).digest('he
 Sentry.setUser({ id: machineId })
 
 import { join, delimiter } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { pathToFileURL } from 'url'
+import { existsSync, readFileSync, realpathSync, statSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
@@ -145,6 +287,7 @@ import { initModelRefreshService, getModelRefreshService, setFetcherPlatform } f
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
+import { isTrustedCowartRuntimeUrl, normalizeCowartFollowUpRequest } from '../shared/cowart-bridge'
 import { loadWindowState, saveWindowState } from './window-state'
 import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
@@ -602,10 +745,35 @@ app.whenReady().then(async () => {
       const result = await dialog.showOpenDialog(win, spec)
       return { canceled: result.canceled, filePaths: result.filePaths }
     })
-    ipcMain.handle('__cowart:start-canvas', async (_event, projectDir: string) => {
-      return startCowartCanvas(projectDir)
+    ipcMain.handle('__cowart:start-canvas', async (_event, request: CowartCanvasLaunchRequest) => {
+      return queueCowartCanvasStart(request)
     })
+    ipcMain.handle('__cowart:send-follow-up-message', async (event, value: unknown) => {
+      const request = normalizeCowartFollowUpRequest(value)
+      const port = process.env.COWART_PORT || '43217'
+      const senderUrl = event.senderFrame?.url || event.sender.getURL()
+      if (!request || !isTrustedCowartRuntimeUrl(senderUrl, cowartCanvasRuntimeId, port)) {
+        return { ok: false, error: 'Untrusted Cowart message bridge request.' }
+      }
+      if (!sessionManager || !cowartCanvasSessionId) {
+        return { ok: false, error: 'This Cowart canvas is not bound to a local Craft Agent session.' }
+      }
 
+      const hostWebContents = event.sender.hostWebContents
+      const workspaceId = windowManager?.getWorkspaceForWindow(hostWebContents.id)
+      const session = await sessionManager.getSession(cowartCanvasSessionId)
+      if (!workspaceId || !session || session.workspaceId !== workspaceId) {
+        return { ok: false, error: 'The Cowart canvas session is no longer available in this window.' }
+      }
+
+      try {
+        await sessionManager.sendMessage(cowartCanvasSessionId, request.prompt)
+        return { ok: true }
+      } catch (error) {
+        mainLog.warn('[cowart] follow-up message failed', { error, sessionId: cowartCanvasSessionId })
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    })
     if (!isClientOnly) {
       // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
       if (process.platform === 'win32') {
@@ -1236,6 +1404,10 @@ app.on('before-quit', async (event) => {
   // Avoid re-entry when we call app.exit()
   if (isQuitting) return
   isQuitting = true
+
+  if (cowartCanvasProcess && cowartCanvasProcess.exitCode === null) {
+    signalCowartCanvasProcess(cowartCanvasProcess, 'SIGTERM')
+  }
 
   // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
   windowManager?.setAppQuitting(true)

@@ -88,7 +88,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WidgetDescriptor } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -602,7 +602,32 @@ function AppShellContent({
   const rightSidebarWidthRef = React.useRef(rightSidebarWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
+
+  React.useEffect(() => {
+    const handleWidgetOpen = (event: Event) => {
+      const detail = (event as CustomEvent<
+        WidgetDescriptor | { descriptor: WidgetDescriptor; sessionId?: string }
+      >).detail
+      const descriptor = detail && 'descriptor' in detail ? detail.descriptor : detail
+      const widgetSessionId = detail && 'descriptor' in detail ? detail.sessionId : session.selected ?? undefined
+      if (!descriptor || descriptor.kind !== 'cowart-canvas') return
+
+      updateRightSidebar({ type: 'review' })
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-cowart', {
+          detail: {
+            projectDir: descriptor.projectDir,
+            pageId: descriptor.pageId,
+            sessionId: widgetSessionId,
+          },
+        }))
+      }, 0)
+    }
+
+    window.addEventListener('craft:widget-open', handleWidgetOpen)
+    return () => window.removeEventListener('craft:widget-open', handleWidgetOpen)
+  }, [session.selected, updateRightSidebar])
 
   React.useEffect(() => {
     rightSidebarWidthRef.current = rightSidebarWidth

@@ -3,12 +3,23 @@ import { isAbsolute, join, resolve, dirname, parse as parsePath } from 'path'
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
-import { RPC_CHANNELS, type FileAttachment, type DirectoryListingResult } from '@craft-agent/shared/protocol'
+import {
+  RPC_CHANNELS,
+  type DirectoryListingResult,
+  type FileAttachment,
+  type ReadWidgetFileRequest,
+  type ReadWidgetFileResult,
+} from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
-import { resizeImageForAPI, inspectImageBuffer } from '@craft-agent/server-core/services'
+import {
+  inspectImageBuffer,
+  readWidgetHtmlFile,
+  resizeImageForAPI,
+  WidgetFileError,
+} from '@craft-agent/server-core/services'
 import { sanitizeFilename, validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { MarkItDown } from 'markitdown-js'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -20,6 +31,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ_DATA_URL,
   RPC_CHANNELS.file.READ_PREVIEW_DATA_URL,
   RPC_CHANNELS.file.READ_BINARY,
+  RPC_CHANNELS.file.READ_WIDGET,
   RPC_CHANNELS.file.OPEN_DIALOG,
   RPC_CHANNELS.file.READ_ATTACHMENT,
   RPC_CHANNELS.file.READ_USER_ATTACHMENT,
@@ -116,6 +128,39 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Failed to read file as binary: ${message}`)
     }
   })
+
+  // Read session-scoped HTML for inline visualizations. This is a normal RPC
+  // channel so local and remote workspaces share the exact same widget path.
+  server.handle(
+    RPC_CHANNELS.file.READ_WIDGET,
+    async (ctx, request: ReadWidgetFileRequest): Promise<ReadWidgetFileResult> => {
+      if (!request || typeof request.sessionId !== 'string' || typeof request.file !== 'string' || request.file.includes('\0')) {
+        return { ok: false, error: 'Invalid visualization file request.', code: 'invalid-request' }
+      }
+
+      const session = await deps.sessionManager.getSession(request.sessionId)
+      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+      if (!workspaceId || !session || session.workspaceId !== workspaceId) {
+        return { ok: false, error: 'Visualization session was not found.', code: 'session-not-found' }
+      }
+
+      const allowedRoots = [
+        session.workingDirectory,
+        session.sessionFolderPath ? join(session.sessionFolderPath, 'visualizations') : undefined,
+        session.workingDirectory ? join(session.workingDirectory, '.craft', 'visualizations') : undefined,
+      ].filter((root): root is string => Boolean(root))
+
+      try {
+        return { ok: true, ...(await readWidgetHtmlFile(request.file, allowedRoots)) }
+      } catch (error) {
+        if (error instanceof WidgetFileError) {
+          return { ok: false, error: error.message, code: error.code }
+        }
+        deps.platform.logger.warn('[widget] failed to read visualization file', error)
+        return { ok: false, error: 'Visualization file could not be read.', code: 'read-failed' }
+      }
+    },
+  )
 
   // Open native file dialog for selecting files to attach (routed to client)
   server.handle(RPC_CHANNELS.file.OPEN_DIALOG, async (ctx) => {

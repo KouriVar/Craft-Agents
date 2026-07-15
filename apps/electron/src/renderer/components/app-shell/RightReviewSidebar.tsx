@@ -16,6 +16,7 @@ import { WorkspaceFileBrowser } from './WorkspaceFileBrowser'
 import { RightSidebarBrowserPanel } from './RightSidebarBrowserPanel'
 import { ResourceRow, type ResourceItem } from './SessionResourcesPopover'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/hooks/useSession'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -56,10 +57,9 @@ interface RightSidebarTab {
   type: RightSidebarTool
   label: string
   url?: string
+  preload?: string
   resources?: ResourceItem[]
 }
-
-const COWART_CANVAS_URL = 'http://127.0.0.1:43217'
 
 function createSidebarTab(type: RightSidebarTool, label: string, url?: string, resources?: ResourceItem[]): RightSidebarTab {
   return {
@@ -114,6 +114,7 @@ function SourcesReviewPanel({
 
 export function RightReviewSidebar() {
   const { t } = useTranslation()
+  const [session] = useSession()
   const activeWorkspace = useActiveWorkspace()
   const rootPath = activeWorkspace?.rootPath
   const newTabLabel = t('browser.newTab', { defaultValue: '新标签页' })
@@ -166,20 +167,24 @@ export function RightReviewSidebar() {
     addTab('browser', newTabLabel)
   }, [addTab, newTabLabel])
 
-  const handleOpenCowart = useCallback(async () => {
-    const tabId = addTab('cowart', t('rightSidebar.openCowart', { defaultValue: 'Cowart 画布' }), COWART_CANVAS_URL)
-    if (!rootPath) return
+  const handleOpenCowart = useCallback(async (projectDirOverride?: string, pageId?: string, sessionId?: string) => {
+    const existingTab = tabs.find((tab) => tab.type === 'cowart')
+    const tabId = existingTab?.id
+      ?? addTab('cowart', t('rightSidebar.openCowart', { defaultValue: 'Cowart 画布' }), 'about:blank')
+    if (existingTab) setActiveTabId(existingTab.id)
+    const projectDir = projectDirOverride || rootPath
+    if (!projectDir) return
     try {
-      const result = await window.electronAPI?.startCowartCanvas?.(rootPath)
+      const result = await window.electronAPI?.startCowartCanvas?.({ projectDir, pageId, sessionId })
       if (result?.ok) {
-        updateTab(tabId, { url: result.url })
+        updateTab(tabId, { url: result.url, preload: result.preload })
       } else if (result?.error) {
         console.warn('[RightReviewSidebar] Failed to start Cowart canvas:', result.error)
       }
     } catch (error) {
       console.warn('[RightReviewSidebar] Failed to start Cowart canvas:', error)
     }
-  }, [addTab, rootPath, t, updateTab])
+  }, [addTab, rootPath, t, tabs, updateTab])
 
   React.useEffect(() => {
     const handleOpenSources = (event: Event) => {
@@ -199,9 +204,18 @@ export function RightReviewSidebar() {
       })
     }
 
+    const handleCowartWidget = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectDir?: string; pageId?: string; sessionId?: string }>).detail
+      void handleOpenCowart(detail?.projectDir, detail?.pageId, detail?.sessionId)
+    }
+
     window.addEventListener('craft:right-sidebar-open-sources', handleOpenSources)
-    return () => window.removeEventListener('craft:right-sidebar-open-sources', handleOpenSources)
-  }, [t])
+    window.addEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
+    return () => {
+      window.removeEventListener('craft:right-sidebar-open-sources', handleOpenSources)
+      window.removeEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
+    }
+  }, [handleOpenCowart, t])
 
   const noWorkspace = !rootPath
 
@@ -286,7 +300,7 @@ export function RightReviewSidebar() {
             <ToolMenuItem
               icon={<Brush className="h-4 w-4" />}
               label={t('rightSidebar.openCowart', { defaultValue: 'Cowart 画布' })}
-              onClick={handleOpenCowart}
+              onClick={() => { void handleOpenCowart(undefined, undefined, session.selected ?? undefined) }}
               disabled={noWorkspace}
               active={activeTab?.type === 'cowart'}
             />
@@ -312,6 +326,7 @@ export function RightReviewSidebar() {
               key={tab.id}
               className={className}
               initialUrl={tab.url}
+              guestPreload={tab.preload}
               initialTitle={tab.label}
               showTabStrip={false}
               onTitleChange={(label) => updateTab(tab.id, { label })}

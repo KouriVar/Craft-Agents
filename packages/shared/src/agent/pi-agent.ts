@@ -1487,6 +1487,7 @@ export class PiAgent extends BaseAgent {
       sessionId,
       workspacePath,
       workspaceId,
+      workingDirectory: this.config.session?.workingDirectory,
       onPlanSubmitted: (planPath: string) => {
         setLastPlanFilePath(sessionId, planPath);
         this.onPlanSubmitted?.(planPath);

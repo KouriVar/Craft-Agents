@@ -33,6 +33,7 @@ import { handleUpdatePreferences } from './handlers/update-preferences.ts';
 import { handleTransformData } from './handlers/transform-data.ts';
 import { handleScriptSandbox } from './handlers/script-sandbox.ts';
 import { handleRenderTemplate } from './handlers/render-template.ts';
+import { handleRenderCowartCanvasWidget } from './handlers/render-cowart-canvas-widget.ts';
 import { handleSendDeveloperFeedback } from './handlers/send-developer-feedback.ts';
 import { handleSetSessionLabels } from './handlers/set-session-labels.ts';
 import { handleSetSessionStatus } from './handlers/set-session-status.ts';
@@ -147,6 +148,12 @@ export const RenderTemplateSchema = z.object({
   source: z.string().describe('Source slug (e.g., "linear", "gmail")'),
   template: z.string().describe('Template ID (e.g., "issue-detail", "issue-list")'),
   data: z.record(z.string(), z.unknown()).describe('JSON data to render into the template'),
+});
+
+export const RenderCowartCanvasWidgetSchema = z.object({
+  projectDir: z.string().optional().describe('Absolute project directory. Defaults to the current session working directory when available.'),
+  pageId: z.string().optional().describe('Optional Cowart canvas page ID to open.'),
+  title: z.string().optional().describe('Optional title shown for the canvas widget.'),
 });
 
 export const SendDeveloperFeedbackSchema = z.object({
@@ -382,6 +389,10 @@ Use this when a source provides HTML templates for rich rendering of its data (e
 
 Templates use Mustache syntax — the tool handles rendering and writes the output HTML to the session data folder.`,
 
+  render_cowart_canvas_widget: `Open the native Cowart canvas widget in Craft Agent's right review sidebar.
+
+Use this when the user asks to open, view, or work in a Cowart canvas. Pass the project directory explicitly when the session does not have a working directory. An optional pageId selects a canvas page. This tool only requests the native widget; it does not render tldraw inside the chat response.`,
+
   browser_tool: `Run browser actions using a CLI-like command (string or array input).
 
 All browser interactions use this single tool with strict validation and actionable feedback.
@@ -561,6 +572,7 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   { name: 'transform_data', description: TOOL_DESCRIPTIONS.transform_data, inputSchema: TransformDataSchema, executionMode: 'registry', safeMode: 'allow', handler: handleTransformData },
   { name: 'script_sandbox', description: TOOL_DESCRIPTIONS.script_sandbox, inputSchema: ScriptSandboxSchema, executionMode: 'registry', safeMode: 'allow', handler: handleScriptSandbox },
   { name: 'render_template', description: TOOL_DESCRIPTIONS.render_template, inputSchema: RenderTemplateSchema, executionMode: 'registry', safeMode: 'allow', handler: handleRenderTemplate },
+  { name: 'render_cowart_canvas_widget', description: TOOL_DESCRIPTIONS.render_cowart_canvas_widget, inputSchema: RenderCowartCanvasWidgetSchema, executionMode: 'registry', safeMode: 'allow', handler: handleRenderCowartCanvasWidget },
   { name: 'send_developer_feedback', description: TOOL_DESCRIPTIONS.send_developer_feedback, inputSchema: SendDeveloperFeedbackSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSendDeveloperFeedback },
   { name: 'call_llm', description: TOOL_DESCRIPTIONS.call_llm, inputSchema: CallLlmSchema, executionMode: 'backend', safeMode: 'allow', readOnly: true, handler: null },
   { name: 'spawn_session', description: TOOL_DESCRIPTIONS.spawn_session, inputSchema: SpawnSessionSchema, executionMode: 'backend', safeMode: 'block', handler: null },

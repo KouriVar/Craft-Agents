@@ -319,6 +319,8 @@ export interface TurnCardProps {
   onOpenFile?: (path: string) => void
   /** Callback when URL is clicked */
   onOpenUrl?: (url: string) => void
+  /** Optional host renderer for final response content (for platform-specific widgets). */
+  renderResponseContent?: (text: string) => React.ReactNode
   /** Callback to open response in Monaco editor */
   onPopOut?: (text: string) => void
   /** Callback to open turn details in a new window */
@@ -1392,6 +1394,8 @@ export interface ResponseCardProps {
   onOpenFile?: (path: string) => void
   /** Callback to open URL */
   onOpenUrl?: (url: string) => void
+  /** Optional host renderer for completed response content. */
+  renderContent?: (text: string) => React.ReactNode
   /** Callback to open response in Monaco editor */
   onPopOut?: () => void
   /** Card variant - 'response' for AI messages, 'plan' for plan messages */
@@ -1652,6 +1656,7 @@ export function ResponseCard({
   streamStartTime,
   onOpenFile,
   onOpenUrl,
+  renderContent,
   onPopOut,
   variant = 'response',
   sessionId,
@@ -2496,13 +2501,15 @@ export function ResponseCard({
             }}
           >
             <div ref={contentLayerRef} className="relative">
-              <Markdown
-                mode="minimal"
-                onUrlClick={onOpenUrl}
-                onFileClick={onOpenFile}
-              >
-                {text}
-              </Markdown>
+              {renderContent ? renderContent(text) : (
+                <Markdown
+                  mode="minimal"
+                  onUrlClick={onOpenUrl}
+                  onFileClick={onOpenFile}
+                >
+                  {text}
+                </Markdown>
+              )}
               {annotationOverlayLayer}
             </div>
           </div>
@@ -2774,6 +2781,7 @@ export const TurnCard = React.memo(function TurnCard({
   onExpandedActivityGroupsChange,
   onOpenFile,
   onOpenUrl,
+  renderResponseContent,
   onPopOut,
   onOpenDetails,
   onOpenActivityDetails,
@@ -3142,6 +3150,7 @@ export const TurnCard = React.memo(function TurnCard({
             sessionId={sessionId}
             onOpenFile={onOpenFile}
             onOpenUrl={onOpenUrl}
+            renderContent={renderResponseContent}
             onPopOut={onPopOut ? () => onPopOut(planActivity.content || '') : undefined}
             variant="plan"
             messageId={planActivity.messageId}
@@ -3181,6 +3190,7 @@ export const TurnCard = React.memo(function TurnCard({
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}
                 onOpenUrl={onOpenUrl}
+                renderContent={renderResponseContent}
                 onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
                 variant={response.isPlan ? 'plan' : 'response'}
                 messageId={response.messageId}
@@ -3213,6 +3223,7 @@ export const TurnCard = React.memo(function TurnCard({
             sessionId={sessionId}
             onOpenFile={onOpenFile}
             onOpenUrl={onOpenUrl}
+            renderContent={renderResponseContent}
             onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
             variant={response.isPlan ? 'plan' : 'response'}
             messageId={response.messageId}
@@ -3257,6 +3268,8 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Re-render if compactMode changed (affects ResponseCard footer rendering)
   if (prev.compactMode !== next.compactMode) return false
+
+  if (prev.renderResponseContent !== next.renderResponseContent) return false
 
   // Re-render if annotation interaction mode changed (interactive vs tooltip-only)
   if (prev.annotationInteractionMode !== next.annotationInteractionMode) return false

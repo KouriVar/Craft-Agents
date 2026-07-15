@@ -2,6 +2,7 @@
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
 export * from '@craft-agent/shared/protocol'
+export type { ReadWidgetFileRequest, ReadWidgetFileResult, WidgetDescriptor } from './widget-runtime'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -325,6 +326,7 @@ export interface ElectronAPI {
 
   // File operations
   readFile(path: string): Promise<string>
+  readWidgetFile(request: import('./widget-runtime').ReadWidgetFileRequest): Promise<import('./widget-runtime').ReadWidgetFileResult>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */
@@ -578,7 +580,7 @@ export interface ElectronAPI {
   setRightSidebarFollowSession(enabled: boolean): Promise<void>
   getBrowserOpenMode(): Promise<'sidebar' | 'window'>
   setBrowserOpenMode(value: 'sidebar' | 'window'): Promise<void>
-  startCowartCanvas(projectDir: string): Promise<{ ok: true; url: string } | { ok: false; error: string }>
+  startCowartCanvas(request: { projectDir: string; pageId?: string; sessionId?: string }): Promise<{ ok: true; url: string; preload: string } | { ok: false; error: string }>
 
   // Power settings
   getKeepAwakeWhileRunning(): Promise<boolean>

@@ -120,6 +120,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
   // Get skill name for header
   const skillName = skill?.metadata.name || skillSlug
   const canDeleteSkill = skill?.source === 'workspace'
+  const isBuiltinSkill = skill?.source === 'builtin'
 
   // Format path to show just the skill-relative portion (skills/{slug}/)
   const formatPath = (path: string) => {
@@ -160,7 +161,11 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
             canShowInFinder={canRevealLocally}
             onDelete={canDeleteSkill ? handleDelete : undefined}
             canDelete={canDeleteSkill}
-            deleteLabel={canDeleteSkill ? t('skillInfo.deleteSkill') : t('skillInfo.managedByProject')}
+            deleteLabel={canDeleteSkill
+              ? t('skillInfo.deleteSkill')
+              : isBuiltinSkill
+                ? t('skillInfo.managedByApp')
+                : t('skillInfo.managedByProject')}
           />
         }
       />
@@ -177,7 +182,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
           {/* Metadata */}
           <Info_Section
             title={t('skillInfo.metadata')}
-            actions={
+            actions={!isBuiltinSkill ? (
               // EditPopover for AI-assisted metadata editing (name, description in frontmatter)
               <EditPopover
                 trigger={<EditButton />}
@@ -187,7 +192,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
                   filePath: `${skill.path}/SKILL.md`,
                 }}
               />
-            }
+            ) : undefined}
           >
             <Info_Table>
               <Info_Table.Row label={t('common.slug')} value={skill.slug} />
@@ -196,14 +201,16 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
                 {skill.metadata.description}
               </Info_Table.Row>
               <Info_Table.Row label={t('common.source')}>
-                {skill.source === 'project' ? t('skillInfo.sourceProject') :
+                {skill.source === 'builtin' ? t('skillInfo.sourceBuiltin') :
+                 skill.source === 'project' ? t('skillInfo.sourceProject') :
                  skill.source === 'global' ? t('skillInfo.sourceGlobal') :
                  t('skillInfo.sourceWorkspace')}
               </Info_Table.Row>
               <Info_Table.Row label={t('common.location')}>
                 <button
                   onClick={handleLocationClick}
-                  className="hover:underline cursor-pointer text-left"
+                  disabled={!canRevealLocally}
+                  className="text-left enabled:hover:underline enabled:cursor-pointer"
                 >
                   {formatPath(skill.path)}
                 </button>
@@ -257,7 +264,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
           {/* Instructions */}
           <Info_Section
             title={t('skillInfo.instructions')}
-            actions={
+            actions={!isBuiltinSkill ? (
               // EditPopover for AI-assisted editing with "Edit File" as secondary action
               <EditPopover
                 trigger={<EditButton />}
@@ -267,7 +274,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
                   filePath: `${skill.path}/SKILL.md`,
                 }}
               />
-            }
+            ) : undefined}
           >
             <Info_Markdown maxHeight={540} fullscreen>
               {skill.content || t('skillInfo.noInstructions')}

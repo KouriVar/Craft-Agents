@@ -59,6 +59,10 @@ export type { ScriptSandboxArgs } from './script-sandbox.ts';
 export { handleRenderTemplate } from './render-template.ts';
 export type { RenderTemplateArgs } from './render-template.ts';
 
+// Cowart Canvas Widget
+export { handleRenderCowartCanvasWidget, CRAFT_WIDGET_RESULT_PREFIX } from './render-cowart-canvas-widget.ts';
+export type { RenderCowartCanvasWidgetArgs } from './render-cowart-canvas-widget.ts';
+
 // Send Developer Feedback
 export { handleSendDeveloperFeedback } from './send-developer-feedback.ts';
 export type { SendDeveloperFeedbackArgs } from './send-developer-feedback.ts';
