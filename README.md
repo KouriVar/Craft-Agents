@@ -6,7 +6,7 @@
 <p>
   <a href="./CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-查看更新-7c3aed?style=flat-square"></a>
   <a href="../../releases"><img alt="Releases" src="https://img.shields.io/badge/releases-下载构建-2563eb?style=flat-square"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.11.2-111827?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.11.3-111827?style=flat-square">
   <img alt="Branch" src="https://img.shields.io/badge/branch-my--changes-64748b?style=flat-square">
 </p>
 
