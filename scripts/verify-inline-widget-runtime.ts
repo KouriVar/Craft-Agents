@@ -58,7 +58,8 @@ const fragment = `
       range: rangeValue.textContent,
       staticIcon: Boolean(document.querySelector('[data-lucide="chart-no-axes-combined"] svg, svg.lucide-chart-no-axes-combined')),
       dynamicIcon: Boolean(document.querySelector('#dynamic-icon svg')),
-      theme: getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim(),
+      theme: document.documentElement.dataset.theme,
+      background: getComputedStyle(document.documentElement).backgroundColor,
       followUp,
     }, '*');
   }, 150);
@@ -73,21 +74,22 @@ const wrapperPath = join(directory, 'wrapper.html')
 const runnerPath = join(directory, 'runner.mjs')
 const screenshotPath = join(directory, 'widget-smoke.png')
 
-const wrapper = `<!doctype html><html><body style="margin:0;width:100%;max-width:736px"><iframe id="widget" sandbox="allow-scripts" style="width:100%;height:360px;border:0"></iframe><output id="smoke-result" hidden></output><script>
+const wrapper = `<!doctype html><html><body style="margin:0;width:100%;max-width:736px;background:rgb(40,40,42)"><iframe id="widget" sandbox="allow-scripts" style="width:100%;height:360px;border:0;background:transparent"></iframe><output id="smoke-result" hidden></output><script>
 window.smokeState = { resize: 0, followUpRequested: false, result: null };
 const frame = document.getElementById('widget');
 const syncSmokeState = () => { document.getElementById('smoke-result').value = JSON.stringify(window.smokeState); };
+const sendTheme = () => frame.contentWindow.postMessage({
+  source: 'craft-widget-host',
+  type: 'theme',
+  theme: { mode: 'dark', tokens: { foreground: 'rgb(1, 2, 3)', background: 'rgb(40, 40, 42)' } }
+}, '*');
 syncSmokeState();
 window.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || typeof data !== 'object') return;
   if (data.source === 'craft-widget') {
     if (data.type === 'ready') {
-      frame.contentWindow.postMessage({
-        source: 'craft-widget-host',
-        type: 'theme',
-        theme: { mode: 'dark', tokens: { foreground: 'rgb(1, 2, 3)', background: 'rgb(245, 245, 245)' } }
-      }, '*');
+      sendTheme();
     }
     if (data.type === 'resize') {
       window.smokeState.resize = data.height;
@@ -102,6 +104,7 @@ window.addEventListener('message', (event) => {
   syncSmokeState();
 });
 frame.srcdoc = ${serializedWidgetDocument};
+frame.addEventListener('load', () => setTimeout(sendTheme, 50));
 </script></body></html>`
 
 const runner = `
@@ -130,7 +133,7 @@ const state = await window.webContents.executeJavaScript(\`new Promise((resolve,
 await writeFile(${JSON.stringify(screenshotPath)}, (await window.webContents.capturePage()).toPNG());
 console.log(JSON.stringify({ ...state, screenshot: ${JSON.stringify(screenshotPath)} }));
 const result = state.result || {};
-const ok = result.count === '1' && result.range === '8' && result.staticIcon && result.dynamicIcon && result.theme === 'rgb(1, 2, 3)' && result.followUp && result.followUp.ok === true && state.followUpRequested && state.resize > 0;
+const ok = result.count === '1' && result.range === '8' && result.staticIcon && result.dynamicIcon && result.theme === 'dark' && result.background === 'rgb(40, 40, 42)' && result.followUp && result.followUp.ok === true && state.followUpRequested && state.resize > 0;
 await app.quit();
 if (!ok) process.exit(1);
 `

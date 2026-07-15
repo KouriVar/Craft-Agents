@@ -4,6 +4,7 @@ import {
   clampWidgetHeight,
   CODEX_VISUALIZATION_RUNTIME,
   HOST_STYLES,
+  HOST_SURFACE_STYLES,
   WIDGET_CSP,
   WIDGET_IFRAME_SANDBOX,
   type WidgetThemeSnapshot,
@@ -74,6 +75,15 @@ describe('inline visualization host contract', () => {
     expect(HOST_STYLES).toContain('--radius: 12.5px')
     expect(CODEX_VISUALIZATION_RUNTIME).toContain('window.FloatingUIDOM')
     expect(CODEX_VISUALIZATION_RUNTIME).not.toContain('__INLINE_VISUALIZATION_FRAGMENT__')
+  })
+
+  test('matches the iframe page background to the Craft host surface', () => {
+    const documentHtml = buildWidgetDocument('<div id="widget">Demo</div>', theme)
+    expect(HOST_SURFACE_STYLES).toContain('var(--craft-host-background, transparent)')
+    expect(documentHtml).toContain('--craft-host-background: rgb(20, 20, 22)')
+    expect(documentHtml.lastIndexOf(HOST_SURFACE_STYLES)).toBeGreaterThan(
+      documentHtml.indexOf('background-color: var(--background) !important;'),
+    )
   })
 
   test('fits short and tall content without the old 1200px cutoff', () => {

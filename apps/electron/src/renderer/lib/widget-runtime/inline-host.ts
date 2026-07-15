@@ -66,6 +66,7 @@ export function clampWidgetHeight(value: unknown): number | null {
 }
 
 export const HOST_STYLES = codexVisualizationStyles
+export const HOST_SURFACE_STYLES = ':root { background-color: var(--craft-host-background, transparent) !important; }'
 export const CODEX_VISUALIZATION_RUNTIME = codexVisualizationTemplate.replace(
   '<!--__INLINE_VISUALIZATION_FRAGMENT__-->',
   '',
@@ -87,6 +88,10 @@ const BRIDGE_SCRIPT = `
   const applyTheme = (theme) => {
     if (!theme || typeof theme !== 'object') return;
     document.documentElement.dataset.theme = theme.mode === 'dark' ? 'dark' : 'light';
+    const surface = theme.tokens && typeof theme.tokens.background === 'string'
+      ? theme.tokens.background
+      : 'transparent';
+    document.documentElement.style.setProperty('--craft-host-background', surface);
   };
 
   const measure = () => {
@@ -173,10 +178,14 @@ function safeInlineScript(source: string): string {
   return source.replace(/<\/script/gi, '<\\/script')
 }
 
+function hostSurfaceStyle(theme: WidgetThemeSnapshot): string {
+  return `:root { --craft-host-background: ${theme.tokens.background || 'transparent'}; }`
+}
+
 export function buildWidgetDocument(fragment: string, theme: WidgetThemeSnapshot): string {
   const head = [
     `<meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">`,
-    `<style>${HOST_STYLES}</style>`,
+    `<style>${HOST_STYLES}\n${HOST_SURFACE_STYLES}\n${hostSurfaceStyle(theme)}</style>`,
   ].join('')
   const scripts = [
     `<script>${safeInlineScript(lucideRuntimeSource)}</script>`,
