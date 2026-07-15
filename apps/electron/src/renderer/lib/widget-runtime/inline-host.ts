@@ -66,7 +66,10 @@ export function clampWidgetHeight(value: unknown): number | null {
 }
 
 export const HOST_STYLES = codexVisualizationStyles
-export const HOST_SURFACE_STYLES = ':root { background-color: var(--craft-host-background, transparent) !important; }'
+export const HOST_SURFACE_STYLES = [
+  ':root { background-color: var(--craft-host-background, transparent) !important; }',
+  'html > body { padding: 0 !important; }',
+].join('\n')
 export const CODEX_VISUALIZATION_RUNTIME = codexVisualizationTemplate.replace(
   '<!--__INLINE_VISUALIZATION_FRAGMENT__-->',
   '',

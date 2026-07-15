@@ -80,6 +80,7 @@ describe('inline visualization host contract', () => {
   test('matches the iframe page background to the Craft host surface', () => {
     const documentHtml = buildWidgetDocument('<div id="widget">Demo</div>', theme)
     expect(HOST_SURFACE_STYLES).toContain('var(--craft-host-background, transparent)')
+    expect(HOST_SURFACE_STYLES).toContain('html > body { padding: 0 !important; }')
     expect(documentHtml).toContain('--craft-host-background: rgb(20, 20, 22)')
     expect(documentHtml.lastIndexOf(HOST_SURFACE_STYLES)).toBeGreaterThan(
       documentHtml.indexOf('background-color: var(--background) !important;'),

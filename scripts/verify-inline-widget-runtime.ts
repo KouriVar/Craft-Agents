@@ -60,6 +60,7 @@ const fragment = `
       dynamicIcon: Boolean(document.querySelector('#dynamic-icon svg')),
       theme: document.documentElement.dataset.theme,
       background: getComputedStyle(document.documentElement).backgroundColor,
+      bodyPadding: getComputedStyle(document.body).padding,
       followUp,
     }, '*');
   }, 150);
@@ -133,7 +134,7 @@ const state = await window.webContents.executeJavaScript(\`new Promise((resolve,
 await writeFile(${JSON.stringify(screenshotPath)}, (await window.webContents.capturePage()).toPNG());
 console.log(JSON.stringify({ ...state, screenshot: ${JSON.stringify(screenshotPath)} }));
 const result = state.result || {};
-const ok = result.count === '1' && result.range === '8' && result.staticIcon && result.dynamicIcon && result.theme === 'dark' && result.background === 'rgb(40, 40, 42)' && result.followUp && result.followUp.ok === true && state.followUpRequested && state.resize > 0;
+const ok = result.count === '1' && result.range === '8' && result.staticIcon && result.dynamicIcon && result.theme === 'dark' && result.background === 'rgb(40, 40, 42)' && result.bodyPadding === '0px' && result.followUp && result.followUp.ok === true && state.followUpRequested && state.resize > 0;
 await app.quit();
 if (!ok) process.exit(1);
 `
