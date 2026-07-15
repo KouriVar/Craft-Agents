@@ -35,6 +35,27 @@ describe('Cowart widget tool results', () => {
     expect(processEvent(state(), event).effects).toEqual([{ type: 'open_widget', descriptor }])
   })
 
+  test('emits a generic MCP App descriptor from structured result metadata', () => {
+    const current = state()
+    current.session.messages.push({
+      id: 'tool-message', role: 'tool', content: '', timestamp: Date.now(),
+      toolUseId: 'tool-app', toolName: 'mcp__canvasight__open_canvasight',
+      toolInput: { projectPath: '/tmp/project' }, toolStatus: 'executing',
+    })
+    const result = processEvent(current, {
+      type: 'tool_result', sessionId: 'session-1', toolUseId: 'tool-app',
+      toolName: 'mcp__canvasight__open_canvasight', result: 'Opening Canvasight',
+      resultDetails: { mcpApp: {
+        toolMeta: { ui: { resourceUri: 'ui://widget/canvasight/canvas.html' } },
+        structuredContent: { targetDisplayMode: 'fullscreen' },
+        responseMeta: { widgetData: { sessionId: 'canvas-1' } },
+      } },
+    })
+    expect(result.effects).toEqual([{ type: 'open_widget', descriptor: expect.objectContaining({
+      kind: 'mcp-app', serverSlug: 'canvasight', toolName: 'open_canvasight', displayMode: 'fullscreen',
+    }) }])
+  })
+
   test('does not emit effects for ordinary or failed tool results', () => {
     const ordinary = processEvent(state(), {
       type: 'tool_result', sessionId: 'session-1', toolUseId: 'tool-1', result: 'done',

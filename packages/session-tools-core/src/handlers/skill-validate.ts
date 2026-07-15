@@ -10,7 +10,7 @@
  */
 
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { SessionToolContext } from '../context.ts';
 import type { ToolResult } from '../types.ts';
 import { errorResponse } from '../response.ts';
@@ -19,6 +19,7 @@ import {
   validateSlug,
   validateSkillContent,
   formatValidationResult,
+  readPortableSkillDisplayFallbacks,
 } from '../validation.ts';
 
 export interface SkillValidateArgs {
@@ -34,11 +35,23 @@ function resolveSkillMdPath(
   slug: string,
   workingDirectory: string | undefined
 ): { path: string; tier: string } | null {
-  // 1. Project-level (highest priority): {projectRoot}/.agents/skills/{slug}/SKILL.md
+  // 1. Project-level (highest priority): .agents/skills from working dir up to repo root
   if (workingDirectory) {
-    const projectPath = join(workingDirectory, '.agents', 'skills', slug, 'SKILL.md');
-    if (ctx.fs.exists(projectPath)) {
-      return { path: projectPath, tier: 'project' };
+    for (const packageRoot of getProjectPackageRoots(ctx, workingDirectory).reverse()) {
+      const agentsPath = join(packageRoot, '.agents', 'skills', slug, 'SKILL.md');
+      if (ctx.fs.exists(agentsPath)) {
+        return { path: agentsPath, tier: 'project' };
+      }
+
+      const pluginManifest = readPluginManifest(ctx, packageRoot);
+      if (!pluginManifest || !isPluginPackageEnabled(ctx, pluginManifest.name)) continue;
+
+      for (const pluginSkillDir of getPluginPackageSkillDirs(ctx, packageRoot, pluginManifest).reverse()) {
+        const pluginSkillPath = join(pluginSkillDir, slug, 'SKILL.md');
+        if (ctx.fs.exists(pluginSkillPath)) {
+          return { path: pluginSkillPath, tier: 'project-plugin' };
+        }
+      }
     }
   }
 
@@ -55,6 +68,75 @@ function resolveSkillMdPath(
   }
 
   return null;
+}
+
+function getProjectPackageRoots(
+  ctx: SessionToolContext,
+  workingDirectory: string
+): string[] {
+  const start = resolve(workingDirectory);
+  const dirs: string[] = [start];
+
+  let current = start;
+  let foundRepoRoot = ctx.fs.exists(join(current, '.git'));
+
+  while (!foundRepoRoot) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+    dirs.push(current);
+    foundRepoRoot = ctx.fs.exists(join(current, '.git'));
+  }
+
+  const searchableDirs = foundRepoRoot ? dirs : [start];
+  return searchableDirs;
+}
+
+function getPluginPackageSkillDirs(
+  ctx: SessionToolContext,
+  packageRoot: string,
+  manifest: { name: string; skills?: unknown }
+): string[] {
+  const declared = typeof manifest.skills === 'string'
+    ? [manifest.skills]
+    : Array.isArray(manifest.skills)
+      ? manifest.skills.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+
+  return Array.from(new Set(['skills', ...declared].map(skillDir => join(packageRoot, skillDir))))
+    .filter(path => ctx.fs.exists(path));
+}
+
+function readPluginManifest(ctx: SessionToolContext, packageRoot: string): { name: string; skills?: unknown } | null {
+  for (const manifestDir of ['.craft-plugin', '.codex-plugin', '.claude-plugin']) {
+    const manifestPath = join(packageRoot, manifestDir, 'plugin.json');
+    if (!ctx.fs.exists(manifestPath)) continue;
+    try {
+      const parsed = JSON.parse(ctx.fs.readFile(manifestPath));
+      if (parsed && typeof parsed === 'object' && typeof parsed.name === 'string' && parsed.name.trim()) {
+        return {
+          name: parsed.name.trim(),
+          skills: parsed.skills,
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function isPluginPackageEnabled(ctx: SessionToolContext, pluginName: string): boolean {
+  const configPath = join(ctx.workspacePath, 'plugins', 'config.json');
+  if (!ctx.fs.exists(configPath)) return true;
+
+  try {
+    const parsed = JSON.parse(ctx.fs.readFile(configPath));
+    const pluginEntry = parsed?.plugins?.[pluginName];
+    return typeof pluginEntry?.enabled === 'boolean' ? pluginEntry.enabled : true;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -89,7 +171,17 @@ export async function handleSkillValidate(
   const resolved = resolveSkillMdPath(ctx, skillSlug, workingDirectory);
   if (!resolved) {
     const searchedPaths = [
-      workingDirectory ? `  - ${join(workingDirectory, '.agents', 'skills', skillSlug, 'SKILL.md')} (project)` : null,
+      ...(workingDirectory
+        ? getProjectPackageRoots(ctx, workingDirectory).flatMap(packageRoot => [
+          `  - ${join(packageRoot, '.agents', 'skills', skillSlug, 'SKILL.md')} (project)`,
+          ...(() => {
+            const pluginManifest = readPluginManifest(ctx, packageRoot);
+            if (!pluginManifest || !isPluginPackageEnabled(ctx, pluginManifest.name)) return [];
+            return getPluginPackageSkillDirs(ctx, packageRoot, pluginManifest)
+              .map(skillDir => `  - ${join(skillDir, skillSlug, 'SKILL.md')} (project plugin)`);
+          })(),
+        ])
+        : []),
       `  - ${join(ctx.workspacePath, 'skills', skillSlug, 'SKILL.md')} (workspace)`,
       `  - ${join(homedir(), '.agents', 'skills', skillSlug, 'SKILL.md')} (global)`,
     ].filter(Boolean).join('\n');
@@ -113,7 +205,7 @@ export async function handleSkillValidate(
     );
   }
 
-  const result = validateSkillContent(content, skillSlug);
+  const result = validateSkillContent(content, skillSlug, readPortableSkillDisplayFallbacks(dirname(resolved.path)));
   const tierInfo = `Validated from ${resolved.tier} tier: ${resolved.path}`;
   const formatted = formatValidationResult(result);
 

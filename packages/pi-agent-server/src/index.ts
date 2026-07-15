@@ -34,6 +34,7 @@ import {
   createFindToolDefinition,
   createLsToolDefinition,
 } from '@earendil-works/pi-coding-agent';
+import { ProxyToolCatalog, type CatalogToolDef, type ProxyToolScope } from './tool-catalog.ts';
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -133,8 +134,8 @@ interface RuntimeConfigUpdateMessage {
 type InboundMessage =
   | InitMessage
   | { type: 'prompt'; id: string; message: string; systemPrompt: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> }
-  | { type: 'register_tools'; tools: ProxyToolDef[] }
-  | { type: 'tool_execute_response'; requestId: string; result: { content: string; isError: boolean } }
+  | { type: 'register_tools'; tools: ProxyToolDef[]; scope?: ProxyToolScope }
+  | { type: 'tool_execute_response'; requestId: string; result: ProxyToolResult }
   | { type: 'pre_tool_use_response'; requestId: string; action: 'allow' | 'block' | 'modify'; input?: Record<string, unknown>; reason?: string }
   | { type: 'abort' }
   | { type: 'mini_completion'; id: string; prompt: string }
@@ -150,11 +151,7 @@ type InboundMessage =
   | { type: 'shutdown' };
 
 /** Proxy tool definition from main process */
-interface ProxyToolDef {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
+interface ProxyToolDef extends CatalogToolDef {}
 
 /** Canonical tool metadata propagated on Pi tool start events */
 interface ToolExecutionMetadata {
@@ -250,20 +247,28 @@ let currentUserMessage = '';
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
-const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
+type ProxyToolResult = {
+  content: string;
+  isError: boolean;
+  structuredContent?: unknown;
+  _meta?: Record<string, unknown>;
+  toolMeta?: Record<string, unknown>;
+};
+
+const pendingToolExecutions = new Map<string, { resolve: (result: ProxyToolResult) => void }>();
 
 // Pending session MCP tool calls for completion detection
 const pendingSessionToolCalls = new Map<string, { toolName: string; arguments: Record<string, unknown> }>();
 
-// Proxy tool definitions from main process
-let proxyToolDefs: ProxyToolDef[] = [];
+// Retains known definitions while scopes control which tools are currently active.
+const proxyToolCatalog = new ProxyToolCatalog();
 
 // Speculative prefetch for read-only tools (enables parallel execution despite Pi SDK's sequential loop).
 // When the LLM emits multiple call_llm tool calls in a single message, we fire all requests
 // to the main process in parallel on message_end (before executeToolCalls iterates sequentially).
 // Each proxy tool's execute() then hits the cache instead of sending a new request.
 const PREFETCHABLE_TOOLS = new Set(['call_llm']);
-const prefetchCache = new Map<string, Promise<{ content: string; isError: boolean }>>();
+const prefetchCache = new Map<string, Promise<ProxyToolResult>>();
 
 function isPrefetchableTool(toolName: string): boolean {
   const stripped = toolName.replace(/^(mcp__session__|session__)/, '');
@@ -548,13 +553,13 @@ async function ensureSession(): Promise<AgentSession> {
   );
   const webTools = [searchTool, webFetchTool];
 
-  // Pi SDK 0.70.0 registration contract:
+  // Pi SDK tool registration contract:
   //   - `customTools` accepts ToolDefinition[] — our hook-wrapped objects go here
-  //   - `tools` is a string[] name allowlist — MUST include every tool we want active,
-  //     otherwise Pi SDK defaults to the built-in [read, bash, edit, write] set and
-  //     silently filters out everything else. Custom tool names with matching built-in
-  //     names override the SDK's raw implementation inside _refreshToolRegistry, so
-  //     our hooked versions take effect (permissions + large-response summarization).
+  //   - `tools` is the initial string[] active-name allowlist. Known proxy definitions
+  //     remain registered in `customTools` even while inactive so Pi 0.80.7 can enable
+  //     them later through `setActiveToolsByName()` without recreating the session.
+  //   - Custom tool names matching built-ins override the SDK implementation, so our
+  //     hooked versions retain permissions and large-response summarization.
   //   - Do NOT pass tool *objects* to `tools` — `allowedToolNames = new Set(options.tools)`
   //     then `.has(name)` returns false for every string lookup → zero tools active.
   const builtinDefs = [
@@ -566,9 +571,13 @@ async function ensureSession(): Promise<AgentSession> {
     createFindToolDefinition(cwd),
     createLsToolDefinition(cwd),
   ];
-  const proxyTools = buildProxyTools();
+  const proxyTools = buildProxyTools(proxyToolCatalog.getDefinitions());
   const wrappedAll = wrapToolsWithHooks([...builtinDefs, ...webTools, ...proxyTools]);
-  const toolAllowlist = wrappedAll.map(t => t.name);
+  const toolAllowlist = [
+    ...builtinDefs.map(tool => tool.name),
+    ...webTools.map(tool => tool.name),
+    ...proxyToolCatalog.getActiveNames(),
+  ];
   debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${wrappedAll.length} total`);
 
   // Build session options
@@ -833,10 +842,10 @@ function wrapSingleTool(tool: ToolDefinition<any, any>): ToolDefinition<any, any
 // Proxy Tools (tools executed in main process)
 // ============================================================
 
-function buildProxyTools(): ToolDefinition<any, any>[] {
-  debugLog(`Building proxy tools from ${proxyToolDefs.length} definitions: ${proxyToolDefs.map(t => t.name).join(', ')}`);
+function buildProxyTools(definitions: CatalogToolDef[]): ToolDefinition<any, any>[] {
+  debugLog(`Building proxy tools from ${definitions.length} definitions: ${definitions.map(t => t.name).join(', ')}`);
 
-  return proxyToolDefs.map<ToolDefinition<any, any>>(def => ({
+  return definitions.map<ToolDefinition<any, any>>(def => ({
     name: def.name,
     label: def.name
       .replace(/^mcp__.*?__/, '')
@@ -864,7 +873,12 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
         const result = await prefetched;
         return {
           content: [{ type: 'text', text: result.content }],
-          details: result.isError ? { isError: true } : undefined,
+          details: {
+            ...(result.isError ? { isError: true } : {}),
+            ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+            ...(result._meta ? { _meta: result._meta } : {}),
+            ...(result.toolMeta ? { toolMeta: result.toolMeta } : {}),
+          },
         };
       }
 
@@ -883,13 +897,18 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
         args: approvedInput,
       });
 
-      const result = await new Promise<{ content: string; isError: boolean }>((resolve) => {
+      const result = await new Promise<ProxyToolResult>((resolve) => {
         pendingToolExecutions.set(requestId, { resolve });
       });
 
       return {
         content: [{ type: 'text', text: result.content }],
-        details: result.isError ? { isError: true } : undefined,
+        details: {
+          ...(result.isError ? { isError: true } : {}),
+          ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+          ...(result._meta ? { _meta: result._meta } : {}),
+          ...(result.toolMeta ? { toolMeta: result.toolMeta } : {}),
+        },
       };
     },
   }));
@@ -1197,7 +1216,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
           debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0].name} calls`);
           for (const tc of prefetchableToolCalls) {
             const requestId = `prefetch-${tc.id}`;
-            const promise = new Promise<{ content: string; isError: boolean }>((resolve) => {
+            const promise = new Promise<ProxyToolResult>((resolve) => {
               pendingToolExecutions.set(requestId, { resolve });
             });
             send({
@@ -1314,9 +1333,8 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
   currentUserMessage = msg.message;
 
   try {
-    // If proxy tools changed since last session creation, dispose and recreate.
-    // This avoids calling _buildRuntime() for dynamic tool updates — instead
-    // we create a fresh session via continueRecent() with all tools known upfront.
+    // New or changed definitions cannot be injected into an existing AgentSession.
+    // Recreate only for that fallback; known tools are activated in place.
     if (toolsChanged && piSession) {
       debugLog('Recreating session due to tool changes');
       if (unsubscribeEvents) {
@@ -1372,20 +1390,22 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 }
 
 function handleRegisterTools(msg: Extract<InboundMessage, { type: 'register_tools' }>): void {
-  // Merge: replace existing tools by name, add new ones
-  const incoming = new Map(msg.tools.map(t => [t.name, t]));
-  proxyToolDefs = [
-    ...proxyToolDefs.filter(t => !incoming.has(t.name)),
-    ...msg.tools,
-  ];
-  debugLog(`Registered ${msg.tools.length} proxy tools (total: ${proxyToolDefs.length}): ${msg.tools.map(t => t.name).join(', ')}`);
+  const scope = msg.scope ?? 'legacy';
+  const registeredNames = new Set(piSession?.getAllTools().map(tool => tool.name) ?? []);
+  const update = proxyToolCatalog.replaceScope(scope, msg.tools, registeredNames);
+  debugLog(`Registered ${msg.tools.length} ${scope} proxy tools (${update.activeNames.length} active, ${proxyToolCatalog.getDefinitions().length} known)`);
 
-  // If session exists, mark for recreation on next prompt.
-  // Don't dispose mid-generation — the flag is checked in handlePrompt().
-  if (piSession) {
+  if (!piSession || !update.changed) return;
+  if (update.requiresRebuild) {
     toolsChanged = true;
-    debugLog('Proxy tools changed — session will be recreated on next prompt');
+    debugLog('Proxy tool catalog gained a new or changed definition — session will be recreated on next prompt');
+    return;
   }
+
+  const proxyNames = proxyToolCatalog.getDefinitionNames();
+  const baseActiveNames = piSession.getActiveToolNames().filter(name => !proxyNames.has(name));
+  piSession.setActiveToolsByName([...baseActiveNames, ...update.activeNames]);
+  debugLog(`Updated Pi active tools in place (${update.activeNames.length} proxy tools)`);
 }
 
 function handleToolExecuteResponse(msg: Extract<InboundMessage, { type: 'tool_execute_response' }>): void {

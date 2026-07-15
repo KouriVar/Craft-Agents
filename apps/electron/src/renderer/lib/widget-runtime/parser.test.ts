@@ -4,6 +4,7 @@ import {
   parseWidgetContent,
   widgetDescriptorFromToolResult,
   widgetDescriptorFromToolResultText,
+  widgetDescriptorFromMcpToolResult,
 } from './parser'
 
 describe('parseWidgetContent', () => {
@@ -139,5 +140,43 @@ describe('widgetDescriptorFromToolResult', () => {
   test('ignores ordinary and malformed tool results', () => {
     expect(widgetDescriptorFromToolResultText('ordinary result')).toBeNull()
     expect(widgetDescriptorFromToolResultText(`${CRAFT_WIDGET_RESULT_PREFIX}{bad json`)).toBeNull()
+  })
+})
+
+describe('widgetDescriptorFromMcpToolResult', () => {
+  test('adapts the standard MCP Apps tool and result metadata', () => {
+    expect(widgetDescriptorFromMcpToolResult({
+      toolName: 'mcp__canvasight__open_canvasight',
+      toolUseId: 'call-1',
+      toolInput: { projectPath: '/tmp/demo' },
+      resultDetails: {
+        mcpApp: {
+          toolMeta: { ui: { resourceUri: 'ui://widget/canvasight/canvas.html' } },
+          structuredContent: { status: 'opening', targetDisplayMode: 'fullscreen' },
+          responseMeta: { widgetData: { sessionId: 'canvas-1' } },
+        },
+      },
+    })).toMatchObject({
+      kind: 'mcp-app',
+      serverSlug: 'canvasight',
+      resourceUri: 'ui://widget/canvasight/canvas.html',
+      toolName: 'open_canvasight',
+      toolInput: { projectPath: '/tmp/demo' },
+      displayMode: 'fullscreen',
+      source: 'mcp-app',
+    })
+  })
+
+  test('accepts the OpenAI output template alias and rejects missing UI metadata', () => {
+    expect(widgetDescriptorFromMcpToolResult({
+      toolName: 'mcp__demo__render',
+      toolUseId: 'call-2',
+      resultDetails: { mcpApp: { toolMeta: { 'openai/outputTemplate': 'ui://demo/app.html' } } },
+    })?.resourceUri).toBe('ui://demo/app.html')
+    expect(widgetDescriptorFromMcpToolResult({
+      toolName: 'mcp__demo__render',
+      toolUseId: 'call-3',
+      resultDetails: { mcpApp: { structuredContent: {} } },
+    })).toBeNull()
   })
 })

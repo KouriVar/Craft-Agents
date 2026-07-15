@@ -139,6 +139,33 @@ Help with git.
     expect(result.valid).toBe(true);
   });
 
+  it('passes with scalar string-list metadata fields', () => {
+    const content = `---
+name: Portable Skill
+description: Uses compact portable metadata
+globs: "**/*.ts"
+alwaysAllow: Bash
+---
+
+Help with portable skill metadata.
+`;
+    const result = validateSkillContent(content, 'portable-skill');
+    expect(result.valid).toBe(true);
+  });
+
+  it('passes with portable display fallbacks supplied by folder validation', () => {
+    const content = `---
+---
+
+Help with portable skill metadata.
+`;
+    const result = validateSkillContent(content, 'portable-fallback', {
+      name: 'Portable Fallback',
+      description: 'Description from agents/openai.yaml',
+    });
+    expect(result.valid).toBe(true);
+  });
+
   it('fails when frontmatter is missing name', () => {
     const content = `---
 description: A skill without a name

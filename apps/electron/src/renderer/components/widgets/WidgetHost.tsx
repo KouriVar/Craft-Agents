@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Brush } from 'lucide-react'
 import type { WidgetDescriptor } from '../../../shared/widget-runtime'
 import { InlineVisualizationBlock } from './InlineVisualizationBlock'
+import { McpAppWidget } from './McpAppWidget'
 
 export interface WidgetHostProps {
   descriptor: WidgetDescriptor
@@ -31,5 +32,7 @@ export function WidgetHost({ descriptor, sessionId }: WidgetHostProps) {
           <span className="text-xs text-muted-foreground">Open</span>
         </button>
       )
+    case 'mcp-app':
+      return <McpAppWidget descriptor={descriptor} sessionId={sessionId} />
   }
 }

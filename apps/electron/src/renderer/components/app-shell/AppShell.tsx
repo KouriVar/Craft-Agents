@@ -20,6 +20,7 @@ import {
   Trash2,
   DatabaseZap,
   Zap,
+  Plug,
   Inbox,
   Globe,
   FolderOpen,
@@ -92,6 +93,7 @@ import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSourc
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
+import { pluginsAtom } from "@/atoms/plugins"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
@@ -114,6 +116,7 @@ import {
   isSourcesNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
+  isPluginsNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
   type NavigationState,
@@ -121,6 +124,8 @@ import {
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
+import { PluginsListPanel } from "../plugins/PluginsListPanel"
+import { PluginInstallMenu } from "../plugins/PluginInstallMenu"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
@@ -147,6 +152,7 @@ import {
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
+import type { WorkspacePluginEntry } from "@craft-agent/shared/plugins"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -611,17 +617,23 @@ function AppShellContent({
       >).detail
       const descriptor = detail && 'descriptor' in detail ? detail.descriptor : detail
       const widgetSessionId = detail && 'descriptor' in detail ? detail.sessionId : session.selected ?? undefined
-      if (!descriptor || descriptor.kind !== 'cowart-canvas') return
+      if (!descriptor) return
 
       updateRightSidebar({ type: 'review' })
       window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-cowart', {
-          detail: {
-            projectDir: descriptor.projectDir,
-            pageId: descriptor.pageId,
-            sessionId: widgetSessionId,
-          },
-        }))
+        if (descriptor.kind === 'cowart-canvas') {
+          window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-cowart', {
+            detail: {
+              projectDir: descriptor.projectDir,
+              pageId: descriptor.pageId,
+              sessionId: widgetSessionId,
+            },
+          }))
+        } else if (descriptor.kind === 'mcp-app') {
+          window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-widget', {
+            detail: { descriptor, sessionId: widgetSessionId },
+          }))
+        }
       }, 0)
     }
 
@@ -993,6 +1005,12 @@ function AppShellContent({
   React.useEffect(() => {
     setSkillsAtom(skills)
   }, [skills, setSkillsAtom])
+
+  const [plugins, setPlugins] = React.useState<WorkspacePluginEntry[]>([])
+  const setPluginsAtom = useSetAtom(pluginsAtom)
+  React.useEffect(() => {
+    setPluginsAtom(plugins)
+  }, [plugins, setPluginsAtom])
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
 
@@ -1112,6 +1130,21 @@ function AppShellContent({
     })
     return cleanup
   }, [activeWorkspaceId])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId) {
+      setPlugins([])
+      return
+    }
+    window.electronAPI.listPlugins(activeWorkspaceId).then(setPlugins).catch(err => {
+      console.error('[AppShell] Failed to load plugins:', err)
+      setPlugins([])
+    })
+  }, [activeWorkspaceId])
+
+  React.useEffect(() => window.electronAPI.onPluginsChanged((workspaceId, updatedPlugins) => {
+    if (workspaceId === activeWorkspaceId) setPlugins(updatedPlugins)
+  }), [activeWorkspaceId])
 
   // Handle session source selection changes
   const handleSessionSourcesChange = React.useCallback(async (sessionId: string, sourceSlugs: string[]) => {
@@ -1233,6 +1266,11 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     navigate(routes.view.skills(skill.slug))
   }, [activeWorkspaceId, navigate])
+
+  const handlePluginSelect = React.useCallback((plugin: WorkspacePluginEntry) => {
+    if (!activeWorkspaceId) return
+    navigate(routes.view.plugins(plugin.name))
+  }, [activeWorkspaceId])
 
   // Handle selecting an automation from the list
   const handleAutomationSelect = React.useCallback((automationId: string) => {
@@ -1516,7 +1554,7 @@ function AppShellContent({
   const [workspaceUnreadMap, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
 
   // Reload skills when active session's workingDirectory changes (for project-level skills)
-  // Skills are loaded from: global (~/.agents/skills/), workspace, and project ({workingDirectory}/.agents/skills/)
+  // Skills are loaded from: global, workspace, and project .agents/skills from working dir to repo root.
   const activeSessionWorkingDirectory = session.selected
     ? sessionMetaMap.get(session.selected)?.workingDirectory
     : undefined
@@ -1937,6 +1975,10 @@ function AppShellContent({
     navigate(routes.view.skills())
   }, [])
 
+  const handlePluginsClick = useCallback(() => {
+    navigate(routes.view.plugins())
+  }, [])
+
   // Handlers for automations view
   const handleAutomationsClick = useCallback(() => {
     navigate(routes.view.automations())
@@ -2237,12 +2279,13 @@ function AppShellContent({
     // 3. Sources, Skills, Settings
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
+    result.push({ id: 'nav:plugins', type: 'nav', action: handlePluginsClick })
     result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick() })
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handlePluginsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2359,6 +2402,10 @@ function AppShellContent({
     // Skills navigator
     if (isSkillsNavigation(navState)) {
       return t("sidebar.allSkills")
+    }
+
+    if (isPluginsNavigation(navState)) {
+      return t("sidebar.allPlugins", { defaultValue: "All Plugins" })
     }
 
     // Projects navigator
@@ -2697,6 +2744,14 @@ function AppShellContent({
                         type: 'skills',
                         onAddSkill: openAddSkill,
                       },
+                    },
+                    {
+                      id: "nav:plugins",
+                      title: t("sidebar.plugins", { defaultValue: "Plugins" }),
+                      label: String(plugins.length),
+                      icon: Plug,
+                      variant: isPluginsNavigation(navState) ? "default" : "ghost",
+                      onClick: handlePluginsClick,
                     },
                     {
                       id: "nav:projects",
@@ -3548,6 +3603,16 @@ function AppShellContent({
                       {...getEditConfig('add-skill', activeWorkspace.rootPath)}
                     />
                   )}
+                  {isPluginsNavigation(navState) && activeWorkspaceId && (
+                    <PluginInstallMenu
+                      workspaceId={activeWorkspaceId}
+                      installedPluginNames={plugins.map(plugin => plugin.name)}
+                      onInstalled={(plugin) => {
+                        setPlugins(current => [...current.filter(item => item.name !== plugin.name), plugin].sort((a, b) => a.name.localeCompare(b.name)))
+                        navigate(routes.view.plugins(plugin.name))
+                      }}
+                    />
+                  )}
                   {/* Add Automation button (only for automations mode) */}
                   {isAutomationsNavigation(navState) && activeWorkspace && (
                     <EditPopover
@@ -3593,6 +3658,13 @@ function AppShellContent({
                 onSkillClick={handleSkillSelect}
                 onDeleteSkill={handleDeleteSkill}
                 selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
+              />
+            )}
+            {isPluginsNavigation(navState) && activeWorkspaceId && (
+              <PluginsListPanel
+                plugins={plugins}
+                onPluginClick={handlePluginSelect}
+                selectedPluginName={navState.details?.pluginName ?? null}
               />
             )}
             {isProjectsNavigation(navState) && activeWorkspaceId && (

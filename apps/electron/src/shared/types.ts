@@ -327,13 +327,15 @@ export interface ElectronAPI {
   // File operations
   readFile(path: string): Promise<string>
   readWidgetFile(request: import('./widget-runtime').ReadWidgetFileRequest): Promise<import('./widget-runtime').ReadWidgetFileResult>
+  readMcpWidgetResource(request: import('@craft-agent/shared/protocol').ReadMcpWidgetResourceRequest): Promise<import('@craft-agent/shared/protocol').ReadMcpWidgetResourceResult>
+  callMcpWidgetTool(request: import('@craft-agent/shared/protocol').CallMcpWidgetToolRequest): Promise<import('@craft-agent/shared/protocol').CallMcpWidgetToolResult>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */
   readFileDataUrl(path: string): Promise<string>
   /** Read an image file as a size-bounded preview data URL for lightweight thumbnail rendering. */
   readFilePreviewDataUrl(path: string, maxSize?: number): Promise<string>
-  openFileDialog(): Promise<string[]>
+  openFileDialog(options?: { mode?: 'files' | 'directory'; title?: string }): Promise<string[]>
   readFileAttachment(path: string): Promise<FileAttachment | null>
   /** Re-read a user-attached file by absolute path (bypasses workspace-dir validation).
    *  Used only by draft hydration for paths the user explicitly picked via OS dialog / drag. */
@@ -516,6 +518,24 @@ export interface ElectronAPI {
 
   // Skills change listener (live updates when skills are added/removed/modified)
   onSkillsChanged(callback: (workspaceId: string, skills: LoadedSkill[]) => void): () => void
+
+  // Plugins
+  listPlugins(workspaceId: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry[]>
+  getPluginPolicies(workspaceId: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginPolicyConfig>
+  setPluginPolicy(workspaceId: string, pluginName: string, policy: Partial<import('@craft-agent/shared/plugins').PluginToolPolicy>): Promise<import('@craft-agent/shared/plugins').PluginToolPolicy>
+  getPluginMcpStatus(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
+  diagnosePluginMcp(workspaceId: string, options?: { timeout?: number }): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
+  installGitPlugin(workspaceId: string, gitUrl: string, options?: { ref?: string; enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  listPluginMarketplaceSources(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource[]>
+  addPluginMarketplaceSource(workspaceId: string, input: { name?: string; source: string; ref?: string; sparsePath?: string }): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource>
+  removePluginMarketplaceSource(workspaceId: string, sourceId: string): Promise<void>
+  getPluginMarketplaceCatalog(workspaceId: string, sourceId: string, options?: { refresh?: boolean }): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceCatalog>
+  installMarketplacePlugin(workspaceId: string, marketplaceId: string, pluginName: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  registerLocalPlugin(workspaceId: string, pluginRootPath: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  setPluginEnabled(workspaceId: string, pluginName: string, enabled: boolean): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  unregisterPlugin(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry | null>
+  removeManagedPlugin(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry | null>
+  onPluginsChanged(callback: (workspaceId: string, plugins: import('@craft-agent/shared/plugins').WorkspacePluginEntry[]) => void): () => void
 
   // Statuses (workspace-scoped)
   listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
@@ -915,6 +935,12 @@ export interface SkillsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface PluginsNavigationState {
+  navigator: 'plugins'
+  details: { type: 'plugin'; pluginName: string } | null
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Automations navigation state
  */
@@ -942,6 +968,7 @@ export type NavigationState =
   | SourcesNavigationState
   | SettingsNavigationState
   | SkillsNavigationState
+  | PluginsNavigationState
   | AutomationsNavigationState
   | ProjectsNavigationState
 
@@ -960,6 +987,10 @@ export const isSettingsNavigation = (
 export const isSkillsNavigation = (
   state: NavigationState
 ): state is SkillsNavigationState => state.navigator === 'skills'
+
+export const isPluginsNavigation = (
+  state: NavigationState
+): state is PluginsNavigationState => state.navigator === 'plugins'
 
 export const isAutomationsNavigation = (
   state: NavigationState
@@ -987,6 +1018,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `skills/skill/${state.details.skillSlug}`
     }
     return 'skills'
+  }
+  if (state.navigator === 'plugins') {
+    if (state.details?.type === 'plugin') {
+      return `plugins/plugin/${state.details.pluginName}`
+    }
+    return 'plugins'
   }
   if (state.navigator === 'automations') {
     if (state.details?.type === 'automation') {
@@ -1036,6 +1073,14 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
       return { navigator: 'skills', details: { type: 'skill', skillSlug } }
     }
     return { navigator: 'skills', details: null }
+  }
+
+  if (key === 'plugins') return { navigator: 'plugins', details: null }
+  if (key.startsWith('plugins/plugin/')) {
+    const pluginName = key.slice(15)
+    return pluginName
+      ? { navigator: 'plugins', details: { type: 'plugin', pluginName } }
+      : { navigator: 'plugins', details: null }
   }
 
   // Handle automations

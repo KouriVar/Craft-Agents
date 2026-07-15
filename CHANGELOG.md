@@ -1,5 +1,32 @@
 # 更新日志
 
+## 2026-07-15 v0.11.4 五层扩展协议与插件市场
+
+### 扩展协议
+
+- 补齐可移植 Skill、插件包、MCP 工具、交互式 Widget 与宿主权限五层扩展协议，并加入对应的生命周期、诊断、恢复和安全边界。
+- 支持 `.craft-plugin`、`.codex-plugin` 与 `.claude-plugin` 插件清单，统一发现 Skill、MCP、App 和 Widget 资源。
+- 新增插件级启停、工具权限策略、MCP 健康诊断、会话资源回收与安全恢复。
+- 扩展 Skill 元数据兼容性，支持项目目录向上发现、`agents/openai.yaml` 以及更宽容的列表字段解析。
+
+### 插件与市场
+
+- 左侧栏新增「插件」工作区，支持 Git 安装、本地添加、启停、卸载、工具策略和 MCP 状态查看。
+- 新增插件市场浏览器，默认接入公开的 `openai/plugins` 市场，并支持搜索、刷新、添加或移除其他 Git marketplace。
+- 市场安装使用稀疏检出与本地缓存，仅拉取清单和选中的插件目录，并对路径穿越和符号链接逃逸进行校验。
+- 对依赖 OpenAI Connector 或外部账号的插件显示兼容提醒，不支持的 NPM marketplace 包会明确标记。
+
+### MCP Apps 与 Widget
+
+- 新增通用 MCP Apps Widget Host，可在消息内或右侧审阅栏渲染插件交互界面，不再为 Canvasight 等应用逐个制作专用适配。
+- 支持 `structuredContent`、`_meta`、MCP 资源、CSP、主题同步、工具调用、后续消息回传与最小 `window.openai` 兼容桥。
+- Widget 工具调用继承 Explore、Ask、Execute 会话权限，并加入确认、插件策略、重连、错误重试和会话关闭清理。
+
+### Pi 与构建
+
+- Pi 运行时升级至 `0.80.7`，加入会话与连接池级动态工具目录；工具启停可原地更新，Schema 变化时安全重建会话。
+- 强化 DMG/EXE 打包资源验证，确保 Electron 主进程、preload、renderer、插件与 Widget 运行资源完整。
+
 ## 2026-07-15 对话内可视化与 Cowart Widget 宿主
 
 ### 新增

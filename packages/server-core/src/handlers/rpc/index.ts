@@ -17,6 +17,7 @@ export type { ServerHandlerContext } from '../../bootstrap/headless-start'
 export { getHealthCheck } from './server'
 import { registerSettingsHandlers } from './settings'
 import { registerProjectsHandlers } from './projects'
+import { registerPluginsHandlers } from './plugins'
 import { registerSkillsHandlers } from './skills'
 import { registerSourcesHandlers } from './sources'
 import { registerStatusesHandlers } from './statuses'
@@ -25,6 +26,7 @@ import { registerTasksHandlers } from './tasks'
 import { registerTransferHandlers } from './transfer'
 import { registerWorkspaceCoreHandlers } from './workspace'
 import { registerMessagingHandlers } from './messaging'
+import { registerWidgetHandlers } from './widgets'
 
 export function registerCoreRpcHandlers(
   server: RpcServer,
@@ -43,6 +45,7 @@ export function registerCoreRpcHandlers(
   if (serverCtx) registerServerHandlers(server, deps, serverCtx)
   registerSettingsHandlers(server, deps)
   registerProjectsHandlers(server, deps)
+  registerPluginsHandlers(server, deps)
   registerSkillsHandlers(server, deps)
   registerSourcesHandlers(server, deps)
   registerStatusesHandlers(server, deps)
@@ -51,4 +54,5 @@ export function registerCoreRpcHandlers(
   registerTransferHandlers(server)
   registerWorkspaceCoreHandlers(server, deps)
   registerMessagingHandlers(server, deps)
+  registerWidgetHandlers(server, deps)
 }

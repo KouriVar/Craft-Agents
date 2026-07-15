@@ -154,6 +154,7 @@ export function handleToolResult(
     toolUseId: event.toolUseId,
     toolName: event.toolName,
     toolResult: event.result,
+    toolResultDetails: event.resultDetails,
     toolStatus: effectiveIsError ? 'error' : 'completed',
     isError: effectiveIsError,
     errorCode: isPersistedOutput ? 'response_too_large' : undefined,

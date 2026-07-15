@@ -30,6 +30,7 @@ import {
   isSourcesNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
+  isPluginsNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
 } from '@/contexts/NavigationContext'
@@ -42,6 +43,7 @@ import SkillInfoPage from '@/pages/SkillInfoPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
+import { PluginInfoPage } from '../plugins/PluginInfoPage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
@@ -311,6 +313,23 @@ export function MainContentPanel({
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">
           <p className="text-sm">{t("skillsList.noSkillsConfigured")}</p>
+        </div>
+      </Panel>
+    )
+  }
+
+  if (isPluginsNavigation(navState)) {
+    if (navState.details?.type === 'plugin' && activeWorkspaceId) {
+      return wrapWithStoplight(
+        <Panel variant="grow" className={className}>
+          <PluginInfoPage workspaceId={activeWorkspaceId} pluginName={navState.details.pluginName} />
+        </Panel>
+      )
+    }
+    return wrapWithStoplight(
+      <Panel variant="grow" className={className}>
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <p className="text-sm">{t('plugins.noSelection', { defaultValue: 'Select a plugin to view its details' })}</p>
         </div>
       </Panel>
     )

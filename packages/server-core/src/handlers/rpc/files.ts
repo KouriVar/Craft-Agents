@@ -163,10 +163,15 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   )
 
   // Open native file dialog for selecting files to attach (routed to client)
-  server.handle(RPC_CHANNELS.file.OPEN_DIALOG, async (ctx) => {
+  server.handle(RPC_CHANNELS.file.OPEN_DIALOG, async (
+    ctx,
+    options?: { mode?: 'files' | 'directory'; title?: string },
+  ) => {
+    const directoryMode = options?.mode === 'directory'
     const result = await requestClientOpenFileDialog(server, ctx.clientId, {
-      properties: ['openFile', 'multiSelections'],
-      filters: [
+      title: options?.title,
+      properties: directoryMode ? ['openDirectory'] : ['openFile', 'multiSelections'],
+      filters: directoryMode ? undefined : [
         // Allow all files by default - the agent can figure out how to handle them
         { name: 'All Files', extensions: ['*'] },
         { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'] },

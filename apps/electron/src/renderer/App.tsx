@@ -966,6 +966,9 @@ export default function App() {
       }
 
       if (event.type === 'session_deleted') {
+        window.dispatchEvent(new CustomEvent('craft:session-deleted', {
+          detail: { sessionId },
+        }))
         removeSession(sessionId)
         return
       }

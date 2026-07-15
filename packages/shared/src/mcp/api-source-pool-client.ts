@@ -43,6 +43,11 @@ export class ApiSourcePoolClient implements PoolClient {
     return this.client.callTool({ name, arguments: args });
   }
 
+  async readResource(uri: string): Promise<unknown> {
+    if (!this.connected) await this.connect();
+    return this.client.readResource({ uri });
+  }
+
   async close(): Promise<void> {
     if (this.connected) {
       await this.client.close().catch(() => {});

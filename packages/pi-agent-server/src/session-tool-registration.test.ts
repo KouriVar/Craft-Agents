@@ -15,7 +15,7 @@ import { createWebFetchTool } from './tools/web-fetch.ts';
 import type { WebSearchProvider } from './tools/search/types.ts';
 
 /**
- * Regression contract for Pi SDK 0.70.0 tool registration.
+ * Regression contract for Pi SDK tool registration.
  *
  * Pre-fix bug (PR #330): subprocess passed `tools: AgentTool[]` to
  * `createAgentSession`. Pi SDK 0.70.0 redefined `CreateAgentSessionOptions.tools`
@@ -28,8 +28,8 @@ import type { WebSearchProvider } from './tools/search/types.ts';
  *   hides tools without a snippet from the system prompt's "Available tools"
  *   section, making them invisible to the LLM even when registered).
  * - The `tools` allowlist is a `string[]` of tool names.
- * - Every tool passed via `customTools` has its name present in the allowlist
- *   (otherwise it gets filtered out by `_refreshToolRegistry`'s allowlist guard).
+ * - Active custom tools have their names in the allowlist. Pi 0.80.7 also permits
+ *   registered-but-inactive custom tools for later `setActiveToolsByName()` calls.
  */
 
 const stubSearchProvider: WebSearchProvider = {
@@ -86,7 +86,7 @@ describe('Pi subprocess tool shape contract', () => {
   });
 });
 
-describe('Pi SDK 0.70.0 CreateAgentSessionOptions contract', () => {
+describe('Pi SDK 0.80.7 CreateAgentSessionOptions contract', () => {
   it('`tools` field is typed as string[] (name allowlist, not objects)', () => {
     // Compile-time proof. If Pi SDK ever changes this back to accept tool
     // objects, the line below will become a type error and this test will
@@ -109,9 +109,7 @@ describe('Pi SDK 0.70.0 CreateAgentSessionOptions contract', () => {
     expect(options.customTools?.length).toBe(2);
   });
 
-  it('customTools names ⊆ tools allowlist invariant', () => {
-    // This is the invariant the subprocess must maintain when building sessionOptions.
-    // If any customTool name is missing from `tools`, that tool gets filtered out.
+  it('active customTools names are present in the initial allowlist', () => {
     const searchTool = createSearchTool(stubSearchProvider);
     const webFetchTool = createWebFetchTool(() => null);
     const customTools = [
@@ -130,5 +128,16 @@ describe('Pi SDK 0.70.0 CreateAgentSessionOptions contract', () => {
     for (const tool of customTools) {
       expect(allowlistSet.has(tool.name)).toBe(true);
     }
+  });
+
+  it('accepts a registered custom tool that starts inactive', () => {
+    const searchTool = createSearchTool(stubSearchProvider);
+    const options: CreateAgentSessionOptions = {
+      customTools: [searchTool],
+      tools: ['read'],
+    };
+
+    expect(options.customTools?.map(tool => tool.name)).toEqual(['web_search']);
+    expect(options.tools).toEqual(['read']);
   });
 });

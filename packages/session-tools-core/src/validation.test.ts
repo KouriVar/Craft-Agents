@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeMermaidSource, validateMermaidSyntax } from './validation.ts';
+import { normalizeMermaidSource, validateMermaidSyntax, validateSkillContent } from './validation.ts';
 
 describe('Mermaid validation helpers', () => {
   it('normalizes YAML frontmatter before diagram syntax', () => {
@@ -18,5 +18,16 @@ describe('Mermaid validation helpers', () => {
     const result = validateMermaidSyntax('unknownDiagram\nA-->B');
     expect(result.valid).toBe(false);
     expect(result.errors[0]?.message).toContain('Unknown diagram type');
+  });
+});
+
+describe('Skill validation helpers', () => {
+  it('accepts portable display fallbacks supplied by folder validation', () => {
+    const result = validateSkillContent('---\n---\n\nUse portable metadata.\n', 'portable-fallback', {
+      name: 'Portable Fallback',
+      description: 'Description from agents/openai.yaml',
+    });
+
+    expect(result.valid).toBe(true);
   });
 });

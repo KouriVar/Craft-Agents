@@ -15,9 +15,10 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { qualifySkillName, AGENTS_PLUGIN_NAME } from '../core/index.ts'
 import { extractWorkspaceSlug, readPluginName } from '../../utils/workspace.ts'
+import { setPluginEnabled } from '../../plugins/config.ts'
 
 // ============================================================================
-// readPluginName — reads SDK plugin name from .claude-plugin/plugin.json
+// readPluginName — reads SDK/plugin package name from supported plugin manifests
 // ============================================================================
 
 describe('readPluginName', () => {
@@ -32,6 +33,13 @@ describe('readPluginName', () => {
     mkdirSync(join(wsDir, '.claude-plugin'), { recursive: true })
     writeFileSync(join(wsDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'craft-workspace-default', version: '1.0.0' }))
     expect(readPluginName(wsDir)).toBe('craft-workspace-default')
+  })
+
+  it('reads plugin name from .codex-plugin/plugin.json', () => {
+    const wsDir = join(testDir, 'ws-with-codex-plugin')
+    mkdirSync(join(wsDir, '.codex-plugin'), { recursive: true })
+    writeFileSync(join(wsDir, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'codex-compatible-plugin', version: '1.0.0' }))
+    expect(readPluginName(wsDir)).toBe('codex-compatible-plugin')
   })
 
   it('returns null when .claude-plugin/plugin.json does not exist', () => {
@@ -212,9 +220,14 @@ describe('qualifySkillName with filesystem resolution', () => {
   const testDir = join(tmpdir(), `skill-resolve-test-${Date.now()}`)
   const workspaceRoot = join(testDir, 'my-workspace')
   const projectDir = join(testDir, 'my-project')
+  const nestedProjectDir = join(projectDir, 'packages', 'app')
+  const pluginProjectDir = join(testDir, 'plugin-project')
   const workspaceSlug = 'my-workspace'
 
   beforeAll(() => {
+    mkdirSync(join(projectDir, '.git'), { recursive: true })
+    mkdirSync(nestedProjectDir, { recursive: true })
+
     // Create workspace skill: my-workspace/skills/ws-only/SKILL.md
     mkdirSync(join(workspaceRoot, 'skills', 'ws-only'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'skills', 'ws-only', 'SKILL.md'), '---\nname: WS Only\ndescription: test\n---\n')
@@ -230,6 +243,12 @@ describe('qualifySkillName with filesystem resolution', () => {
     // Create project skill that also exists in workspace (for priority test)
     mkdirSync(join(projectDir, '.agents', 'skills', 'shared-skill'), { recursive: true })
     writeFileSync(join(projectDir, '.agents', 'skills', 'shared-skill', 'SKILL.md'), '---\nname: Proj Shared\ndescription: test\n---\n')
+
+    // Create a Codex-style plugin package with package-local skills.
+    mkdirSync(join(pluginProjectDir, '.codex-plugin'), { recursive: true })
+    mkdirSync(join(pluginProjectDir, 'skills', 'plugin-only'), { recursive: true })
+    writeFileSync(join(pluginProjectDir, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'codex-plugin-package' }))
+    writeFileSync(join(pluginProjectDir, 'skills', 'plugin-only', 'SKILL.md'), '---\nname: Plugin Only\ndescription: test\n---\n')
   })
 
   afterAll(() => {
@@ -244,6 +263,26 @@ describe('qualifySkillName with filesystem resolution', () => {
 
   it('resolves project-only skill to .agents plugin', () => {
     const result = qualifySkillName({ skill: 'proj-only' }, workspaceSlug, workspaceRoot, projectDir)
+    expect(result.modified).toBe(true)
+    expect(result.input).toEqual({ skill: `${AGENTS_PLUGIN_NAME}:proj-only` })
+  })
+
+  it('resolves plugin package skills to the package manifest name', () => {
+    const result = qualifySkillName({ skill: 'plugin-only' }, workspaceSlug, workspaceRoot, pluginProjectDir)
+    expect(result.modified).toBe(true)
+    expect(result.input).toEqual({ skill: 'codex-plugin-package:plugin-only' })
+  })
+
+  it('does not resolve disabled plugin package skills', () => {
+    setPluginEnabled(workspaceRoot, 'codex-plugin-package', false)
+    const result = qualifySkillName({ skill: 'plugin-only' }, workspaceSlug, workspaceRoot, pluginProjectDir)
+    expect(result.modified).toBe(true)
+    expect(result.input).toEqual({ skill: 'my-workspace:plugin-only' })
+    setPluginEnabled(workspaceRoot, 'codex-plugin-package', true)
+  })
+
+  it('resolves ancestor project skills from a nested working directory', () => {
+    const result = qualifySkillName({ skill: 'proj-only' }, workspaceSlug, workspaceRoot, nestedProjectDir)
     expect(result.modified).toBe(true)
     expect(result.input).toEqual({ skill: `${AGENTS_PLUGIN_NAME}:proj-only` })
   })

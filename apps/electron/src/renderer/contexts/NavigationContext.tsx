@@ -69,6 +69,7 @@ import {
   isSourcesNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
+  isPluginsNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
   DEFAULT_NAVIGATION_STATE,
@@ -76,6 +77,7 @@ import {
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
+import { pluginsAtom } from '@/atoms/plugins'
 import {
   panelStackAtom,
   pushPanelAtom,
@@ -93,7 +95,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation, isProjectsNavigation }
+export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isPluginsNavigation, isAutomationsNavigation, isProjectsNavigation }
 
 // =============================================================================
 // Context
@@ -183,6 +185,7 @@ export function NavigationProvider({
 
   // Read skills from atom (populated by AppShell)
   const skills = useAtomValue(skillsAtom)
+  const plugins = useAtomValue(pluginsAtom)
 
   // =========================================================================
   // DERIVED NAVIGATION STATE (from focused panel + right sidebar)
@@ -612,6 +615,11 @@ export function NavigationProvider({
     [skills]
   )
 
+  const getFirstPluginName = useCallback(
+    (): string | null => plugins[0]?.name ?? null,
+    [plugins]
+  )
+
   // =========================================================================
   // AUTO-SELECTION (pure computation, no side effects)
   // =========================================================================
@@ -672,9 +680,17 @@ export function NavigationProvider({
         return nextState
       }
 
+      if (isPluginsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
+        const firstPluginName = getFirstPluginName()
+        if (firstPluginName) {
+          return { ...nextState, details: { type: 'plugin', pluginName: firstPluginName } }
+        }
+        return nextState
+      }
+
       return nextState
     },
-    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstSkillSlug]
+    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstSkillSlug, getFirstPluginName]
   )
 
   // Ref keeps resolveAutoSelection fresh for reconcileFromUrlParams (defined earlier in the file)

@@ -33,7 +33,7 @@ export interface ISessionManager {
 
   waitForInit(): Promise<void>
   initialize(): Promise<void>
-  cleanup(): void
+  cleanup(): Promise<void>
   setEventSink(sink: EventSink): void
   flushAllSessions(): Promise<void>
 
@@ -121,6 +121,11 @@ export interface ISessionManager {
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
+  readMcpWidgetResource(sessionId: string, serverSlug: string, uri: string): Promise<import('@craft-agent/shared/mcp').McpResourceResult>
+  getMcpWidgetToolDefinition(sessionId: string, toolName: string): import('@craft-agent/shared/mcp').ProxyToolDef | null
+  prepareMcpWidgetRuntime(sessionId: string): Promise<void>
+  getMcpWidgetPluginPolicy(sessionId: string, serverSlug: string, toolName: string): import('@craft-agent/shared/plugins').PluginToolPolicyAction
+  callMcpWidgetTool(sessionId: string, toolName: string, args: Record<string, unknown>): Promise<import('@craft-agent/shared/mcp').McpToolResult>
 
   // --- Tasks Conductor seams (in-process; not renderer events, not agent-facing) ---
   /**

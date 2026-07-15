@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import matter from 'gray-matter';
+import { load as loadYaml } from 'js-yaml';
 import { existsSync, readFileSync } from 'node:fs';
 import type { ValidationResult, ValidationIssue } from './types.ts';
 
@@ -194,14 +195,44 @@ export function validateSlug(slug: string): ValidationResult {
 /**
  * Zod schema for skill metadata (SKILL.md frontmatter)
  */
+const StringListSchema = z.preprocess((value) => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value;
+  return value;
+}, z.array(z.string().trim().min(1)).optional());
+
 export const SkillMetadataSchema = z.object({
   name: z.string().min(1, "Add a 'name' field with a human-readable title"),
   description: z.string().min(1, "Add a 'description' field explaining what this skill does"),
-  globs: z.array(z.string()).optional(),
-  alwaysAllow: z.array(z.string()).optional(),
+  globs: StringListSchema,
+  alwaysAllow: StringListSchema,
   icon: z.string().optional(),
-  requiredSources: z.array(z.string()).optional(),
+  requiredSources: StringListSchema,
 }).passthrough();
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+export function readPortableSkillDisplayFallbacks(skillDir: string): { name?: string; description?: string } {
+  const metadataPath = `${skillDir}/agents/openai.yaml`;
+  if (!existsSync(metadataPath)) return {};
+
+  try {
+    const root = asRecord(loadYaml(readFileSync(metadataPath, 'utf-8')));
+    const interfaceConfig = asRecord(root?.interface);
+    const displayName = interfaceConfig?.display_name;
+    const shortDescription = interfaceConfig?.short_description;
+    return {
+      name: typeof displayName === 'string' && displayName.trim() ? displayName.trim() : undefined,
+      description: typeof shortDescription === 'string' && shortDescription.trim() ? shortDescription.trim() : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Validate skill SKILL.md content (without filesystem access).
@@ -210,7 +241,11 @@ export const SkillMetadataSchema = z.object({
  * @param markdownContent - The full SKILL.md file content
  * @param slug - The skill slug (folder name), used for slug format validation
  */
-export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
+export function validateSkillContent(
+  markdownContent: string,
+  slug: string,
+  portableFallbacks: { name?: string; description?: string } = {}
+): ValidationResult {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
 
@@ -223,7 +258,12 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
   let body: string;
   try {
     const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
+    const data = asRecord(parsed.data) ?? {};
+    frontmatter = {
+      ...data,
+      name: data.name ?? portableFallbacks.name,
+      description: data.description ?? portableFallbacks.description,
+    };
     body = parsed.content;
   } catch (e) {
     return invalidResult(

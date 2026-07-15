@@ -36,7 +36,9 @@ import {
 } from '../../config/cli-domains.ts';
 import { FEATURE_FLAGS } from '../../feature-flags.ts';
 import { AGENTS_PLUGIN_NAME } from '../../skills/types.ts';
-import { GLOBAL_AGENT_SKILLS_DIR, PROJECT_AGENT_SKILLS_DIR } from '../../skills/storage.ts';
+import { GLOBAL_AGENT_SKILLS_DIR, PROJECT_AGENT_SKILLS_DIR, getProjectPackageRoots } from '../../skills/storage.ts';
+import { loadPluginPackage } from '../../plugins/storage.ts';
+import { isPluginPackageEnabled } from '../../plugins/config.ts';
 import {
   shouldAllowToolInMode,
   isApiEndpointAllowed,
@@ -197,10 +199,11 @@ export function expandToolPaths(
  * Ensure skill names are fully-qualified with the correct plugin prefix.
  *
  * The SDK resolves skills as `pluginName:skillSlug` where the plugin name is
- * read from `.claude-plugin/plugin.json` `name` field. Skills can live in 3 tiers:
+ * read from supported plugin manifests. Skills can live in these tiers:
  *   1. Workspace: {workspaceRoot}/skills/{slug}/ → plugin name from plugin.json
- *   2. Project:   {workingDir}/.agents/skills/{slug}/ → plugin name = ".agents"
- *   3. Global:    ~/.agents/skills/{slug}/ → plugin name = ".agents"
+ *   2. Project:   .agents/skills/{slug}/ from working dir to repo root → plugin name = ".agents"
+ *   3. Project plugin package: skills/{slug}/ from working dir to repo root → plugin manifest name
+ *   4. Global:    ~/.agents/skills/{slug}/ → plugin name = ".agents"
  *
  * This function resolves the bare slug to the correct plugin prefix by checking
  * which directory actually contains the skill. It also handles re-qualifying
@@ -263,9 +266,24 @@ function resolveSkillPlugin(
 ): string {
   // Priority order matches loadAllSkills: project (highest) > workspace > global (lowest)
 
-  // 1. Project: {workingDir}/.agents/skills/{slug}/SKILL.md
-  if (workingDirectory && existsSync(join(workingDirectory, PROJECT_AGENT_SKILLS_DIR, bareSlug, 'SKILL.md'))) {
-    return `${AGENTS_PLUGIN_NAME}:${bareSlug}`;
+  // 1. Project: .agents/skills/{slug}/SKILL.md from working dir up to repo root.
+  if (workingDirectory) {
+    for (const packageRoot of getProjectPackageRoots(workingDirectory).reverse()) {
+      if (existsSync(join(packageRoot, PROJECT_AGENT_SKILLS_DIR, bareSlug, 'SKILL.md'))) {
+        return `${AGENTS_PLUGIN_NAME}:${bareSlug}`;
+      }
+
+      const pluginPackage = loadPluginPackage(packageRoot);
+      if (!pluginPackage || !isPluginPackageEnabled(workspaceRootPath, pluginPackage)) {
+        continue;
+      }
+
+      for (const pluginSkillDir of [...pluginPackage.skillDirs].reverse()) {
+        if (existsSync(join(pluginSkillDir, bareSlug, 'SKILL.md'))) {
+          return `${pluginPackage.manifest.name}:${bareSlug}`;
+        }
+      }
+    }
   }
 
   // 2. Workspace: {workspaceRoot}/skills/{slug}/SKILL.md
@@ -626,6 +644,8 @@ export interface PreToolUseInput {
   workingDirectory?: string;
   /** Currently active source slugs */
   activeSourceSlugs: string[];
+  /** Connected MCP tools that explicitly advertise read-only behavior */
+  readOnlyMcpTools?: string[];
   /** All available sources (for source-exists check) */
   allSourceSlugs: string[];
   /** Whether the agent supports source activation (has onSourceActivationRequest callback) */
@@ -709,6 +729,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     dataFolderPath,
     workingDirectory,
     activeSourceSlugs,
+    readOnlyMcpTools,
     allSourceSlugs,
     hasSourceActivation,
     permissionManager,
@@ -742,7 +763,7 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     toolName,
     input,
     effectivePermissionMode,
-    { plansFolderPath, dataFolderPath, permissionsContext }
+    { plansFolderPath, dataFolderPath, permissionsContext, readOnlyMcpTools }
   );
 
   if (!modeResult.allowed) {

@@ -375,7 +375,7 @@ export type SessionEvent =
   | { type: 'text_delta'; sessionId: string; delta: string; turnId?: string }
   | { type: 'text_complete'; sessionId: string; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; timestamp?: number; messageId?: string }
   | { type: 'tool_start'; sessionId: string; toolName: string; toolUseId: string; toolInput: Record<string, unknown>; toolIntent?: string; toolDisplayName?: string; toolDisplayMeta?: ToolDisplayMeta; turnId?: string; parentToolUseId?: string; timestamp?: number }
-  | { type: 'tool_result'; sessionId: string; toolUseId: string; toolName: string; result: string; turnId?: string; parentToolUseId?: string; isError?: boolean; timestamp?: number }
+  | { type: 'tool_result'; sessionId: string; toolUseId: string; toolName: string; result: string; resultDetails?: Record<string, unknown>; turnId?: string; parentToolUseId?: string; isError?: boolean; timestamp?: number }
   | { type: 'error'; sessionId: string; error: string; timestamp?: number }
   | { type: 'typed_error'; sessionId: string; error: TypedError; timestamp?: number }
   | { type: 'complete'; sessionId: string; tokenUsage?: Session['tokenUsage']; hasUnread?: boolean; backgroundTasksAlive?: boolean }
@@ -850,3 +850,25 @@ export type ReadWidgetFileResult =
       error: string
       code: 'invalid-request' | 'session-not-found' | 'access-denied' | 'not-found' | 'read-failed'
     }
+
+export interface ReadMcpWidgetResourceRequest {
+  sessionId: string
+  serverSlug: string
+  uri: string
+}
+
+export type ReadMcpWidgetResourceResult =
+  | { ok: true; html: string; mimeType: string; resourceMeta?: Record<string, unknown> }
+  | { ok: false; error: string; code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'not-found' | 'invalid-resource' }
+
+export interface CallMcpWidgetToolRequest {
+  sessionId: string
+  serverSlug: string
+  toolName: string
+  arguments?: Record<string, unknown>
+  approved?: boolean
+}
+
+export type CallMcpWidgetToolResult =
+  | { ok: true; result: import('../mcp/mcp-pool.ts').McpToolResult }
+  | { ok: false; error: string; code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'permission-required' | 'permission-denied' | 'tool-failed'; requiresApproval?: boolean; destructive?: boolean }

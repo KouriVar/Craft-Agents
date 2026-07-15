@@ -16,6 +16,8 @@ import {
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { toast } from "sonner"
+import { WidgetHost } from '@/components/widgets/WidgetHost'
+import { widgetDescriptorFromMcpToolResult } from '@/lib/widget-runtime/parser'
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -2114,6 +2116,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
                     // Check if this is the last response (for Accept Plan button visibility)
                     const isLastResponse = index === turns.length - 1 || !turns.slice(index + 1).some(t => t.type === 'user')
+                    const inlineWidgets = turn.activities.flatMap(activity => {
+                      const descriptor = widgetDescriptorFromMcpToolResult({
+                        toolName: activity.toolName,
+                        toolUseId: activity.toolUseId ?? activity.id,
+                        toolInput: activity.toolInput,
+                        resultText: activity.content,
+                        resultDetails: activity.resultDetails,
+                      })
+                      return descriptor?.displayMode === 'inline' ? [descriptor] : []
+                    })
 
                     // Assistant turns - render with TurnCard (buffered streaming)
                     const assistantUiKey = getAssistantTurnUiKey(turn, index)
@@ -2308,6 +2320,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           }
                         }}
                       />
+                      {inlineWidgets.map(descriptor => (
+                        <div key={descriptor.id} className="mt-2 overflow-hidden rounded-[8px] border border-border/50">
+                          <WidgetHost descriptor={descriptor} sessionId={session.id} />
+                        </div>
+                      ))}
                       </div>
                     )
                   })}

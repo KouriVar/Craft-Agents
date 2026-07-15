@@ -440,6 +440,7 @@ function createSourceProxyServers(pool: McpClientPool): Record<string, ReturnTyp
 
     const proxyTools = mcpTools.map(mcpTool => {
       const proxyName = `mcp__${slug}__${mcpTool.name}`;
+      const annotations = (mcpTool as { annotations?: Record<string, unknown> }).annotations;
       return tool(
         mcpTool.name,
         mcpTool.description || `Tool from ${slug}`,
@@ -450,10 +451,18 @@ function createSourceProxyServers(pool: McpClientPool): Record<string, ReturnTyp
         async (args: Record<string, unknown>) => {
           const result = await pool.callTool(proxyName, args);
           return {
-            content: [{ type: 'text' as const, text: result.content }],
+            content: result.contentBlocks,
             ...(result.isError ? { isError: true } : {}),
-          };
-        }
+            ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+            ...((result._meta !== undefined || result.toolMeta !== undefined) ? {
+              _meta: {
+                ...(result._meta ?? {}),
+                ...(result.toolMeta ? { __craftToolMeta: result.toolMeta } : {}),
+              },
+            } : {}),
+          } as any;
+        },
+        annotations ? { annotations } as any : undefined
       );
     });
 
@@ -1344,6 +1353,9 @@ export class ClaudeAgent extends BaseAgent {
                 dataFolderPath: sessionId ? getSessionDataPath(this.workspaceRootPath, sessionId) : undefined,
                 workingDirectory: this.config.session?.workingDirectory,
                 activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
+                readOnlyMcpTools: this.config.mcpPool?.getProxyToolDefs()
+                  .filter(def => def.annotations?.readOnlyHint === true)
+                  .map(def => def.name),
                 allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
                 hasSourceActivation: !!this.onSourceActivationRequest,
                 permissionManager: this.permissionManager,

@@ -52,6 +52,23 @@ Skills are stored as folders:
 └── (other files)     # Optional: Additional resources
 ```
 
+Project-local agent skills can also be placed in `.agents/skills/{slug}/`
+inside the current working directory or any parent directory up to the Git
+repository root. When the same slug exists in multiple project directories, the
+skill nearest to the current working directory wins.
+
+```
+repo/
+├── .git/
+├── .agents/skills/review/SKILL.md
+└── apps/web/.agents/skills/review/SKILL.md  # Used when working in apps/web
+```
+
+Supported plugin package roots (`.craft-plugin`, `.codex-plugin`, or
+`.claude-plugin`) can also expose package-local skills from `skills/{slug}/` or
+from additional skill directories declared by `plugin.json`. Package-local
+skills are loaded only when the plugin is enabled in `plugins/config.json`.
+
 ## SKILL.md Format
 
 The format is identical to Claude Code SDK skills:
@@ -125,6 +142,35 @@ requiredSources:
   - linear               # Auto-enable Linear source
   - github               # Auto-enable GitHub source
 ```
+
+## Portable agents/openai.yaml Metadata
+
+Craft Agent also reads optional portable metadata from
+`agents/openai.yaml` beside `SKILL.md`. `SKILL.md` remains the primary skill
+definition; portable metadata supplements it and can provide display fallbacks
+when `name` or `description` are absent.
+
+```yaml
+interface:
+  display_name: "Visualize"
+  short_description: "Turn ideas and data into interactive visuals"
+  default_prompt: "Use this skill when a visual would clarify the answer."
+policy:
+  allow_implicit_invocation: false
+dependencies:
+  tools:
+    - Bash
+  sources:
+    - github
+```
+
+Supported mappings:
+- `interface.display_name` -> portable display name and fallback `name`
+- `interface.short_description` -> portable short description and fallback `description`
+- `interface.default_prompt` -> default prompt hint
+- `policy.allow_implicit_invocation` -> implicit invocation policy flag
+- `dependencies.tools` -> declared tool dependencies
+- `dependencies.sources` -> merged into `requiredSources`
 
 ## Creating a Skill
 

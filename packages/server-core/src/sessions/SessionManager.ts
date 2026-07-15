@@ -85,6 +85,11 @@ import { type Session, type SessionEvent, type FileAttachment, type SendMessageO
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TokenUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
+import {
+  loadPluginMcpServerDefinitions,
+  loadPreflightedPluginMcpServers,
+  resolvePluginToolPolicy,
+} from '@craft-agent/shared/plugins'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
@@ -364,6 +369,7 @@ async function saveClaudeTurnAnchor(
  */
 async function buildServersFromSources(
   sources: LoadedSource[],
+  workspaceRootPath: string,
   sessionPath?: string,
   tokenRefreshManager?: TokenRefreshManager,
   summarize?: SummarizeCallback
@@ -432,6 +438,9 @@ async function buildServersFromSources(
     getCredentialForSource,
   )
   span.mark('servers.built')
+  const pluginMcpServers = loadPreflightedPluginMcpServers(workspaceRootPath)
+  result.mcpServers = { ...pluginMcpServers, ...result.mcpServers }
+  span.setMetadata('pluginMcpCount', Object.keys(pluginMcpServers).length)
   span.setMetadata('mcpCount', Object.keys(result.mcpServers).length)
   span.setMetadata('apiCount', Object.keys(result.apiServers).length)
 
@@ -1829,7 +1838,7 @@ export class SessionManager implements ISessionManager {
     )
     // Pass session path so large API responses can be saved to session folder
     const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-    const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
+    const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, workspaceRootPath, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
     const intendedSlugs = enabledSources.map(s => s.config.slug)
 
     // Update bridge-mcp-server config/credentials for backends that need it
@@ -2223,7 +2232,7 @@ export class SessionManager implements ISessionManager {
         enabledSlugs.includes(s.config.slug) && isSourceUsable(s)
       )
       const { mcpServers } = await buildServersFromSources(
-        enabledSources, sessionPath, managed.tokenRefreshManager
+        enabledSources, workspaceRootPath, sessionPath, managed.tokenRefreshManager
       )
       await applyBridgeUpdates(managed.agent, sessionPath, enabledSources, mcpServers, managed.id, workspaceRootPath, 'source auth', managed.poolServer?.url)
     }
@@ -3376,7 +3385,7 @@ export class SessionManager implements ISessionManager {
       )
 
       // Build server configs for enabled sources
-      const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath, managed.tokenRefreshManager)
+      const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, managed.workspace.rootPath, sessionPath, managed.tokenRefreshManager)
 
       // Create centralized MCP client pool (all backends use it)
       managed.mcpPool = new McpClientPool({ debug: (msg) => sessionLog.debug(msg), workspaceRootPath: managed.workspace.rootPath, sessionPath })
@@ -4480,7 +4489,7 @@ export class SessionManager implements ISessionManager {
         const allEnabledSources = getSourcesBySlugs(workspaceRootPath, managed.enabledSourceSlugs || [])
         // Pass session path so large API responses can be saved to session folder
         const sessionPath = getSessionStoragePath(workspaceRootPath, managed.id)
-        const { mcpServers, apiServers, errors } = await buildServersFromSources(allEnabledSources, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
+        const { mcpServers, apiServers, errors } = await buildServersFromSources(allEnabledSources, workspaceRootPath, sessionPath, managed.tokenRefreshManager, managed.agent?.getSummarizeCallback())
 
         if (errors.length > 0) {
           sessionLog.warn(`Source build errors during auto-enable:`, errors)
@@ -4966,7 +4975,7 @@ export class SessionManager implements ISessionManager {
       const sources = getSourcesBySlugs(workspaceRootPath, sourceSlugs)
       // Pass session path so large API responses can be saved to session folder
       const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
-      const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, sessionPath, managed.tokenRefreshManager, managed.agent.getSummarizeCallback())
+      const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, workspaceRootPath, sessionPath, managed.tokenRefreshManager, managed.agent.getSummarizeCallback())
       if (errors.length > 0) {
         sessionLog.warn(`Source build errors:`, errors)
       }
@@ -5633,17 +5642,9 @@ export class SessionManager implements ISessionManager {
     this.remoteBpms.delete(sessionId)
     this.browserHostByCanvas.delete(sessionId)
 
-    // Dispose agent to clean up ConfigWatchers, event listeners, MCP connections
-    if (managed.agent) {
-      managed.agent.dispose()
-    }
-
-    // Stop pool server (HTTP MCP server for external SDK subprocesses)
-    if (managed.poolServer) {
-      managed.poolServer.stop().catch(err => {
-        sessionLog.warn(`Failed to stop pool server for ${sessionId}: ${err instanceof Error ? err.message : err}`)
-      })
-    }
+    // Dispose the complete session runtime and wait for MCP transports to close before
+    // deleting session files. This is the same ownership path used for runtime restarts.
+    await this.disposeManagedAgentRuntime(managed, 'session deletion')
 
     // Cancel any pending source-activation auto-retry timer (craft-agents-oss#804).
     if (managed.autoRetryTimer) {
@@ -6021,26 +6022,24 @@ export class SessionManager implements ISessionManager {
     agent.setAllSources(allSources)
     sendSpan.mark('sources.loaded')
 
-    // Apply source servers if any are enabled
-    if (hasSources) {
-      const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
-      // Single fresh build — tokens already refreshed above.
-      const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, sessionPath, managed.tokenRefreshManager, agent.getSummarizeCallback())
-      if (errors.length > 0) {
-        sessionLog.warn(`Source build errors:`, errors)
-      }
-
-      const mcpCount = Object.keys(mcpServers).length
-      const apiCount = Object.keys(apiServers).length
-      if (mcpCount > 0 || apiCount > 0 || enabledSlugs.length > 0) {
-        const usableSources = sources.filter(isSourceUsable)
-        const intendedSlugs = usableSources.map(s => s.config.slug)
-        await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-        await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message', managed.poolServer?.url)
-        sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API sources to session ${sessionId} (${allSources.length} total)`)
-      }
-      sendSpan.mark('servers.applied')
+    // Apply source and plugin MCP servers. Plugin MCP can exist even when no sources are enabled.
+    const sessionPath = getSessionStoragePath(workspaceRootPath, sessionId)
+    // Single fresh build — tokens already refreshed above.
+    const { mcpServers, apiServers, errors } = await buildServersFromSources(sources, workspaceRootPath, sessionPath, managed.tokenRefreshManager, agent.getSummarizeCallback())
+    if (errors.length > 0) {
+      sessionLog.warn(`Source build errors:`, errors)
     }
+
+    const mcpCount = Object.keys(mcpServers).length
+    const apiCount = Object.keys(apiServers).length
+    if (mcpCount > 0 || apiCount > 0 || enabledSlugs.length > 0) {
+      const usableSources = sources.filter(isSourceUsable)
+      const intendedSlugs = usableSources.map(s => s.config.slug)
+      await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+      await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message', managed.poolServer?.url)
+      sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API/plugin servers to session ${sessionId} (${allSources.length} total sources)`)
+    }
+    sendSpan.mark('servers.applied')
 
     try {
       sessionLog.info('Starting chat for session:', sessionId)
@@ -6866,6 +6865,38 @@ export class SessionManager implements ISessionManager {
       // Fall back to SDK-provided summary
       return info.summary || null
     }
+  }
+
+  async readMcpWidgetResource(sessionId: string, serverSlug: string, uri: string) {
+    const managed = this.sessions.get(sessionId)
+    if (!managed?.agent) throw new Error(`Session MCP runtime is not available: ${sessionId}`)
+    return managed.agent.readMcpResource(serverSlug, uri)
+  }
+
+  getMcpWidgetToolDefinition(sessionId: string, toolName: string) {
+    return this.sessions.get(sessionId)?.agent?.getMcpToolDefinition(toolName) ?? null
+  }
+
+  async prepareMcpWidgetRuntime(sessionId: string): Promise<void> {
+    await this.getSession(sessionId)
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session was not found: ${sessionId}`)
+    await this.getOrCreateAgent(managed)
+  }
+
+  getMcpWidgetPluginPolicy(sessionId: string, serverSlug: string, toolName: string) {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return 'inherit' as const
+    const definition = loadPluginMcpServerDefinitions(managed.workspace.rootPath)
+      .find(entry => entry.slug === serverSlug)
+    if (!definition) return 'inherit' as const
+    return resolvePluginToolPolicy(managed.workspace.rootPath, definition.pluginName, toolName)
+  }
+
+  async callMcpWidgetTool(sessionId: string, toolName: string, args: Record<string, unknown>) {
+    const managed = this.sessions.get(sessionId)
+    if (!managed?.agent) throw new Error(`Session MCP runtime is not available: ${sessionId}`)
+    return managed.agent.callMcpTool(toolName, args)
   }
 
   /**
@@ -7747,6 +7778,7 @@ export class SessionManager implements ISessionManager {
         if (existingToolMsg) {
           // Keep lightweight status text in `content` and store full payload in `toolResult` only.
           existingToolMsg.toolResult = formattedResult
+          existingToolMsg.toolResultDetails = event.resultDetails
           existingToolMsg.toolStatus = inferredError ? 'error' : 'completed'
           existingToolMsg.isError = inferredError
           // If message doesn't have parent set, use event's parentToolUseId
@@ -7775,6 +7807,7 @@ export class SessionManager implements ISessionManager {
             toolDisplayMeta: fallbackToolDisplayMeta,
             parentToolUseId,
             isError: inferredError,
+            toolResultDetails: event.resultDetails,
           }
           managed.messages.push(toolMessage)
         }
@@ -7791,6 +7824,7 @@ export class SessionManager implements ISessionManager {
             toolUseId: event.toolUseId,
             toolName: toolName,
             result: formattedResult,
+            resultDetails: event.resultDetails,
             turnId: event.turnId,
             parentToolUseId,
             isError: inferredError,
@@ -8881,7 +8915,7 @@ export class SessionManager implements ISessionManager {
    * Clean up all resources held by the SessionManager.
    * Should be called on app shutdown to prevent resource leaks.
    */
-  cleanup(): void {
+  async cleanup(): Promise<void> {
     sessionLog.info('Cleaning up resources...')
 
     // Stop all ConfigWatchers (file system watchers)
@@ -8914,9 +8948,15 @@ export class SessionManager implements ISessionManager {
     this.pendingPermissionRequests.clear()
     this.adminRememberApprovals.clear()
 
-    // Clean up session-scoped tool callbacks for all sessions
-    for (const sessionId of this.sessions.keys()) {
-      unregisterSessionScopedToolCallbacks(sessionId)
+    // Stop every live agent, pool server, and MCP client before the host exits.
+    // Session metadata remains intact; this only releases process-owned runtime state.
+    for (const managed of this.sessions.values()) {
+      if (managed.autoRetryTimer) {
+        clearTimeout(managed.autoRetryTimer)
+        managed.autoRetryTimer = undefined
+      }
+      managed.autoRetryPending = undefined
+      await this.disposeManagedAgentRuntime(managed, 'session manager shutdown')
     }
 
     sessionLog.info('Cleanup complete')

@@ -120,6 +120,35 @@ export interface TextBlock {
 /** Union of content blocks we handle */
 export type ContentBlock = ToolUseBlock | ToolResultBlock | TextBlock | { type: string };
 
+function extractMcpResultDetails(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const nested = record.mcp_tool_result ?? record.call_tool_result ?? record.result;
+  if (nested && nested !== value) {
+    const nestedDetails = extractMcpResultDetails(nested);
+    if (nestedDetails) return nestedDetails;
+  }
+  const structuredContent = record.structuredContent;
+  const responseMeta = record._meta;
+  if (structuredContent === undefined && (!responseMeta || typeof responseMeta !== 'object')) return undefined;
+  const meta = responseMeta && typeof responseMeta === 'object' && !Array.isArray(responseMeta)
+    ? responseMeta as Record<string, unknown>
+    : undefined;
+  const toolMeta = meta?.__craftToolMeta && typeof meta.__craftToolMeta === 'object'
+    ? meta.__craftToolMeta
+    : undefined;
+  const publicMeta = meta
+    ? Object.fromEntries(Object.entries(meta).filter(([key]) => key !== '__craftToolMeta'))
+    : undefined;
+  return {
+    mcpApp: {
+      ...(structuredContent !== undefined ? { structuredContent } : {}),
+      ...(publicMeta && Object.keys(publicMeta).length > 0 ? { responseMeta: publicMeta } : {}),
+      ...(toolMeta ? { toolMeta } : {}),
+    },
+  };
+}
+
 // ============================================================================
 // Pure extraction functions
 // ============================================================================
@@ -259,6 +288,9 @@ export function extractToolResults(
   );
 
   if (toolResultBlocks.length > 0) {
+    const sharedResultDetails = toolResultBlocks.length === 1
+      ? extractMcpResultDetails(toolUseResultValue) ?? extractMcpResultDetails(toolResultBlocks[0]?.content)
+      : undefined;
     // Direct ID matching — each block explicitly identifies its tool
     for (const block of toolResultBlocks) {
       const toolUseId = block.tool_use_id;
@@ -276,6 +308,7 @@ export function extractToolResults(
         input: entry?.input,
         turnId,
         parentToolUseId: sdkParentToolUseId ?? undefined,
+        resultDetails: sharedResultDetails,
       });
 
       // Detect background tasks/shells from results
@@ -313,6 +346,7 @@ export function extractToolResults(
       input: entry?.input,
       turnId,
       parentToolUseId: undefined,
+      resultDetails: extractMcpResultDetails(toolUseResultValue),
     });
 
     if (entry) {

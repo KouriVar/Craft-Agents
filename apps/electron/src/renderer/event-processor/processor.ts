@@ -15,7 +15,7 @@
 import type { SessionState, AgentEvent, ProcessResult } from './types'
 import { handleTextDelta, handleTextComplete } from './handlers/text'
 import { handleToolStart, handleToolResult, handleTaskBackgrounded, handleShellBackgrounded, handleTaskProgress, handleTaskCompleted } from './handlers/tool'
-import { widgetDescriptorFromToolResultText } from '@/lib/widget-runtime/parser'
+import { widgetDescriptorFromMcpToolResult, widgetDescriptorFromToolResultText } from '@/lib/widget-runtime/parser'
 import {
   handleComplete,
   handleError,
@@ -84,10 +84,21 @@ export function processEvent(
 
     case 'tool_result': {
       const newState = handleToolResult(state, event)
-      const descriptor = event.isError ? null : widgetDescriptorFromToolResultText(event.result)
+      const toolMessage = newState.session.messages.find(message => message.toolUseId === event.toolUseId)
+      const descriptor = event.isError ? null : (
+        widgetDescriptorFromMcpToolResult({
+          toolName: event.toolName ?? toolMessage?.toolName,
+          toolUseId: event.toolUseId,
+          toolInput: toolMessage?.toolInput,
+          resultText: event.result,
+          resultDetails: event.resultDetails,
+        }) ?? widgetDescriptorFromToolResultText(event.result)
+      )
       return {
         state: newState,
-        effects: descriptor ? [{ type: 'open_widget', descriptor }] : [],
+        effects: descriptor && (descriptor.kind !== 'mcp-app' || descriptor.displayMode !== 'inline')
+          ? [{ type: 'open_widget', descriptor }]
+          : [],
       }
     }
 

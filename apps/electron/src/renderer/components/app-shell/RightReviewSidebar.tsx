@@ -9,7 +9,7 @@
 import { useCallback } from 'react'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Brush, FolderOpen, Globe, ListTree, Plus, Terminal, X } from 'lucide-react'
+import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, ListTree, LoaderCircle, Plus, RotateCcw, Terminal, X } from 'lucide-react'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { EmbeddedTerminal } from './EmbeddedTerminal'
 import { WorkspaceFileBrowser } from './WorkspaceFileBrowser'
@@ -24,6 +24,9 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
+import type { McpAppWidgetDescriptor } from '../../../shared/widget-runtime'
+import { McpAppWidget } from '../widgets/McpAppWidget'
+import * as storage from '@/lib/local-storage'
 
 // --- Toolbar button (matches HeaderIconButton styling) ---
 function ToolMenuItem({
@@ -51,7 +54,7 @@ function ToolMenuItem({
   )
 }
 
-type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources'
+type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'widget'
 interface RightSidebarTab {
   id: string
   type: RightSidebarTool
@@ -59,6 +62,34 @@ interface RightSidebarTab {
   url?: string
   preload?: string
   resources?: ResourceItem[]
+  widget?: McpAppWidgetDescriptor
+  sessionId?: string
+  runtimeStatus?: 'loading' | 'ready' | 'error' | 'closed'
+  runtimeError?: string
+  restored?: boolean
+}
+
+interface PersistedWidgetTab {
+  id: string
+  label: string
+  sessionId: string
+  widget: Pick<McpAppWidgetDescriptor, 'kind' | 'id' | 'serverSlug' | 'resourceUri' | 'toolName' | 'toolInput' | 'source' | 'title' | 'displayMode'>
+}
+
+const SENSITIVE_INPUT_KEY = /token|secret|password|authorization|api[-_]?key|credential|cookie/i
+
+function persistedToolInput(input: Record<string, unknown>): Record<string, unknown> | null {
+  let sensitive = false
+  try {
+    const json = JSON.stringify(input, (key, value) => {
+      if (key && SENSITIVE_INPUT_KEY.test(key)) sensitive = true
+      return value
+    })
+    if (sensitive || json.length > 64 * 1024) return null
+    return JSON.parse(json) as Record<string, unknown>
+  } catch {
+    return null
+  }
 }
 
 function createSidebarTab(type: RightSidebarTool, label: string, url?: string, resources?: ResourceItem[]): RightSidebarTab {
@@ -76,6 +107,7 @@ function getToolIcon(type: RightSidebarTool, className = 'h-4 w-4 shrink-0') {
   if (type === 'files') return <FolderOpen className={className} />
   if (type === 'cowart') return <Brush className={className} />
   if (type === 'sources') return <ListTree className={className} />
+  if (type === 'widget') return <AppWindow className={className} />
   return <Globe className={className} />
 }
 
@@ -122,10 +154,56 @@ export function RightReviewSidebar() {
     createSidebarTab('browser', newTabLabel),
   ])
   const [activeTabId, setActiveTabId] = React.useState(() => tabs[0]?.id ?? '')
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = React.useState<string | null>(null)
   const activeTab = React.useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
     [activeTabId, tabs],
   )
+
+  React.useEffect(() => {
+    if (!activeWorkspace?.id) return
+    setLoadedWorkspaceId(null)
+    const persisted = storage.get<PersistedWidgetTab[]>(storage.KEYS.rightSidebarWidgetTabs, [], activeWorkspace.id)
+    const restored = persisted.map(item => ({
+      id: item.id,
+      type: 'widget' as const,
+      label: item.label,
+      sessionId: item.sessionId,
+      widget: item.widget as McpAppWidgetDescriptor,
+      runtimeStatus: 'closed' as const,
+      restored: true,
+    }))
+    const next = restored.length > 0 ? restored : [createSidebarTab('browser', newTabLabel)]
+    setTabs(next)
+    setActiveTabId(next[0].id)
+    setLoadedWorkspaceId(activeWorkspace.id)
+  }, [activeWorkspace?.id, newTabLabel])
+
+  React.useEffect(() => {
+    if (!activeWorkspace?.id || loadedWorkspaceId !== activeWorkspace.id) return
+    const persisted: PersistedWidgetTab[] = tabs.flatMap(tab => {
+      const toolInput = tab.widget ? persistedToolInput(tab.widget.toolInput) : null
+      return tab.type === 'widget' && tab.widget && tab.sessionId && toolInput
+      ? [{
+          id: tab.id,
+          label: tab.label,
+          sessionId: tab.sessionId,
+          widget: {
+            kind: tab.widget.kind,
+            id: tab.widget.id,
+            serverSlug: tab.widget.serverSlug,
+            resourceUri: tab.widget.resourceUri,
+            toolName: tab.widget.toolName,
+            toolInput,
+            source: tab.widget.source,
+            title: tab.widget.title,
+            displayMode: tab.widget.displayMode,
+          },
+        }]
+      : []
+    })
+    storage.set(storage.KEYS.rightSidebarWidgetTabs, persisted, activeWorkspace.id)
+  }, [activeWorkspace?.id, loadedWorkspaceId, tabs])
 
   const addTab = useCallback((type: RightSidebarTool, label: string, url?: string) => {
     const tab = createSidebarTab(type, label, url)
@@ -137,6 +215,32 @@ export function RightReviewSidebar() {
   const updateTab = useCallback((id: string, patch: Partial<RightSidebarTab>) => {
     setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...patch } : tab))
   }, [])
+
+  const restoreWidgetTab = React.useCallback(async (tab: RightSidebarTab) => {
+    if (!tab.widget || !tab.sessionId) return
+    updateTab(tab.id, { runtimeStatus: 'loading', runtimeError: undefined })
+    const result = await window.electronAPI.callMcpWidgetTool({
+      sessionId: tab.sessionId,
+      serverSlug: tab.widget.serverSlug,
+      toolName: tab.widget.toolName,
+      arguments: tab.widget.toolInput,
+      approved: true,
+    })
+    if (!result.ok) {
+      updateTab(tab.id, { runtimeStatus: 'error', runtimeError: result.error })
+      return
+    }
+    updateTab(tab.id, {
+      restored: false,
+      runtimeStatus: 'loading',
+      widget: {
+        ...tab.widget,
+        resultContent: result.result.contentBlocks,
+        structuredContent: result.result.structuredContent,
+        responseMeta: result.result._meta,
+      },
+    })
+  }, [updateTab])
 
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
@@ -209,13 +313,66 @@ export function RightReviewSidebar() {
       void handleOpenCowart(detail?.projectDir, detail?.pageId, detail?.sessionId)
     }
 
+    const handleMcpWidget = (event: Event) => {
+      const detail = (event as CustomEvent<{ descriptor?: McpAppWidgetDescriptor; sessionId?: string }>).detail
+      if (!detail?.descriptor || !detail.sessionId) return
+      const descriptor = detail.descriptor
+      const widgetSessionId = detail.sessionId
+      setTabs(current => {
+        const existing = current.find(tab => tab.type === 'widget' && tab.widget?.id === descriptor.id)
+        if (existing) {
+          setActiveTabId(existing.id)
+          return current.map(tab => tab.id === existing.id ? { ...tab, widget: descriptor, sessionId: widgetSessionId, restored: false, runtimeStatus: 'loading' } : tab)
+        }
+        const tab = createSidebarTab('widget', descriptor.title || descriptor.toolName)
+        tab.widget = descriptor
+        tab.sessionId = widgetSessionId
+        tab.runtimeStatus = 'loading'
+        setActiveTabId(tab.id)
+        return [...current, tab]
+      })
+    }
+
+    const handleWidgetStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        descriptorId?: string
+        status?: RightSidebarTab['runtimeStatus']
+        error?: string
+      }>).detail
+      if (!detail?.descriptorId || !detail.status) return
+      setTabs(current => current.map(tab => tab.widget?.id === detail.descriptorId
+        ? { ...tab, runtimeStatus: detail.status, runtimeError: detail.error }
+        : tab))
+    }
+
+    const handleSessionDeleted = (event: Event) => {
+      const deletedSessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+      if (!deletedSessionId) return
+      setTabs(current => {
+        const next = current.filter(tab => tab.sessionId !== deletedSessionId)
+        if (next.length > 0) {
+          setActiveTabId(active => next.some(tab => tab.id === active) ? active : next[0].id)
+          return next
+        }
+        const replacement = createSidebarTab('browser', newTabLabel)
+        setActiveTabId(replacement.id)
+        return [replacement]
+      })
+    }
+
     window.addEventListener('craft:right-sidebar-open-sources', handleOpenSources)
     window.addEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
+    window.addEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
+    window.addEventListener('craft:widget-runtime-status', handleWidgetStatus)
+    window.addEventListener('craft:session-deleted', handleSessionDeleted)
     return () => {
       window.removeEventListener('craft:right-sidebar-open-sources', handleOpenSources)
       window.removeEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
+      window.removeEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
+      window.removeEventListener('craft:widget-runtime-status', handleWidgetStatus)
+      window.removeEventListener('craft:session-deleted', handleSessionDeleted)
     }
-  }, [handleOpenCowart, t])
+  }, [handleOpenCowart, newTabLabel, t])
 
   const noWorkspace = !rootPath
 
@@ -242,7 +399,11 @@ export function RightReviewSidebar() {
                 )}
                 title={tab.label}
               >
-                {getToolIcon(tab.type)}
+                {tab.runtimeStatus === 'error'
+                  ? <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+                  : tab.runtimeStatus === 'loading'
+                    ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
+                    : getToolIcon(tab.type)}
                 <span className="min-w-0 flex-1 truncate">{tab.label}</span>
                 <span
                   role="button"
@@ -320,6 +481,30 @@ export function RightReviewSidebar() {
           }
           if (tab.type === 'sources') {
             return <SourcesReviewPanel key={tab.id} items={tab.resources ?? []} className={className} />
+          }
+          if (tab.type === 'widget' && tab.widget && tab.sessionId && tab.restored) {
+            return (
+              <div key={tab.id} className={cn(className, 'flex items-center justify-center p-6')}>
+                <div className="max-w-sm text-center">
+                  <AppWindow className="mx-auto h-6 w-6 text-muted-foreground" />
+                  <p className="mt-3 text-sm font-medium">{tab.label}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('rightSidebar.widgetRestoreDescription', { defaultValue: 'Reconnect this widget to restore a fresh, session-bound runtime.' })}</p>
+                  {tab.runtimeError && <p className="mt-2 text-xs text-destructive">{tab.runtimeError}</p>}
+                  <button
+                    type="button"
+                    onClick={() => { void restoreWidgetTab(tab) }}
+                    disabled={tab.runtimeStatus === 'loading'}
+                    className="mt-4 inline-flex h-8 items-center gap-2 rounded-[6px] border border-border px-3 text-xs font-medium hover:bg-foreground/[0.05] disabled:opacity-50"
+                  >
+                    <RotateCcw className={cn('h-3.5 w-3.5', tab.runtimeStatus === 'loading' && 'animate-spin')} />
+                    {t('rightSidebar.widgetReconnect', { defaultValue: 'Reconnect' })}
+                  </button>
+                </div>
+              </div>
+            )
+          }
+          if (tab.type === 'widget' && tab.widget && tab.sessionId) {
+            return <McpAppWidget key={tab.id} descriptor={tab.widget} sessionId={tab.sessionId} displayMode="fullscreen" className={className} />
           }
           return (
             <RightSidebarBrowserPanel

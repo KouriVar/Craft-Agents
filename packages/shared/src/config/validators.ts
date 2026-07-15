@@ -15,6 +15,7 @@
 import { z } from 'zod';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { load as loadYaml } from 'js-yaml';
 import { CONFIG_DIR } from './paths.ts';
 import { safeJsonParse, readJsonFileSync } from '../utils/files.ts';
 import { EntityColorSchema } from '../colors/validate.ts';
@@ -657,11 +658,41 @@ import { basename, extname } from 'path';
 /**
  * Schema for skill metadata (SKILL.md frontmatter)
  */
+const StringListSchema = z.preprocess((value) => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value;
+  return value;
+}, z.array(z.string().trim().min(1)).optional());
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function loadPortableSkillDisplayFallbacks(skillDir: string): { name?: string; description?: string } {
+  const metadataPath = join(skillDir, 'agents', 'openai.yaml');
+  if (!existsSync(metadataPath)) return {};
+
+  try {
+    const root = asRecord(loadYaml(readFileSync(metadataPath, 'utf-8')));
+    const interfaceConfig = asRecord(root?.interface);
+    const displayName = interfaceConfig?.display_name;
+    const shortDescription = interfaceConfig?.short_description;
+    return {
+      name: typeof displayName === 'string' && displayName.trim() ? displayName.trim() : undefined,
+      description: typeof shortDescription === 'string' && shortDescription.trim() ? shortDescription.trim() : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 export const SkillMetadataSchema = z.object({
   name: z.string().min(1, "Add a 'name' field with a human-readable title (e.g., 'Git Commit Helper')"),
   description: z.string().min(1, "Add a 'description' field explaining what this skill does and when to use it (1-2 sentences)"),
-  globs: z.array(z.string()).optional(),
-  alwaysAllow: z.array(z.string()).optional(),
+  globs: StringListSchema,
+  alwaysAllow: StringListSchema,
 });
 
 /**
@@ -741,7 +772,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
   }
 
   // Delegate content validation (frontmatter schema + body non-empty + slug format)
-  const contentResult = validateSkillContent(content, slug);
+  const contentResult = validateSkillContent(content, slug, loadPortableSkillDisplayFallbacks(skillDir));
   errors.push(...contentResult.errors);
 
   // 5. FS-only checks: icon existence (warnings)
@@ -783,7 +814,11 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
  * @param markdownContent - The full SKILL.md file content
  * @param slug - The skill slug (folder name), used for slug format validation
  */
-export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
+export function validateSkillContent(
+  markdownContent: string,
+  slug: string,
+  portableFallbacks: { name?: string; description?: string } = {}
+): ValidationResult {
   const file = `skills/${slug}/SKILL.md`;
   const errors: ValidationIssue[] = [];
 
@@ -808,7 +843,12 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
   let body: string;
   try {
     const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
+    const data = asRecord(parsed.data) ?? {};
+    frontmatter = {
+      ...data,
+      name: data.name ?? portableFallbacks.name,
+      description: data.description ?? portableFallbacks.description,
+    };
     body = parsed.content;
   } catch (e) {
     return {

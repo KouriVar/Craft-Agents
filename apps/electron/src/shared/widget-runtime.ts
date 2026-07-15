@@ -16,9 +16,25 @@ export type CowartCanvasWidgetDescriptor = {
   title?: string
 }
 
+export type McpAppWidgetDescriptor = {
+  kind: 'mcp-app'
+  id: string
+  serverSlug: string
+  resourceUri: string
+  toolName: string
+  toolInput: Record<string, unknown>
+  resultContent?: Array<{ type: 'text'; text: string }>
+  structuredContent?: unknown
+  responseMeta?: Record<string, unknown>
+  source: 'mcp-app'
+  title?: string
+  displayMode?: 'inline' | 'fullscreen' | 'pip'
+}
+
 export type WidgetDescriptor =
   | VisualizeHtmlWidgetDescriptor
   | CowartCanvasWidgetDescriptor
+  | McpAppWidgetDescriptor
 
 export type WidgetContentBlock =
   | { type: 'markdown'; id: string; content: string }

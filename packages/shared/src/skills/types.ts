@@ -13,10 +13,20 @@ export interface SkillMetadata {
   name: string;
   /** Brief description shown in skill list */
   description: string;
+  /** Optional display name from portable agents/openai.yaml metadata */
+  displayName?: string;
+  /** Optional short description from portable agents/openai.yaml metadata */
+  shortDescription?: string;
+  /** Optional default prompt hint from portable agents/openai.yaml metadata */
+  defaultPrompt?: string;
+  /** Whether the skill allows implicit invocation when declared by portable metadata */
+  implicitInvocation?: boolean;
   /** Optional file patterns that trigger this skill */
   globs?: string[];
   /** Optional tools to always allow when skill is active */
   alwaysAllow?: string[];
+  /** Optional tool dependencies declared by portable metadata */
+  requiredTools?: string[];
   /**
    * Optional icon - emoji or URL only.
    * - Emoji: rendered directly in UI (e.g., "🔧")

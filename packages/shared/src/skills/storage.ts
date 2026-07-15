@@ -13,10 +13,13 @@ import {
   statSync,
 } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import matter from 'gray-matter';
+import { load as loadYaml } from 'js-yaml';
 import type { LoadedSkill, SkillMetadata, SkillSource } from './types.ts';
 import { getWorkspaceSkillsPath } from '../workspaces/storage.ts';
+import { loadPluginPackage } from '../plugins/storage.ts';
+import { isPluginPackageEnabled } from '../plugins/config.ts';
 import {
   validateIconValue,
   findIconFile,
@@ -37,10 +40,60 @@ export const GLOBAL_AGENT_SKILLS_DIR = join(homedir(), '.agents', 'skills');
 export const PROJECT_AGENT_SKILLS_DIR = '.agents/skills';
 
 /**
- * Normalize requiredSources frontmatter to a clean string array.
+ * Return project-level skill directories for a working directory.
+ *
+ * Codex-style project skills can live in `.agents/skills` at the current
+ * working directory or any parent up to the repository root. Parent folders
+ * are returned first so deeper working-directory skills override them.
+ */
+export function getProjectSkillDirs(projectRoot: string): string[] {
+  const start = resolve(projectRoot);
+  if (!existsSync(start)) {
+    return [join(start, PROJECT_AGENT_SKILLS_DIR)];
+  }
+
+  const dirs: string[] = [start];
+  let current = start;
+  let foundRepoRoot = existsSync(join(current, '.git'));
+
+  while (!foundRepoRoot) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+    dirs.push(current);
+    foundRepoRoot = existsSync(join(current, '.git'));
+  }
+
+  const searchableDirs = foundRepoRoot ? dirs.reverse() : [start];
+  return searchableDirs.map(dir => join(dir, PROJECT_AGENT_SKILLS_DIR));
+}
+
+export function getProjectPackageRoots(projectRoot: string): string[] {
+  const start = resolve(projectRoot);
+  if (!existsSync(start)) {
+    return [];
+  }
+
+  const dirs: string[] = [start];
+  let current = start;
+  let foundRepoRoot = existsSync(join(current, '.git'));
+
+  while (!foundRepoRoot) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+    dirs.push(current);
+    foundRepoRoot = existsSync(join(current, '.git'));
+  }
+
+  return foundRepoRoot ? dirs.reverse() : [start];
+}
+
+/**
+ * Normalize string-list frontmatter to a clean array.
  * Accepts a single string or array of strings, trims whitespace, and deduplicates.
  */
-function normalizeRequiredSources(value: unknown): string[] | undefined {
+function normalizeStringList(value: unknown): string[] | undefined {
   const asArray = typeof value === 'string'
     ? [value]
     : Array.isArray(value)
@@ -59,6 +112,53 @@ function normalizeRequiredSources(value: unknown): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function normalizeString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function mergeStringLists(...lists: Array<string[] | undefined>): string[] | undefined {
+  const merged = Array.from(new Set(lists.flatMap(list => list ?? [])));
+  return merged.length > 0 ? merged : undefined;
+}
+
+function loadPortableOpenAiSkillMetadata(skillDir: string): Partial<SkillMetadata> {
+  const openAiMetadataPath = join(skillDir, 'agents', 'openai.yaml');
+  if (!existsSync(openAiMetadataPath)) {
+    return {};
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = loadYaml(readFileSync(openAiMetadataPath, 'utf-8'));
+  } catch {
+    return {};
+  }
+
+  const root = asRecord(parsed);
+  if (!root) return {};
+
+  const interfaceConfig = asRecord(root.interface);
+  const policyConfig = asRecord(root.policy);
+  const dependenciesConfig = asRecord(root.dependencies);
+
+  const allowImplicit = policyConfig?.allow_implicit_invocation;
+
+  return {
+    displayName: normalizeString(interfaceConfig?.display_name),
+    shortDescription: normalizeString(interfaceConfig?.short_description),
+    defaultPrompt: normalizeString(interfaceConfig?.default_prompt),
+    implicitInvocation: typeof allowImplicit === 'boolean' ? allowImplicit : undefined,
+    requiredTools: normalizeStringList(dependenciesConfig?.tools),
+    requiredSources: normalizeStringList(dependenciesConfig?.sources),
+  };
+}
+
 // ============================================================
 // Parsing
 // ============================================================
@@ -66,12 +166,15 @@ function normalizeRequiredSources(value: unknown): string[] | undefined {
 /**
  * Parse SKILL.md content and extract frontmatter + body
  */
-function parseSkillFile(content: string): { metadata: SkillMetadata; body: string } | null {
+function parseSkillFile(content: string, skillDir: string): { metadata: SkillMetadata; body: string } | null {
   try {
     const parsed = matter(content);
+    const portable = loadPortableOpenAiSkillMetadata(skillDir);
 
     // Validate required fields
-    if (!parsed.data.name || !parsed.data.description) {
+    const name = normalizeString(parsed.data.name) ?? portable.displayName;
+    const description = normalizeString(parsed.data.description) ?? portable.shortDescription;
+    if (!name || !description) {
       return null;
     }
 
@@ -81,12 +184,20 @@ function parseSkillFile(content: string): { metadata: SkillMetadata; body: strin
 
     return {
       metadata: {
-        name: parsed.data.name as string,
-        description: parsed.data.description as string,
-        globs: parsed.data.globs as string[] | undefined,
-        alwaysAllow: parsed.data.alwaysAllow as string[] | undefined,
+        name,
+        description,
+        displayName: portable.displayName,
+        shortDescription: portable.shortDescription,
+        defaultPrompt: portable.defaultPrompt,
+        implicitInvocation: portable.implicitInvocation,
+        globs: normalizeStringList(parsed.data.globs),
+        alwaysAllow: normalizeStringList(parsed.data.alwaysAllow),
+        requiredTools: portable.requiredTools,
         icon,
-        requiredSources: normalizeRequiredSources(parsed.data.requiredSources),
+        requiredSources: mergeStringLists(
+          normalizeStringList(parsed.data.requiredSources),
+          portable.requiredSources
+        ),
       },
       body: parsed.content,
     };
@@ -127,7 +238,7 @@ function loadSkillFromDir(skillsDir: string, slug: string, source: SkillSource):
     return null;
   }
 
-  const parsed = parseSkillFile(content);
+  const parsed = parseSkillFile(content, skillDir);
   if (!parsed) {
     return null;
   }
@@ -255,11 +366,20 @@ export function loadAllSkills(workspaceRoot: string, projectRoot?: string): Load
     skillsBySlug.set(skill.slug, skill);
   }
 
-  // 4. Project skills (highest priority): {projectRoot}/.agents/skills/
+  // 4. Project skills (highest priority): plugin package skills and .agents/skills from repo root to working dir
   if (projectRoot) {
-    const projectSkillsDir = join(projectRoot, PROJECT_AGENT_SKILLS_DIR);
-    for (const skill of loadSkillsFromDir(projectSkillsDir, 'project')) {
-      skillsBySlug.set(skill.slug, skill);
+    for (const packageRoot of getProjectPackageRoots(projectRoot)) {
+      const pluginPackage = loadPluginPackage(packageRoot);
+      if (pluginPackage && isPluginPackageEnabled(workspaceRoot, pluginPackage)) {
+        for (const skillDir of pluginPackage.skillDirs) {
+          for (const skill of loadSkillsFromDir(skillDir, 'project')) {
+            skillsBySlug.set(skill.slug, skill);
+          }
+        }
+      }
+      for (const skill of loadSkillsFromDir(join(packageRoot, PROJECT_AGENT_SKILLS_DIR), 'project')) {
+        skillsBySlug.set(skill.slug, skill);
+      }
     }
   }
 
@@ -279,9 +399,19 @@ export function loadAllSkills(workspaceRoot: string, projectRoot?: string): Load
 export function loadSkillBySlug(workspaceRoot: string, slug: string, projectRoot?: string): LoadedSkill | null {
   // Highest priority: project-level
   if (projectRoot) {
-    const projectSkillsDir = join(projectRoot, PROJECT_AGENT_SKILLS_DIR);
-    const skill = loadSkillFromDir(projectSkillsDir, slug, 'project');
-    if (skill) return skill;
+    for (const packageRoot of getProjectPackageRoots(projectRoot).reverse()) {
+      const projectSkillsDir = join(packageRoot, PROJECT_AGENT_SKILLS_DIR);
+      const projectSkill = loadSkillFromDir(projectSkillsDir, slug, 'project');
+      if (projectSkill) return projectSkill;
+
+      const pluginPackage = loadPluginPackage(packageRoot);
+      if (pluginPackage && isPluginPackageEnabled(workspaceRoot, pluginPackage)) {
+        for (const projectSkillsDir of [...pluginPackage.skillDirs].reverse()) {
+          const skill = loadSkillFromDir(projectSkillsDir, slug, 'project');
+          if (skill) return skill;
+        }
+      }
+    }
   }
 
   // Medium priority: workspace

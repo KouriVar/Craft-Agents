@@ -43,6 +43,13 @@ export interface ProxyToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpTextContentBlock {
+  type: 'text';
+  text: string;
 }
 
 /**
@@ -50,9 +57,26 @@ export interface ProxyToolDef {
  */
 export interface McpToolResult {
   content: string;
+  contentBlocks: McpTextContentBlock[];
   isError: boolean;
+  structuredContent?: unknown;
+  _meta?: Record<string, unknown>;
+  toolMeta?: Record<string, unknown>;
   /** Source slug for error attribution (set on failure) */
   sourceSlug?: string;
+}
+
+export interface McpResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpResourceResult {
+  contents: McpResourceContent[];
+  _meta?: Record<string, unknown>;
 }
 
 /**
@@ -64,6 +88,7 @@ function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | 
       transport: 'http',
       url: config.url,
       headers: config.headers,
+      bearerTokenEnvVar: config.bearerTokenEnvVar,
     };
   }
   if (config.type === 'stdio') {
@@ -72,6 +97,8 @@ function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | 
       command: config.command,
       args: config.args,
       env: config.env,
+      envVars: config.envVars,
+      cwd: config.cwd,
     };
   }
   return null;
@@ -110,6 +137,9 @@ export class McpClientPool {
 
   /** Proxy tool name → { slug, originalName } (e.g., "mcp__linear__createIssue" → { slug: "linear", originalName: "createIssue" }) */
   private proxyTools = new Map<string, { slug: string; originalName: string }>();
+
+  /** Coalesces concurrent restart attempts for the same crashed transport. */
+  private reconnects = new Map<string, Promise<void>>();
 
   /** Optional debug logger */
   private debugFn: ((msg: string) => void) | undefined;
@@ -166,18 +196,23 @@ export class McpClientPool {
     this.debug(`Connected source ${slug}: ${tools.length} tools`);
   }
 
+  protected createClient(config: SdkMcpServerConfig): PoolClient | null {
+    const clientConfig = sdkConfigToClientConfig(config);
+    return clientConfig ? new CraftMcpClient(clientConfig) : null;
+  }
+
   /**
    * Connect to an MCP source server (remote HTTP/SSE/stdio).
    * If already connected, this is a no-op.
    */
   async connect(slug: string, config: SdkMcpServerConfig): Promise<void> {
     if (this.clients.has(slug)) return;
-    const clientConfig = sdkConfigToClientConfig(config);
-    if (!clientConfig) {
+    const client = this.createClient(config);
+    if (!client) {
       this.debug(`Unknown MCP server type for ${slug}: ${(config as { type: string }).type}`);
       return;
     }
-    await this.registerClient(slug, new CraftMcpClient(clientConfig));
+    await this.registerClient(slug, client);
     this.activeConfigs.set(slug, config);
   }
 
@@ -193,6 +228,7 @@ export class McpClientPool {
    * Disconnect a source and remove its tools from the pool.
    */
   async disconnect(slug: string): Promise<void> {
+    await this.reconnects.get(slug)?.catch(() => {});
     const client = this.clients.get(slug);
     if (client) {
       await client.close().catch(() => {});
@@ -212,13 +248,44 @@ export class McpClientPool {
    * Disconnect all sources and clear all state.
    */
   async disconnectAll(): Promise<void> {
+    await Promise.allSettled(this.reconnects.values());
     const closePromises = Array.from(this.clients.values()).map(c => c.close().catch(() => {}));
     await Promise.all(closePromises);
     this.clients.clear();
     this.toolCache.clear();
     this.proxyTools.clear();
     this.activeConfigs.clear();
+    this.reconnects.clear();
     this.debug('Disconnected all MCP clients');
+  }
+
+  private isTransportFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /connection closed|transport|not connected|econnreset|econnrefused|epipe|socket|terminated|channel closed/i.test(message);
+  }
+
+  private async restartTransport(slug: string): Promise<void> {
+    const existing = this.reconnects.get(slug);
+    if (existing) return existing;
+    const config = this.activeConfigs.get(slug);
+    if (!config) throw new Error(`MCP source "${slug}" has no restartable transport configuration.`);
+
+    const restart = (async () => {
+      const oldClient = this.clients.get(slug);
+      await oldClient?.close().catch(() => {});
+      this.clients.delete(slug);
+      this.toolCache.delete(slug);
+      for (const [proxyName, info] of this.proxyTools) {
+        if (info.slug === slug) this.proxyTools.delete(proxyName);
+      }
+      const client = this.createClient(config);
+      if (!client) throw new Error(`MCP source "${slug}" cannot be restarted.`);
+      await this.registerClient(slug, client);
+      this.debug(`Restarted crashed MCP transport: ${slug}`);
+      this.onToolsChanged?.();
+    })().finally(() => this.reconnects.delete(slug));
+    this.reconnects.set(slug, restart);
+    return restart;
   }
 
   // ============================================================
@@ -350,11 +417,38 @@ export class McpClientPool {
           name: `mcp__${slug}__${tool.name}`,
           description: tool.description || `Tool from ${slug}`,
           inputSchema: Object.keys(cleanSchema).length > 0 ? cleanSchema : { type: 'object', properties: {} },
+          annotations: (tool as { annotations?: Record<string, unknown> }).annotations,
+          _meta: (tool as { _meta?: Record<string, unknown> })._meta,
         });
       }
     }
 
     return defs;
+  }
+
+  getProxyToolDef(proxyName: string): ProxyToolDef | null {
+    return this.getProxyToolDefs().find(def => def.name === proxyName) ?? null;
+  }
+
+  async readResource(slug: string, uri: string): Promise<McpResourceResult> {
+    let client = this.clients.get(slug);
+    if (!client?.readResource) {
+      throw new Error(`MCP client for source "${slug}" does not support resources/read.`);
+    }
+    let result: McpResourceResult;
+    try {
+      result = await client.readResource(uri) as McpResourceResult;
+    } catch (error) {
+      if (!this.isTransportFailure(error)) throw error;
+      await this.restartTransport(slug);
+      client = this.clients.get(slug);
+      if (!client?.readResource) throw error;
+      result = await client.readResource(uri) as McpResourceResult;
+    }
+    return {
+      contents: Array.isArray(result?.contents) ? result.contents : [],
+      ...(result?._meta ? { _meta: result._meta } : {}),
+    };
   }
 
   // ============================================================
@@ -370,25 +464,44 @@ export class McpClientPool {
     if (!info) {
       return {
         content: `Unknown MCP proxy tool: ${proxyName}`,
+        contentBlocks: [{ type: 'text', text: `Unknown MCP proxy tool: ${proxyName}` }],
         isError: true,
       };
     }
 
     const { slug, originalName } = info;
+    const toolMeta = (this.toolCache.get(slug)?.find(tool => tool.name === originalName) as { _meta?: Record<string, unknown> } | undefined)?._meta;
 
     const client = this.clients.get(slug);
     if (!client) {
       return {
         content: `MCP client for source "${slug}" is not connected.`,
+        contentBlocks: [{ type: 'text', text: `MCP client for source "${slug}" is not connected.` }],
         isError: true,
         sourceSlug: slug,
       };
     }
 
     try {
-      const result = await client.callTool(originalName, args) as {
+      let rawResult: unknown;
+      try {
+        rawResult = await client.callTool(originalName, args);
+      } catch (error) {
+        if (!this.isTransportFailure(error)) throw error;
+        await this.restartTransport(slug);
+        const readOnly = this.toolCache.get(slug)?.find(tool => tool.name === originalName)?.annotations?.readOnlyHint === true;
+        if (!readOnly) {
+          throw new Error(`MCP transport restarted after a connection failure; "${originalName}" was not replayed because it may have side effects.`);
+        }
+        const restartedClient = this.clients.get(slug);
+        if (!restartedClient) throw error;
+        rawResult = await restartedClient.callTool(originalName, args);
+      }
+      const result = rawResult as {
         content?: Array<{ type: string; text?: unknown; data?: string; mimeType?: string }>;
         isError?: boolean;
+        structuredContent?: unknown;
+        _meta?: Record<string, unknown>;
       };
 
       const contentBlocks = result.content || [];
@@ -423,6 +536,7 @@ export class McpClientPool {
 
       // 2. Combine parts (fallback to JSON.stringify if no content extracted)
       const text = parts.join('\n') || JSON.stringify(result);
+      const outputBlocks: McpTextContentBlock[] = [{ type: 'text', text }];
 
       // 3. Centralized binary + large response handling
       if (!result.isError && this.sessionPath) {
@@ -433,17 +547,30 @@ export class McpClientPool {
           summarize: this.summarizeCallback,
         });
         if (guarded) {
-          return { content: guarded, isError: false };
+          return {
+            content: guarded,
+            contentBlocks: [{ type: 'text', text: guarded }],
+            isError: false,
+            structuredContent: result.structuredContent,
+            _meta: result._meta,
+            toolMeta,
+          };
         }
       }
 
       return {
         content: text,
+        contentBlocks: outputBlocks,
         isError: !!result.isError,
+        structuredContent: result.structuredContent,
+        _meta: result._meta,
+        toolMeta,
       };
     } catch (err) {
+      const message = `MCP tool "${originalName}" (source: ${slug}) failed: ${err instanceof Error ? err.message : String(err)}`;
       return {
-        content: `MCP tool "${originalName}" (source: ${slug}) failed: ${err instanceof Error ? err.message : String(err)}`,
+        content: message,
+        contentBlocks: [{ type: 'text', text: message }],
         isError: true,
         sourceSlug: slug,
       };

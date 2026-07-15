@@ -80,6 +80,15 @@ mock.module('../../../skills/types.ts', () => ({
 mock.module('../../../skills/storage.ts', () => ({
   GLOBAL_AGENT_SKILLS_DIR: '/Users/test/.agents/skills',
   PROJECT_AGENT_SKILLS_DIR: '.agents/skills',
+  getProjectPackageRoots: (projectRoot: string) => [projectRoot],
+}));
+
+mock.module('../../../plugins/storage.ts', () => ({
+  loadPluginPackage: () => null,
+}));
+
+mock.module('../../../plugins/config.ts', () => ({
+  isPluginPackageEnabled: () => true,
 }));
 
 let mockCraftAgentsCliFlag = false;

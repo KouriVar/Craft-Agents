@@ -526,6 +526,15 @@ export interface AgentBackend {
    */
   getActiveSourceSlugs(): string[];
 
+  /** Execute a connected MCP proxy tool on behalf of a session-bound widget. */
+  callMcpTool(toolName: string, args: Record<string, unknown>): Promise<import('../../mcp/mcp-pool.ts').McpToolResult>;
+
+  /** Read a resource from one connected MCP server. */
+  readMcpResource(serverSlug: string, uri: string): Promise<import('../../mcp/mcp-pool.ts').McpResourceResult>;
+
+  /** Return the connected proxy definition used for permission and UI metadata. */
+  getMcpToolDefinition(toolName: string): import('../../mcp/mcp-pool.ts').ProxyToolDef | null;
+
   /**
    * Get the raw user message for the current turn (cleared between turns).
    * Used by SessionManager.activateSourceInSessionFn to capture the message

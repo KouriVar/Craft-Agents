@@ -666,7 +666,8 @@ Skills are reusable instruction sets that teach you specialized behaviors. Each 
 Skills are stored at three levels (checked in order):
 - Global: \`~/.agents/skills/{slug}/SKILL.md\`
 - Workspace: \`${workspacePath}/skills/{slug}/SKILL.md\`
-- Project: \`{projectRoot}/.agents/skills/{slug}/SKILL.md\`
+- Project: \`.agents/skills/{slug}/SKILL.md\` from the working directory up to the Git repository root
+- Project plugin package: \`skills/{slug}/SKILL.md\` from supported plugin package roots up to the Git repository root
 
 ## Project Context
 

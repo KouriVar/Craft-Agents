@@ -222,6 +222,10 @@ export interface StdioValidationConfig {
   args?: string[];
   /** Environment variables for the spawned process */
   env?: Record<string, string>;
+  /** Working directory for the server process */
+  cwd?: string;
+  /** Whether to merge the parent process environment (default true). */
+  inheritProcessEnv?: boolean;
   /** Timeout in ms (default: 30000) */
   timeout?: number;
 }
@@ -314,7 +318,7 @@ function createConnectWatchdog(
 export async function validateStdioMcpConnection(
   config: StdioValidationConfig
 ): Promise<McpValidationResult> {
-  const { command, args = [], env = {}, timeout = 30000 } = config;
+  const { command, args = [], env = {}, cwd, inheritProcessEnv = true, timeout = 30000 } = config;
 
   // Two-watchdog connect phase. Most "MCP doesn't work" failures never
   // complete the `initialize` handshake, so we want fast diagnostics — but
@@ -390,7 +394,8 @@ export async function validateStdioMcpConnection(
     transport = new StdioClientTransport({
       command,
       args,
-      env: { ...processEnv, ...env },
+      env: inheritProcessEnv ? { ...processEnv, ...env } : env,
+      cwd,
       stderr: 'pipe',
     });
 

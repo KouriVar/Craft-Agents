@@ -121,6 +121,7 @@ export class McpPoolServer {
             type: 'object';
             properties?: Record<string, unknown>;
           },
+          ...(def.annotations ? { annotations: def.annotations } : {}),
         })),
       };
     });
@@ -134,8 +135,15 @@ export class McpPoolServer {
       const result = await this.pool.callTool(internalName, args || {});
 
       return {
-        content: [{ type: 'text' as const, text: result.content }],
+        content: result.contentBlocks,
         ...(result.isError ? { isError: true } : {}),
+        ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+        ...(result._meta !== undefined ? { _meta: result._meta } : {}),
+      } as {
+        content: typeof result.contentBlocks;
+        isError?: boolean;
+        structuredContent?: unknown;
+        _meta?: Record<string, unknown>;
       };
     });
 

@@ -16,6 +16,7 @@ export interface HttpMcpClientConfig {
   transport: 'http';
   url: string;
   headers?: Record<string, string>;
+  bearerTokenEnvVar?: string;
 }
 
 /**
@@ -26,6 +27,8 @@ export interface StdioMcpClientConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  envVars?: string[];
+  cwd?: string;
 }
 
 /**
@@ -40,7 +43,7 @@ export type McpClientConfig = HttpMcpClientConfig | StdioMcpClientConfig;
  * NOTE: This list is duplicated in packages/session-tools-core/src/handlers/transform-data.ts (BLOCKED_ENV_VARS).
  * If you add a new entry here, update it there too.
  */
-const BLOCKED_ENV_VARS = [
+export const MCP_BLOCKED_ENV_VARS = [
   // Craft Agent auth (set by the app itself)
   'ANTHROPIC_API_KEY',
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -59,6 +62,26 @@ const BLOCKED_ENV_VARS = [
   'NPM_TOKEN',
 ];
 
+export function buildMcpStdioEnv(
+  config: Pick<StdioMcpClientConfig, 'env' | 'envVars'>,
+  parentEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const inheritedEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parentEnv)) {
+    if (value !== undefined && !MCP_BLOCKED_ENV_VARS.includes(key)) {
+      inheritedEnv[key] = value;
+    }
+  }
+  const forwardedEnv: Record<string, string> = {};
+  for (const key of config.envVars ?? []) {
+    const value = parentEnv[key];
+    if (value !== undefined && !MCP_BLOCKED_ENV_VARS.includes(key)) {
+      forwardedEnv[key] = value;
+    }
+  }
+  return { ...inheritedEnv, ...forwardedEnv, ...config.env };
+}
+
 /**
  * Interface for clients managed by McpClientPool.
  * Both CraftMcpClient (remote MCP sources) and ApiSourcePoolClient (API sources) implement this.
@@ -66,6 +89,7 @@ const BLOCKED_ENV_VARS = [
 export interface PoolClient {
   listTools(): Promise<Tool[]>;
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  readResource?(uri: string): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -84,24 +108,24 @@ export class CraftMcpClient {
     if (config.transport === 'stdio') {
       // Stdio transport for local MCP servers - merge with process env,
       // but filter out sensitive credentials to prevent leaking secrets to subprocesses
-      const processEnv: Record<string, string> = {};
-      for (const [key, value] of Object.entries(process.env)) {
-        if (value !== undefined && !BLOCKED_ENV_VARS.includes(key)) {
-          processEnv[key] = value;
-        }
-      }
       this.transport = new StdioClientTransport({
         command: config.command,
         args: config.args,
-        env: { ...processEnv, ...config.env },
+        env: buildMcpStdioEnv(config),
+        cwd: config.cwd,
       });
     } else {
+      const headers = { ...(config.headers ?? {}) };
+      if (config.bearerTokenEnvVar && process.env[config.bearerTokenEnvVar] && !headers.Authorization) {
+        headers.Authorization = `Bearer ${process.env[config.bearerTokenEnvVar]}`;
+      }
+
       // HTTP transport for remote MCP servers
       this.transport = new StreamableHTTPClientTransport(
         new URL(config.url),
         {
           requestInit: {
-            headers: config.headers,
+            headers,
           },
         }
       );
@@ -152,6 +176,11 @@ export class CraftMcpClient {
 
     const result = await this.client.callTool({ name, arguments: args });
     return result;
+  }
+
+  async readResource(uri: string): Promise<unknown> {
+    if (!this.connected) await this.connect();
+    return this.client.readResource({ uri });
   }
 
   async close(): Promise<void> {

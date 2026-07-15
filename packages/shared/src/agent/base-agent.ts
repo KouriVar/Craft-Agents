@@ -633,6 +633,24 @@ export abstract class BaseAgent implements AgentBackend {
     return Array.from(this.sourceManager.getIntendedSlugs());
   }
 
+  async callMcpTool(toolName: string, args: Record<string, unknown>) {
+    if (!this.config.mcpPool?.isProxyTool(toolName)) {
+      throw new Error(`MCP tool is not connected in this session: ${toolName}`);
+    }
+    return this.config.mcpPool.callTool(toolName, args);
+  }
+
+  async readMcpResource(serverSlug: string, uri: string) {
+    if (!this.config.mcpPool?.isConnected(serverSlug)) {
+      throw new Error(`MCP server is not connected in this session: ${serverSlug}`);
+    }
+    return this.config.mcpPool.readResource(serverSlug, uri);
+  }
+
+  getMcpToolDefinition(toolName: string) {
+    return this.config.mcpPool?.getProxyToolDef(toolName) ?? null;
+  }
+
   getAllSources(): LoadedSource[] {
     return this.sourceManager.getAllSources();
   }

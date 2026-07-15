@@ -158,6 +158,12 @@ export const routes = {
       return `skills/skill/${skillSlug}` as const
     },
 
+    /** Plugins view (plugins navigator). */
+    plugins: (pluginName?: string) => {
+      if (!pluginName) return 'plugins' as const
+      return `plugins/plugin/${encodeURIComponent(pluginName)}` as const
+    },
+
     /** Automations view (automations navigator) - supports type filtering */
     automations: (params?: { automationId?: string; type?: 'scheduled' | 'event' | 'agentic' }) => {
       const { automationId, type } = params ?? {}

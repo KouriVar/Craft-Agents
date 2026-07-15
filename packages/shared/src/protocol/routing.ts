@@ -58,6 +58,7 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.shell.OPEN_URL,
   RPC_CHANNELS.shell.OPEN_FILE,
   RPC_CHANNELS.shell.SHOW_IN_FOLDER,
+  RPC_CHANNELS.shell.OPEN_TERMINAL,
 
   // skills — local filesystem actions (guarded for remote)
   RPC_CHANNELS.skills.OPEN_EDITOR,
@@ -141,6 +142,14 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY,
   RPC_CHANNELS.input.GET_SPELL_CHECK,
   RPC_CHANNELS.input.SET_SPELL_CHECK,
+  RPC_CHANNELS.input.GET_OPEN_CONVERSATION_SCROLL,
+  RPC_CHANNELS.input.SET_OPEN_CONVERSATION_SCROLL,
+  RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_MODE,
+  RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_MODE,
+  RPC_CHANNELS.input.GET_RIGHT_SIDEBAR_FOLLOW_SESSION,
+  RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION,
+  RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE,
+  RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE,
 
   // power — local power management
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
@@ -286,6 +295,10 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.file.STORE_ATTACHMENT,
   RPC_CHANNELS.file.GENERATE_THUMBNAIL,
 
+  // widgets — session-bound MCP Apps resource and tool bridge
+  RPC_CHANNELS.widgets.READ_MCP_RESOURCE,
+  RPC_CHANNELS.widgets.CALL_MCP_TOOL,
+
   // fs — workspace filesystem
   RPC_CHANNELS.fs.SEARCH,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
@@ -382,6 +395,19 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.skills.DELETE,
   RPC_CHANNELS.skills.CHANGED,
 
+  // plugins — workspace plugin package config and package-local capabilities
+  RPC_CHANNELS.plugins.LIST,
+  RPC_CHANNELS.plugins.GET_POLICIES,
+  RPC_CHANNELS.plugins.SET_POLICY,
+  RPC_CHANNELS.plugins.GET_MCP_STATUS,
+  RPC_CHANNELS.plugins.DIAGNOSE_MCP,
+  RPC_CHANNELS.plugins.INSTALL_GIT,
+  RPC_CHANNELS.plugins.REGISTER_LOCAL,
+  RPC_CHANNELS.plugins.SET_ENABLED,
+  RPC_CHANNELS.plugins.UNREGISTER,
+  RPC_CHANNELS.plugins.REMOVE_MANAGED,
+  RPC_CHANNELS.plugins.CHANGED,
+
   // statuses — workspace metadata
   RPC_CHANNELS.statuses.LIST,
   RPC_CHANNELS.statuses.REORDER,
@@ -465,6 +491,9 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.messaging.WA_START_CONNECT,
   RPC_CHANNELS.messaging.WA_SUBMIT_PHONE,
   RPC_CHANNELS.messaging.WA_UI_EVENT,
+  RPC_CHANNELS.messaging.WECHAT_START_CONNECT,
+  RPC_CHANNELS.messaging.WECHAT_SUBMIT_CODE,
+  RPC_CHANNELS.messaging.WECHAT_UI_EVENT,
   // messaging access control — UI ↔ Server, per-platform owners + per-binding allow-list
   RPC_CHANNELS.messaging.GET_PLATFORM_OWNERS,
   RPC_CHANNELS.messaging.SET_PLATFORM_OWNERS,

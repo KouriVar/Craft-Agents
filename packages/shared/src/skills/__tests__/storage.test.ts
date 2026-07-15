@@ -5,7 +5,7 @@
  * 1. Built-in app skills: resources/skills/ (lowest priority)
  * 2. Global skills: ~/.agents/skills/
  * 3. Workspace skills: {workspaceRoot}/skills/
- * 4. Project skills: {projectRoot}/.agents/skills/ (highest priority)
+ * 4. Project skills: .agents/skills/ from working directory to Git root (highest priority)
  *
  * Uses real temp directories to test actual filesystem operations.
  *
@@ -28,6 +28,7 @@ import {
   listSkillSlugs,
   deleteSkill,
 } from '../storage.ts';
+import { setPluginEnabled } from '../../plugins/config.ts';
 
 // ============================================================
 // Temp Directory Setup
@@ -173,6 +174,91 @@ describe('loadSkill', () => {
 
     expect(skill).not.toBeNull();
     expect(skill!.metadata.globs).toEqual(['*.tsx', '*.css']);
+  });
+
+  it('should normalize scalar and mixed string-list metadata fields', () => {
+    const skillDir = join(workspaceRoot, 'skills', 'string-lists');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), `---
+name: "String Lists"
+description: "Skill with portable scalar and mixed list metadata"
+globs: "*.ts"
+alwaysAllow:
+  - Bash
+  - " Bash "
+  - 42
+  - ""
+requiredSources: linear
+---
+
+Use portable metadata.
+`);
+
+    const skill = loadSkill(workspaceRoot, 'string-lists');
+
+    expect(skill).not.toBeNull();
+    expect(skill!.metadata.globs).toEqual(['*.ts']);
+    expect(skill!.metadata.alwaysAllow).toEqual(['Bash']);
+    expect(skill!.metadata.requiredSources).toEqual(['linear']);
+  });
+
+  it('should load portable agents/openai.yaml metadata without overriding SKILL.md basics', () => {
+    const skillDir = join(workspaceRoot, 'skills', 'portable-openai');
+    mkdirSync(join(skillDir, 'agents'), { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), `---
+name: "Craft Name"
+description: "Craft description"
+requiredSources:
+  - linear
+---
+
+Use portable metadata.
+`);
+    writeFileSync(join(skillDir, 'agents', 'openai.yaml'), `interface:
+  display_name: "OpenAI Display"
+  short_description: "OpenAI short description"
+  default_prompt: "Use this skill when a portable host suggests it."
+policy:
+  allow_implicit_invocation: false
+dependencies:
+  tools:
+    - Bash
+    - " Bash "
+  sources:
+    - github
+`);
+
+    const skill = loadSkill(workspaceRoot, 'portable-openai');
+
+    expect(skill).not.toBeNull();
+    expect(skill!.metadata.name).toBe('Craft Name');
+    expect(skill!.metadata.description).toBe('Craft description');
+    expect(skill!.metadata.displayName).toBe('OpenAI Display');
+    expect(skill!.metadata.shortDescription).toBe('OpenAI short description');
+    expect(skill!.metadata.defaultPrompt).toBe('Use this skill when a portable host suggests it.');
+    expect(skill!.metadata.implicitInvocation).toBe(false);
+    expect(skill!.metadata.requiredTools).toEqual(['Bash']);
+    expect(skill!.metadata.requiredSources).toEqual(['linear', 'github']);
+  });
+
+  it('should use portable agents/openai.yaml display metadata as a fallback', () => {
+    const skillDir = join(workspaceRoot, 'skills', 'portable-fallback');
+    mkdirSync(join(skillDir, 'agents'), { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), `---
+---
+
+Use openai metadata fallback.
+`);
+    writeFileSync(join(skillDir, 'agents', 'openai.yaml'), `interface:
+  display_name: "Portable Fallback"
+  short_description: "Description from portable metadata"
+`);
+
+    const skill = loadSkill(workspaceRoot, 'portable-fallback');
+
+    expect(skill).not.toBeNull();
+    expect(skill!.metadata.name).toBe('Portable Fallback');
+    expect(skill!.metadata.description).toBe('Description from portable metadata');
   });
 
   it('should load skill with normalized requiredSources', () => {
@@ -436,6 +522,137 @@ describe('loadAllSkills', () => {
     expect(deploy!.source).toBe('project');
     expect(deploy!.metadata.name).toBe('Project Deploy');
     expect(deploy!.metadata.description).toBe('Project version');
+  });
+
+  it('should discover project skills from the working directory up to the repo root', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const repoRoot = join(tempDir, 'repo');
+    const nestedRoot = join(repoRoot, 'packages', 'web');
+    const repoSkillsDir = join(repoRoot, '.agents', 'skills');
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(nestedRoot, { recursive: true });
+    mkdirSync(repoSkillsDir, { recursive: true });
+
+    createSkill(repoSkillsDir, `${TEST_PREFIX}repo`, {
+      name: 'Repo Skill',
+      description: 'From repo root',
+    });
+
+    const skills = loadAllSkills(workspaceRoot, nestedRoot);
+    const repoSkill = skills.find(s => s.slug === `${TEST_PREFIX}repo`);
+
+    expect(skills.length).toBe(baselineGlobal.size + 1);
+    expect(repoSkill).toBeDefined();
+    expect(repoSkill!.source).toBe('project');
+    expect(repoSkill!.path).toBe(join(repoSkillsDir, `${TEST_PREFIX}repo`));
+  });
+
+  it('should prefer the nearest project skill when ancestor directories share a slug', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const repoRoot = join(tempDir, 'repo-override');
+    const nestedRoot = join(repoRoot, 'apps', 'desktop');
+    const repoSkillsDir = join(repoRoot, '.agents', 'skills');
+    const nestedSkillsDir = join(nestedRoot, '.agents', 'skills');
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(nestedSkillsDir, { recursive: true });
+    mkdirSync(repoSkillsDir, { recursive: true });
+
+    createSkill(repoSkillsDir, `${TEST_PREFIX}nearest`, {
+      name: 'Repo Version',
+      description: 'From repo root',
+    });
+    createSkill(nestedSkillsDir, `${TEST_PREFIX}nearest`, {
+      name: 'Nested Version',
+      description: 'From nested working directory',
+    });
+
+    const skills = loadAllSkills(workspaceRoot, nestedRoot);
+    const selected = skills.find(s => s.slug === `${TEST_PREFIX}nearest`);
+    const direct = loadSkillBySlug(workspaceRoot, `${TEST_PREFIX}nearest`, nestedRoot);
+
+    expect(skills.length).toBe(baselineGlobal.size + 1);
+    expect(selected).toBeDefined();
+    expect(selected!.metadata.name).toBe('Nested Version');
+    expect(selected!.path).toBe(join(nestedSkillsDir, `${TEST_PREFIX}nearest`));
+    expect(direct).not.toBeNull();
+    expect(direct!.metadata.name).toBe('Nested Version');
+  });
+
+  it('should discover skills from project plugin packages', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const repoRoot = join(tempDir, 'plugin-repo');
+    const nestedRoot = join(repoRoot, 'packages', 'app');
+    const pluginSkillsDir = join(repoRoot, 'skills');
+    const extraSkillsDir = join(repoRoot, 'extra-skills');
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(join(repoRoot, '.codex-plugin'), { recursive: true });
+    mkdirSync(nestedRoot, { recursive: true });
+    mkdirSync(pluginSkillsDir, { recursive: true });
+    mkdirSync(extraSkillsDir, { recursive: true });
+    writeFileSync(join(repoRoot, '.codex-plugin', 'plugin.json'), JSON.stringify({
+      name: 'plugin-repo',
+      skills: ['extra-skills'],
+    }));
+
+    createSkill(pluginSkillsDir, `${TEST_PREFIX}plugin_default`, { name: 'Plugin Default' });
+    createSkill(extraSkillsDir, `${TEST_PREFIX}plugin_extra`, { name: 'Plugin Extra' });
+
+    const skills = loadAllSkills(workspaceRoot, nestedRoot);
+    const defaultSkill = skills.find(s => s.slug === `${TEST_PREFIX}plugin_default`);
+    const extraSkill = skills.find(s => s.slug === `${TEST_PREFIX}plugin_extra`);
+
+    expect(skills.length).toBe(baselineGlobal.size + 2);
+    expect(defaultSkill).toBeDefined();
+    expect(defaultSkill!.source).toBe('project');
+    expect(defaultSkill!.path).toBe(join(pluginSkillsDir, `${TEST_PREFIX}plugin_default`));
+    expect(extraSkill).toBeDefined();
+    expect(extraSkill!.source).toBe('project');
+    expect(extraSkill!.path).toBe(join(extraSkillsDir, `${TEST_PREFIX}plugin_extra`));
+  });
+
+  it('should prefer .agents project skills over package-local plugin skills with the same slug', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const repoRoot = join(tempDir, 'plugin-override-repo');
+    const pluginSkillsDir = join(repoRoot, 'skills');
+    const projectSkillsDir = join(repoRoot, '.agents', 'skills');
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(join(repoRoot, '.codex-plugin'), { recursive: true });
+    mkdirSync(pluginSkillsDir, { recursive: true });
+    mkdirSync(projectSkillsDir, { recursive: true });
+    writeFileSync(join(repoRoot, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'plugin-override' }));
+
+    createSkill(pluginSkillsDir, `${TEST_PREFIX}plugin_override`, { name: 'Plugin Version' });
+    createSkill(projectSkillsDir, `${TEST_PREFIX}plugin_override`, { name: 'Agents Version' });
+
+    const skills = loadAllSkills(workspaceRoot, repoRoot);
+    const selected = skills.find(s => s.slug === `${TEST_PREFIX}plugin_override`);
+    const direct = loadSkillBySlug(workspaceRoot, `${TEST_PREFIX}plugin_override`, repoRoot);
+
+    expect(skills.length).toBe(baselineGlobal.size + 1);
+    expect(selected).toBeDefined();
+    expect(selected!.metadata.name).toBe('Agents Version');
+    expect(direct).not.toBeNull();
+    expect(direct!.metadata.name).toBe('Agents Version');
+  });
+
+  it('should skip package-local plugin skills when the plugin is disabled', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const repoRoot = join(tempDir, 'disabled-plugin-repo');
+    const pluginSkillsDir = join(repoRoot, 'skills');
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(join(repoRoot, '.codex-plugin'), { recursive: true });
+    mkdirSync(pluginSkillsDir, { recursive: true });
+    writeFileSync(join(repoRoot, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'disabled-plugin' }));
+    createSkill(pluginSkillsDir, `${TEST_PREFIX}disabled_plugin_skill`, { name: 'Disabled Plugin Skill' });
+
+    setPluginEnabled(workspaceRoot, 'disabled-plugin', false);
+
+    const skills = loadAllSkills(workspaceRoot, repoRoot);
+    const direct = loadSkillBySlug(workspaceRoot, `${TEST_PREFIX}disabled_plugin_skill`, repoRoot);
+
+    expect(skills.length).toBe(baselineGlobal.size);
+    expect(skills.find(s => s.slug === `${TEST_PREFIX}disabled_plugin_skill`)).toBeUndefined();
+    expect(direct).toBeNull();
   });
 
   it('should handle full user-tier override: project > workspace > global/builtin', () => {

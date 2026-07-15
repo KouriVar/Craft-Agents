@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'projects' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'automations' | 'projects' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'automations', 'projects', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'automations', 'projects', 'settings'
 ]
 
 /**
@@ -175,6 +175,19 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       }
     }
 
+    return null
+  }
+
+  if (first === 'plugins') {
+    if (segments.length === 1) {
+      return { navigator: 'plugins', details: null }
+    }
+    if (segments[1] === 'plugin' && segments[2]) {
+      return {
+        navigator: 'plugins',
+        details: { type: 'plugin', id: decodeURIComponent(segments[2]) },
+      }
+    }
     return null
   }
 
@@ -310,6 +323,11 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
     return `skills/skill/${parsed.details.id}`
   }
 
+  if (parsed.navigator === 'plugins') {
+    if (!parsed.details) return 'plugins'
+    return `plugins/plugin/${encodeURIComponent(parsed.details.id)}`
+  }
+
   if (parsed.navigator === 'automations') {
     // Build base from filter (automations, automations/scheduled, automations/event, automations/agentic)
     let base = 'automations'
@@ -441,6 +459,11 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
       return { type: 'view', name: 'skills', params: {} }
     }
     return { type: 'view', name: 'skill-info', id: compound.details.id, params: {} }
+  }
+
+  if (compound.navigator === 'plugins') {
+    if (!compound.details) return { type: 'view', name: 'plugins', params: {} }
+    return { type: 'view', name: 'plugin-info', id: compound.details.id, params: {} }
   }
 
   // Automations
@@ -578,6 +601,16 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     }
   }
 
+  if (compound.navigator === 'plugins') {
+    if (!compound.details) {
+      return { navigator: 'plugins', details: null }
+    }
+    return {
+      navigator: 'plugins',
+      details: { type: 'plugin', pluginName: compound.details.id },
+    }
+  }
+
   // Automations - include filter if present
   if (compound.navigator === 'automations') {
     if (!compound.details) {
@@ -670,6 +703,16 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
         }
       }
       return { navigator: 'skills', details: null }
+    case 'plugins':
+      return { navigator: 'plugins', details: null }
+    case 'plugin-info':
+      if (parsed.id) {
+        return {
+          navigator: 'plugins',
+          details: { type: 'plugin', pluginName: parsed.id },
+        }
+      }
+      return { navigator: 'plugins', details: null }
     case 'automations':
       return { navigator: 'automations', details: null }
     case 'automation-info':
@@ -790,6 +833,13 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     return {
       navigator: 'skills',
       details: state.details?.type === 'skill' ? { type: 'skill', id: state.details.skillSlug } : null,
+    }
+  }
+
+  if (state.navigator === 'plugins') {
+    return {
+      navigator: 'plugins',
+      details: state.details ? { type: 'plugin', id: state.details.pluginName } : null,
     }
   }
 

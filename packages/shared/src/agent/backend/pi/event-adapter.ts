@@ -530,8 +530,9 @@ export class PiEventAdapter extends BaseEventAdapter {
         }
 
         yield this.createToolResult(toolCallId, resolvedToolName, result, isError, undefined,
-          // Propagate originalContent from Write tool so the UI can show diff (#933)
-          resolvedToolName === 'Write' ? this.extractWriteDetails(event.result) : undefined,
+          resolvedToolName === 'Write'
+            ? this.extractWriteDetails(event.result)
+            : this.extractMcpAppDetails(event.result),
         );
         break;
       }
@@ -814,6 +815,19 @@ export class PiEventAdapter extends BaseEventAdapter {
       return { originalContent: typed.details.originalContent };
     }
     return undefined;
+  }
+
+  private extractMcpAppDetails(result: unknown): Record<string, unknown> | undefined {
+    if (!result || typeof result !== 'object') return undefined;
+    const details = (result as { details?: Record<string, unknown> }).details;
+    if (!details || (details.structuredContent === undefined && !details._meta && !details.toolMeta)) return undefined;
+    return {
+      mcpApp: {
+        ...(details.structuredContent !== undefined ? { structuredContent: details.structuredContent } : {}),
+        ...(details._meta ? { responseMeta: details._meta } : {}),
+        ...(details.toolMeta ? { toolMeta: details.toolMeta } : {}),
+      },
+    };
   }
 
   /**

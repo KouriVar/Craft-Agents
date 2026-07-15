@@ -1808,6 +1808,7 @@ export function shouldAllowToolInMode(
     plansFolderPath?: string;
     dataFolderPath?: string;
     permissionsContext?: PermissionsContext;
+    readOnlyMcpTools?: string[];
   }
 ): ToolCheckResult {
   // Get config: merged custom if context provided, otherwise defaults
@@ -2043,6 +2044,9 @@ export function shouldAllowToolInMode(
     }
 
     if (isReadOnlyMcpToolWithConfig(toolName, config)) {
+      return { allowed: true };
+    }
+    if (options?.readOnlyMcpTools?.includes(toolName)) {
       return { allowed: true };
     }
     return {

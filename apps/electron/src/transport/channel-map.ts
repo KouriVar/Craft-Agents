@@ -87,6 +87,8 @@ export const CHANNEL_MAP = {
   readFilePreviewDataUrl: invoke(RPC_CHANNELS.file.READ_PREVIEW_DATA_URL),
   readFileBinary: invoke(RPC_CHANNELS.file.READ_BINARY),
   readWidgetFile: invoke(RPC_CHANNELS.file.READ_WIDGET),
+  readMcpWidgetResource: invoke(RPC_CHANNELS.widgets.READ_MCP_RESOURCE),
+  callMcpWidgetTool: invoke(RPC_CHANNELS.widgets.CALL_MCP_TOOL),
   openFileDialog: invoke(RPC_CHANNELS.file.OPEN_DIALOG),
   readFileAttachment: invoke(RPC_CHANNELS.file.READ_ATTACHMENT),
   readUserAttachment: invoke(RPC_CHANNELS.file.READ_USER_ATTACHMENT),
@@ -247,6 +249,24 @@ export const CHANNEL_MAP = {
   openSkillInEditor: invoke(RPC_CHANNELS.skills.OPEN_EDITOR),
   openSkillInFinder: invoke(RPC_CHANNELS.skills.OPEN_FINDER),
   onSkillsChanged: listener(RPC_CHANNELS.skills.CHANGED),
+
+  // Plugins
+  listPlugins: invoke(RPC_CHANNELS.plugins.LIST),
+  getPluginPolicies: invoke(RPC_CHANNELS.plugins.GET_POLICIES),
+  setPluginPolicy: invoke(RPC_CHANNELS.plugins.SET_POLICY),
+  getPluginMcpStatus: invoke(RPC_CHANNELS.plugins.GET_MCP_STATUS),
+  diagnosePluginMcp: invoke(RPC_CHANNELS.plugins.DIAGNOSE_MCP),
+  installGitPlugin: invoke(RPC_CHANNELS.plugins.INSTALL_GIT),
+  listPluginMarketplaceSources: invoke(RPC_CHANNELS.plugins.LIST_MARKETPLACE_SOURCES),
+  addPluginMarketplaceSource: invoke(RPC_CHANNELS.plugins.ADD_MARKETPLACE_SOURCE),
+  removePluginMarketplaceSource: invoke(RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE),
+  getPluginMarketplaceCatalog: invoke(RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG),
+  installMarketplacePlugin: invoke(RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN),
+  registerLocalPlugin: invoke(RPC_CHANNELS.plugins.REGISTER_LOCAL),
+  setPluginEnabled: invoke(RPC_CHANNELS.plugins.SET_ENABLED),
+  unregisterPlugin: invoke(RPC_CHANNELS.plugins.UNREGISTER),
+  removeManagedPlugin: invoke(RPC_CHANNELS.plugins.REMOVE_MANAGED),
+  onPluginsChanged: listener(RPC_CHANNELS.plugins.CHANGED),
 
   // Statuses
   listStatuses: invoke(RPC_CHANNELS.statuses.LIST),

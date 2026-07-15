@@ -603,6 +603,7 @@ export class PiAgent extends BaseAgent {
 
     this.send({
       type: 'register_tools',
+      scope: 'session',
       tools: sessionToolDefs,
     });
     this.debug(`Registered ${sessionToolDefs.length} session tools with subprocess`);
@@ -617,13 +618,12 @@ export class PiAgent extends BaseAgent {
   private registerPoolToolsWithSubprocess(): void {
     if (!this.mcpPool) return;
     const proxyDefs = this.mcpPool.getProxyToolDefs();
-    if (proxyDefs.length > 0) {
-      this.send({
-        type: 'register_tools',
-        tools: proxyDefs,
-      });
-      this.debug(`Registered ${proxyDefs.length} MCP source tools from pool with subprocess`);
-    }
+    this.send({
+      type: 'register_tools',
+      scope: 'pool',
+      tools: proxyDefs,
+    });
+    this.debug(`Registered ${proxyDefs.length} MCP source tools from pool with subprocess`);
   }
 
   /**
@@ -1242,6 +1242,9 @@ export class PiAgent extends BaseAgent {
       dataFolderPath,
       workingDirectory: this.config.session?.workingDirectory,
       activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
+      readOnlyMcpTools: this.mcpPool?.getProxyToolDefs()
+        .filter(def => def.annotations?.readOnlyHint === true)
+        .map(def => def.name),
       allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
       hasSourceActivation: !!this.onSourceActivationRequest,
       permissionManager: this.permissionManager,
@@ -1315,6 +1318,9 @@ export class PiAgent extends BaseAgent {
           dataFolderPath,
           workingDirectory: this.config.session?.workingDirectory,
           activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
+          readOnlyMcpTools: this.mcpPool?.getProxyToolDefs()
+            .filter(def => def.annotations?.readOnlyHint === true)
+            .map(def => def.name),
           allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
           hasSourceActivation: !!this.onSourceActivationRequest,
           permissionManager: this.permissionManager,
@@ -1449,7 +1455,13 @@ export class PiAgent extends BaseAgent {
   private async routeToolCall(
     toolName: string,
     args: Record<string, unknown>
-  ): Promise<{ content: string; isError: boolean }> {
+  ): Promise<{
+    content: string;
+    isError: boolean;
+    structuredContent?: unknown;
+    _meta?: Record<string, unknown>;
+    toolMeta?: Record<string, unknown>;
+  }> {
     // Session-scoped tools — strip mcp__session__ prefix added by the Pi SDK
     // registration (tools are registered as mcp__session__SubmitPlan, etc.)
     const strippedName = toolName.startsWith('mcp__session__')

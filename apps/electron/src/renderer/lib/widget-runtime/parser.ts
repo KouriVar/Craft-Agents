@@ -1,5 +1,6 @@
 import type {
   CowartCanvasWidgetDescriptor,
+  McpAppWidgetDescriptor,
   WidgetContentBlock,
   WidgetDescriptor,
 } from '../../../shared/widget-runtime'
@@ -168,5 +169,57 @@ export function widgetDescriptorFromToolResultText(result: string): CowartCanvas
     return widgetDescriptorFromToolResult(JSON.parse(result.slice(CRAFT_WIDGET_RESULT_PREFIX.length)))
   } catch {
     return null
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function stringAt(value: Record<string, unknown> | null, key: string): string | undefined {
+  const item = value?.[key]
+  return typeof item === 'string' && item.trim() ? item.trim() : undefined
+}
+
+export function widgetDescriptorFromMcpToolResult(input: {
+  toolName?: string
+  toolUseId: string
+  toolInput?: Record<string, unknown>
+  resultText?: string
+  resultDetails?: Record<string, unknown>
+}): McpAppWidgetDescriptor | null {
+  const match = input.toolName?.match(/^mcp__([^_]+(?:_[^_]+)*)__([^_].*)$/)
+  if (!match) return null
+  const app = record(input.resultDetails?.mcpApp)
+  const toolMeta = record(app?.toolMeta)
+  const ui = record(toolMeta?.ui)
+  const resourceUri = stringAt(ui, 'resourceUri')
+    ?? stringAt(toolMeta, 'openai/outputTemplate')
+    ?? stringAt(toolMeta, 'openai/output_template')
+  if (!resourceUri) return null
+
+  const responseMeta = record(app?.responseMeta) ?? undefined
+  const structuredContent = record(app?.structuredContent)
+  const displayModeValue = stringAt(ui, 'displayMode')
+    ?? stringAt(structuredContent, 'targetDisplayMode')
+    ?? stringAt(responseMeta ?? null, 'openai/widgetDisplayMode')
+  const displayMode = displayModeValue === 'fullscreen' || displayModeValue === 'pip'
+    ? displayModeValue
+    : 'inline'
+  return {
+    kind: 'mcp-app',
+    id: stableId('mcp-app', `${input.toolUseId}:${resourceUri}`, 0),
+    serverSlug: match[1],
+    resourceUri,
+    toolName: match[2],
+    toolInput: input.toolInput ?? {},
+    resultContent: input.resultText ? [{ type: 'text', text: input.resultText }] : undefined,
+    structuredContent: app?.structuredContent,
+    responseMeta,
+    source: 'mcp-app',
+    title: stringAt(ui, 'title') ?? stringAt(toolMeta, 'openai/widgetDescription') ?? match[2],
+    displayMode,
   }
 }
