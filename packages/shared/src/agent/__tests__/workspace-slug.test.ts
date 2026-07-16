@@ -15,7 +15,8 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { qualifySkillName, AGENTS_PLUGIN_NAME } from '../core/index.ts'
 import { extractWorkspaceSlug, readPluginName } from '../../utils/workspace.ts'
-import { setPluginEnabled } from '../../plugins/config.ts'
+import { registerPluginPackage, setPluginEnabled } from '../../plugins/config.ts'
+import { loadPluginPackage } from '../../plugins/storage.ts'
 
 // ============================================================================
 // readPluginName — reads SDK/plugin package name from supported plugin manifests
@@ -222,6 +223,7 @@ describe('qualifySkillName with filesystem resolution', () => {
   const projectDir = join(testDir, 'my-project')
   const nestedProjectDir = join(projectDir, 'packages', 'app')
   const pluginProjectDir = join(testDir, 'plugin-project')
+  const managedPluginDir = join(workspaceRoot, 'plugins', 'installed', 'managed-plugin')
   const workspaceSlug = 'my-workspace'
 
   beforeAll(() => {
@@ -249,6 +251,14 @@ describe('qualifySkillName with filesystem resolution', () => {
     mkdirSync(join(pluginProjectDir, 'skills', 'plugin-only'), { recursive: true })
     writeFileSync(join(pluginProjectDir, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'codex-plugin-package' }))
     writeFileSync(join(pluginProjectDir, 'skills', 'plugin-only', 'SKILL.md'), '---\nname: Plugin Only\ndescription: test\n---\n')
+
+    mkdirSync(join(managedPluginDir, '.codex-plugin'), { recursive: true })
+    mkdirSync(join(managedPluginDir, 'skills', 'managed-only'), { recursive: true })
+    writeFileSync(join(managedPluginDir, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'managed-plugin' }))
+    writeFileSync(join(managedPluginDir, 'skills', 'managed-only', 'SKILL.md'), '---\nname: Managed Only\ndescription: test\n---\n')
+    const managedPackage = loadPluginPackage(managedPluginDir)
+    if (!managedPackage) throw new Error('Managed plugin fixture failed to load')
+    registerPluginPackage(workspaceRoot, managedPackage, { enabled: true, source: 'git' })
   })
 
   afterAll(() => {
@@ -271,6 +281,12 @@ describe('qualifySkillName with filesystem resolution', () => {
     const result = qualifySkillName({ skill: 'plugin-only' }, workspaceSlug, workspaceRoot, pluginProjectDir)
     expect(result.modified).toBe(true)
     expect(result.input).toEqual({ skill: 'codex-plugin-package:plugin-only' })
+  })
+
+  it('resolves managed plugin skills to the installed package manifest name', () => {
+    const result = qualifySkillName({ skill: 'managed-only' }, workspaceSlug, workspaceRoot, projectDir)
+    expect(result.modified).toBe(true)
+    expect(result.input).toEqual({ skill: 'managed-plugin:managed-only' })
   })
 
   it('does not resolve disabled plugin package skills', () => {

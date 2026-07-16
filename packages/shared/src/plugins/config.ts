@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import type { LoadedPluginPackage, WorkspacePluginConfig, WorkspacePluginEntry } from './types.ts';
+import { loadPluginPackage } from './storage.ts';
+import { assessPluginCompatibility } from './compatibility.ts';
 
 export const PLUGIN_CONFIG_DIR = 'plugins';
 export const PLUGIN_CONFIG_FILE = 'plugins/config.json';
@@ -29,6 +31,8 @@ function normalizeEntry(workspaceRootPath: string, name: string, value: unknown)
     version: typeof record.version === 'string' && record.version.trim() ? record.version.trim() : undefined,
     displayName: typeof record.displayName === 'string' && record.displayName.trim() ? record.displayName.trim() : undefined,
     description: typeof record.description === 'string' && record.description.trim() ? record.description.trim() : undefined,
+    iconPath: typeof record.iconPath === 'string' && record.iconPath.trim() ? resolve(workspaceRootPath, record.iconPath) : undefined,
+    brandColor: typeof record.brandColor === 'string' && record.brandColor.trim() ? record.brandColor.trim() : undefined,
     source: record.source === 'local' || record.source === 'git' || record.source === 'unknown' ? record.source : 'unknown',
     sourceUrl: typeof record.sourceUrl === 'string' && record.sourceUrl.trim() ? record.sourceUrl.trim() : undefined,
     gitRef: typeof record.gitRef === 'string' && record.gitRef.trim() ? record.gitRef.trim() : undefined,
@@ -87,6 +91,29 @@ export function savePluginConfig(workspaceRootPath: string, config: WorkspacePlu
 
 export function listPluginEntries(workspaceRootPath: string): WorkspacePluginEntry[] {
   const config = loadPluginConfig(workspaceRootPath);
+  let changed = false;
+  for (const entry of Object.values(config.plugins)) {
+    if (!entry.installPath) continue;
+    const pluginPackage = loadPluginPackage(entry.installPath);
+    if (!pluginPackage) continue;
+    const iconPath = cachePluginIcon(workspaceRootPath, pluginPackage);
+    const displayName = pluginPackage.manifest.displayName ?? pluginPackage.manifest.interface?.displayName;
+    const brandColor = pluginPackage.manifest.interface?.brandColor;
+    entry.compatibility = assessPluginCompatibility(pluginPackage);
+    if (iconPath && iconPath !== entry.iconPath) {
+      entry.iconPath = iconPath;
+      changed = true;
+    }
+    if (displayName && displayName !== entry.displayName) {
+      entry.displayName = displayName;
+      changed = true;
+    }
+    if (brandColor && brandColor !== entry.brandColor) {
+      entry.brandColor = brandColor;
+      changed = true;
+    }
+  }
+  if (changed) savePluginConfig(workspaceRootPath, config);
   return Object.values(config.plugins).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -102,6 +129,22 @@ export function isPluginPackageEnabled(workspaceRootPath: string, pluginPackage:
     ?? true;
 }
 
+function cachePluginIcon(workspaceRootPath: string, pluginPackage: LoadedPluginPackage): string | undefined {
+  if (!pluginPackage.iconPath || !existsSync(pluginPackage.iconPath)) return undefined;
+  const ext = extname(pluginPackage.iconPath).toLowerCase();
+  if (!['.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.gif'].includes(ext)) return undefined;
+  const safeName = pluginPackage.manifest.name.replace(/[^a-zA-Z0-9._-]+/g, '-');
+  const iconDir = join(workspaceRootPath, PLUGIN_CONFIG_DIR, 'icons');
+  const target = join(iconDir, `${safeName}${ext}`);
+  try {
+    mkdirSync(iconDir, { recursive: true });
+    if (resolve(pluginPackage.iconPath) !== resolve(target)) copyFileSync(pluginPackage.iconPath, target);
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
 export function setPluginEnabled(workspaceRootPath: string, pluginName: string, enabled: boolean): WorkspacePluginEntry {
   const config = loadPluginConfig(workspaceRootPath);
   const existing = config.plugins[pluginName];
@@ -114,10 +157,13 @@ export function setPluginEnabled(workspaceRootPath: string, pluginName: string, 
     version: existing?.version,
     displayName: existing?.displayName,
     description: existing?.description,
+    iconPath: existing?.iconPath,
+    brandColor: existing?.brandColor,
     source: existing?.source ?? 'unknown',
     sourceUrl: existing?.sourceUrl,
     gitRef: existing?.gitRef,
     updatedAt: Date.now(),
+    compatibility: existing?.compatibility,
   };
 
   config.plugins[pluginName] = entry;
@@ -139,12 +185,15 @@ export function registerPluginPackage(
     manifestPath: pluginPackage.manifestPath,
     manifestFormat: pluginPackage.manifestFormat,
     version: pluginPackage.manifest.version,
-    displayName: pluginPackage.manifest.displayName,
+    displayName: pluginPackage.manifest.displayName ?? pluginPackage.manifest.interface?.displayName,
     description: pluginPackage.manifest.description,
+    iconPath: cachePluginIcon(workspaceRootPath, pluginPackage) ?? existing?.iconPath,
+    brandColor: pluginPackage.manifest.interface?.brandColor ?? existing?.brandColor,
     source: options.source ?? existing?.source ?? 'local',
     sourceUrl: options.sourceUrl ?? existing?.sourceUrl,
     gitRef: options.gitRef ?? existing?.gitRef,
     updatedAt: Date.now(),
+    compatibility: assessPluginCompatibility(pluginPackage),
   };
 
   config.plugins[entry.name] = entry;
@@ -159,6 +208,13 @@ export function unregisterPlugin(workspaceRootPath: string, pluginName: string):
 
   delete config.plugins[pluginName];
   savePluginConfig(workspaceRootPath, config);
+  if (existing.iconPath) {
+    const managedIconRoot = resolve(workspaceRootPath, PLUGIN_CONFIG_DIR, 'icons');
+    const iconPath = resolve(existing.iconPath);
+    if (iconPath.startsWith(`${managedIconRoot}/`)) {
+      rmSync(iconPath, { force: true });
+    }
+  }
   return existing;
 }
 

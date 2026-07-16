@@ -54,6 +54,32 @@ function ToolMenuItem({
   )
 }
 
+function EmptySidebarAction({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="group flex h-11 w-full items-center gap-3 px-1 text-left text-sm text-foreground transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors group-hover:text-accent">
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
 type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'widget'
 interface RightSidebarTab {
   id: string
@@ -150,10 +176,8 @@ export function RightReviewSidebar() {
   const activeWorkspace = useActiveWorkspace()
   const rootPath = activeWorkspace?.rootPath
   const newTabLabel = t('browser.newTab', { defaultValue: '新标签页' })
-  const [tabs, setTabs] = React.useState<RightSidebarTab[]>(() => [
-    createSidebarTab('browser', newTabLabel),
-  ])
-  const [activeTabId, setActiveTabId] = React.useState(() => tabs[0]?.id ?? '')
+  const [tabs, setTabs] = React.useState<RightSidebarTab[]>([])
+  const [activeTabId, setActiveTabId] = React.useState('')
   const [loadedWorkspaceId, setLoadedWorkspaceId] = React.useState<string | null>(null)
   const activeTab = React.useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null,
@@ -173,9 +197,9 @@ export function RightReviewSidebar() {
       runtimeStatus: 'closed' as const,
       restored: true,
     }))
-    const next = restored.length > 0 ? restored : [createSidebarTab('browser', newTabLabel)]
+    const next = restored
     setTabs(next)
-    setActiveTabId(next[0].id)
+    setActiveTabId(next[0]?.id ?? '')
     setLoadedWorkspaceId(activeWorkspace.id)
   }, [activeWorkspace?.id, newTabLabel])
 
@@ -245,9 +269,8 @@ export function RightReviewSidebar() {
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
       if (current.length <= 1) {
-        const replacement = createSidebarTab('browser', newTabLabel)
-        setActiveTabId(replacement.id)
-        return [replacement]
+        setActiveTabId('')
+        return []
       }
       const index = current.findIndex((tab) => tab.id === id)
       const next = current.filter((tab) => tab.id !== id)
@@ -257,7 +280,7 @@ export function RightReviewSidebar() {
       })
       return next
     })
-  }, [newTabLabel])
+  }, [])
 
   const handleOpenTerminal = useCallback(() => {
     addTab('terminal', t('rightSidebar.openTerminal'))
@@ -354,9 +377,8 @@ export function RightReviewSidebar() {
           setActiveTabId(active => next.some(tab => tab.id === active) ? active : next[0].id)
           return next
         }
-        const replacement = createSidebarTab('browser', newTabLabel)
-        setActiveTabId(replacement.id)
-        return [replacement]
+        setActiveTabId('')
+        return []
       })
     }
 
@@ -470,7 +492,35 @@ export function RightReviewSidebar() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tabs.map((tab) => {
+        {tabs.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-8">
+            <div className="w-full max-w-[240px]">
+              <EmptySidebarAction
+                icon={<Globe className="h-5 w-5" />}
+                label={t('rightSidebar.openBrowser')}
+                onClick={handleOpenBrowser}
+              />
+              <EmptySidebarAction
+                icon={<Terminal className="h-5 w-5" />}
+                label={t('rightSidebar.openTerminal')}
+                onClick={handleOpenTerminal}
+                disabled={noWorkspace}
+              />
+              <EmptySidebarAction
+                icon={<FolderOpen className="h-5 w-5" />}
+                label={t('rightSidebar.openFolder')}
+                onClick={handleOpenFolder}
+                disabled={noWorkspace}
+              />
+              <EmptySidebarAction
+                icon={<Brush className="h-5 w-5" />}
+                label={t('rightSidebar.openCowart', { defaultValue: 'Cowart 画布' })}
+                onClick={() => { void handleOpenCowart(undefined, undefined, session.selected ?? undefined) }}
+                disabled={noWorkspace}
+              />
+            </div>
+          </div>
+        ) : tabs.map((tab) => {
           const isActive = tab.id === activeTab?.id
           const className = cn('h-full min-h-0', !isActive && 'hidden')
           if (tab.type === 'terminal') {

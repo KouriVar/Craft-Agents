@@ -3662,6 +3662,7 @@ function AppShellContent({
             )}
             {isPluginsNavigation(navState) && activeWorkspaceId && (
               <PluginsListPanel
+                workspaceId={activeWorkspaceId}
                 plugins={plugins}
                 onPluginClick={handlePluginSelect}
                 selectedPluginName={navState.details?.pluginName ?? null}

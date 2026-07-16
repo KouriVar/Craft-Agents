@@ -27,8 +27,10 @@ import {
   skillExists,
   listSkillSlugs,
   deleteSkill,
+  invalidateSkillsCache,
 } from '../storage.ts';
-import { setPluginEnabled } from '../../plugins/config.ts';
+import { registerPluginPackage, setPluginEnabled } from '../../plugins/config.ts';
+import { loadPluginPackage } from '../../plugins/storage.ts';
 
 // ============================================================
 // Temp Directory Setup
@@ -608,6 +610,34 @@ describe('loadAllSkills', () => {
     expect(extraSkill).toBeDefined();
     expect(extraSkill!.source).toBe('project');
     expect(extraSkill!.path).toBe(join(extraSkillsDir, `${TEST_PREFIX}plugin_extra`));
+  });
+
+  it('should discover enabled managed plugin skills and preserve the plugin name', () => {
+    const baselineGlobal = getExistingGlobalSlugs();
+    const pluginRoot = join(workspaceRoot, 'plugins', 'installed', 'managed-plugin');
+    const pluginSkillsDir = join(pluginRoot, 'skills');
+    mkdirSync(join(pluginRoot, '.codex-plugin'), { recursive: true });
+    writeFileSync(join(pluginRoot, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'managed-plugin' }));
+    createSkill(pluginSkillsDir, `${TEST_PREFIX}managed`, { name: 'Managed Plugin Skill' });
+
+    const pluginPackage = loadPluginPackage(pluginRoot);
+    expect(pluginPackage).not.toBeNull();
+    registerPluginPackage(workspaceRoot, pluginPackage!, { enabled: true, source: 'git' });
+    invalidateSkillsCache();
+
+    const skills = loadAllSkills(workspaceRoot);
+    const selected = skills.find(s => s.slug === `${TEST_PREFIX}managed`);
+    const direct = loadSkillBySlug(workspaceRoot, `${TEST_PREFIX}managed`);
+
+    expect(skills.length).toBe(baselineGlobal.size + 1);
+    expect(selected?.source).toBe('plugin');
+    expect(selected?.pluginName).toBe('managed-plugin');
+    expect(direct?.pluginName).toBe('managed-plugin');
+
+    setPluginEnabled(workspaceRoot, 'managed-plugin', false);
+    invalidateSkillsCache();
+    expect(loadSkillBySlug(workspaceRoot, `${TEST_PREFIX}managed`)).toBeNull();
+    expect(loadAllSkills(workspaceRoot).find(s => s.slug === `${TEST_PREFIX}managed`)).toBeUndefined();
   });
 
   it('should prefer .agents project skills over package-local plugin skills with the same slug', () => {

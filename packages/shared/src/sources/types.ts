@@ -270,6 +270,12 @@ export interface McpSourceConfig {
    */
   clientId?: string;
 
+  /** RFC 8707 resource indicator requested by the MCP server. */
+  oauthResource?: string;
+
+  /** OAuth scopes requested by the MCP server. */
+  oauthScopes?: string[];
+
   // === Stdio transport fields ===
   /**
    * Command to spawn for stdio transport.

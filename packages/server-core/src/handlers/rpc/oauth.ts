@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { loadSource, loadWorkspaceSources, getSourceCredentialManager } from '@craft-agent/shared/sources'
 import { createPendingFlow } from '@craft-agent/shared/auth'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
@@ -11,6 +12,9 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.oauth.COMPLETE,
   RPC_CHANNELS.oauth.CANCEL,
   RPC_CHANNELS.oauth.REVOKE,
+  RPC_CHANNELS.oauth.APP_GET,
+  RPC_CHANNELS.oauth.APP_SET,
+  RPC_CHANNELS.oauth.APP_DELETE,
 ] as const
 
 /**
@@ -53,6 +57,7 @@ export async function completeOAuthFlow(opts: {
     clientId: flow.clientId,
     clientSecret: flow.clientSecret,
     redirectUri: flow.redirectUri,
+    oauthResource: flow.oauthResource,
   })
 
   flowStore.remove(state)
@@ -79,6 +84,47 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
   const log = deps.platform.logger
   const flowStore = deps.oauthFlowStore
   const credManager = getSourceCredentialManager()
+  const credentialManager = getCredentialManager()
+
+  const assertOAuthAppProvider = (provider: string): 'google' => {
+    if (provider !== 'google') throw new Error(`Unsupported OAuth app provider: ${provider}`)
+    return provider
+  }
+
+  server.handle(RPC_CHANNELS.oauth.APP_GET, async (_ctx, provider: string) => {
+    const name = assertOAuthAppProvider(provider)
+    const credential = await credentialManager.get({ type: 'oauth_app', name })
+    return {
+      provider: name,
+      configured: Boolean(credential?.clientId && credential.value),
+      clientId: credential?.clientId,
+      hasClientSecret: Boolean(credential?.value),
+    }
+  })
+
+  server.handle(RPC_CHANNELS.oauth.APP_SET, async (_ctx, input: {
+    provider: string
+    clientId: string
+    clientSecret?: string
+  }) => {
+    const name = assertOAuthAppProvider(input.provider)
+    const clientId = input.clientId.trim()
+    if (!clientId) throw new Error('OAuth client ID is required')
+    const existing = await credentialManager.get({ type: 'oauth_app', name })
+    const clientSecret = input.clientSecret?.trim() || existing?.value
+    if (!clientSecret) throw new Error('OAuth client secret is required')
+    await credentialManager.set(
+      { type: 'oauth_app', name },
+      { value: clientSecret, clientId },
+    )
+    return { provider: name, configured: true, clientId, hasClientSecret: true }
+  })
+
+  server.handle(RPC_CHANNELS.oauth.APP_DELETE, async (_ctx, provider: string) => {
+    const name = assertOAuthAppProvider(provider)
+    await credentialManager.delete({ type: 'oauth_app', name })
+    return { success: true }
+  })
 
   // ── oauth:start ──────────────────────────────────────────────
   server.handle(RPC_CHANNELS.oauth.START, async (ctx, args: {
@@ -99,12 +145,23 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Workspace not found: ${ctx.workspaceId}`)
     }
 
-    const source = loadSource(workspace.rootPath, sourceSlug)
+    let source = loadSource(workspace.rootPath, sourceSlug)
+    if (!source) {
+      const { findPluginMcpAuthSource } = await import('@craft-agent/shared/plugins')
+      source = findPluginMcpAuthSource(workspace.rootPath, sourceSlug)
+    }
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }
 
-    const prepared = await credManager.prepareOAuth(source, { callbackPort, callbackUrl })
+    let prepared
+    try {
+      prepared = await credManager.prepareOAuth(source, { callbackPort, callbackUrl })
+    } catch (error) {
+      const { recordPluginMcpAuthFailure } = await import('@craft-agent/shared/plugins')
+      recordPluginMcpAuthFailure(workspace.rootPath, sourceSlug, error)
+      throw error
+    }
 
     const flowId = randomUUID()
     flowStore.store(createPendingFlow({
@@ -117,6 +174,8 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       clientSecret: prepared.clientSecret,
       tokenEndpoint: prepared.tokenEndpoint,
       provider: prepared.provider,
+      oauthResource: prepared.oauthResource,
+      scopes: prepared.scopes,
       ownerClientId: ctx.clientId,
       workspaceId: ctx.workspaceId,
       sourceSlug,
@@ -186,7 +245,11 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Workspace not found: ${ctx.workspaceId}`)
     }
 
-    const source = loadSource(workspace.rootPath, sourceSlug)
+    let source = loadSource(workspace.rootPath, sourceSlug)
+    if (!source) {
+      const { findPluginMcpAuthSource } = await import('@craft-agent/shared/plugins')
+      source = findPluginMcpAuthSource(workspace.rootPath, sourceSlug)
+    }
     if (!source) {
       throw new Error(`Source not found: ${sourceSlug}`)
     }

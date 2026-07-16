@@ -19,6 +19,8 @@ export interface EntityPanelItem {
   trailing?: React.ReactNode
   menu?: React.ReactNode
   dataAttributes?: Record<string, string | undefined>
+  className?: string
+  disableSelection?: boolean
 }
 
 export interface EntityPanelProps<T> {
@@ -89,7 +91,7 @@ export function EntityPanel<T>({
             isInMultiSelect={rowProps.isInMultiSelect}
             showSeparator={!isFirst}
             onMouseDown={(e) => {
-              rowProps.onMouseDown(e)
+              if (!mapped.disableSelection) rowProps.onMouseDown(e)
               if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button !== 2) {
                 onItemClick(item)
               }
@@ -97,6 +99,7 @@ export function EntityPanel<T>({
             buttonProps={rowProps.buttonProps}
             menuContent={mapped.menu}
             dataAttributes={mapped.dataAttributes}
+            className={mapped.className}
           />
         )
       }}

@@ -11,7 +11,7 @@ import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 // Types
 // ============================================================================
 
-export type MentionItemType = 'skill' | 'source' | 'file' | 'folder'
+export type MentionItemType = 'skill' | 'plugin' | 'source' | 'file' | 'folder'
 
 export interface MentionItem {
   id: string
@@ -20,6 +20,7 @@ export interface MentionItem {
   description?: string
   // Type-specific data
   skill?: LoadedSkill
+  pluginSkills?: LoadedSkill[]
   source?: LoadedSource
   file?: { path: string; type: 'file' | 'directory'; relativePath: string }
 }
@@ -326,7 +327,7 @@ export function InlineMentionMenu({
             >
               {/* Icon based on type */}
               <div className="shrink-0">
-                {item.type === 'skill' && item.skill && (
+                {(item.type === 'skill' || item.type === 'plugin') && item.skill && (
                   <SkillAvatar skill={item.skill} size="sm" workspaceId={workspaceId} />
                 )}
                 {item.type === 'source' && item.source && (
@@ -360,7 +361,11 @@ export function InlineMentionMenu({
                     <span className="truncate block">{item.label}</span>
                   </div>
                   <span className={MENU_TYPE_BADGE}>
-                    {item.type === 'skill' ? t('common.skill') : t('common.source')}
+                    {item.type === 'skill'
+                      ? t('common.skill')
+                      : item.type === 'plugin'
+                        ? t('common.plugin')
+                        : t('common.source')}
                   </span>
                 </>
               )}
@@ -507,18 +512,37 @@ export function useInlineMention({
   const sections = React.useMemo((): MentionSection[] => {
     const result: MentionSection[] = []
 
-    // Skills section
+    // Keep standalone skills granular, but present each plugin as one routable capability.
     if (skills.length > 0) {
+      const seenPlugins = new Set<string>()
+      const items: MentionItem[] = []
+      for (const skill of skills) {
+        if (!skill.pluginName) {
+          items.push({
+            id: skill.slug,
+            type: 'skill',
+            label: skill.metadata.name,
+            description: skill.metadata.description,
+            skill,
+          })
+          continue
+        }
+        if (seenPlugins.has(skill.pluginName)) continue
+        seenPlugins.add(skill.pluginName)
+        const pluginSkills = skills.filter(candidate => candidate.pluginName === skill.pluginName)
+        items.push({
+          id: skill.pluginName,
+          type: 'plugin',
+          label: skill.pluginDisplayName ?? skill.pluginName,
+          description: pluginSkills.map(candidate => candidate.metadata.description).join(' '),
+          skill,
+          pluginSkills,
+        })
+      }
       result.push({
         id: 'skills',
         label: 'Skills',
-        items: skills.map(skill => ({
-          id: skill.slug,
-          type: 'skill' as const,
-          label: skill.metadata.name,
-          description: skill.metadata.description,
-          skill,
-        })),
+        items,
       })
     }
 
@@ -684,7 +708,7 @@ export function useInlineMention({
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
-      const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
+      const buildMentionText = (kind: 'skill' | 'plugin' | 'source' | 'file' | 'folder', value: string): string =>
         '[' + kind + ':' + value + '] '
 
       // Build the mention text based on type using bracket syntax.
@@ -693,10 +717,13 @@ export function useInlineMention({
       let mentionText: string
       if (item.type === 'skill') {
         // Plugin name depends on which tier the skill came from:
-        //   workspace → workspaceId, project/global → ".agents"
-        const pluginName = item.skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
+        // Packaged skills retain their manifest name; loose project/global skills use ".agents".
+        const pluginName = item.skill?.pluginName
+          ?? (item.skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME)
         const qualifiedName = pluginName ? `${pluginName}:${item.id}` : item.id
         mentionText = buildMentionText('skill', qualifiedName)
+      } else if (item.type === 'plugin') {
+        mentionText = buildMentionText('plugin', item.id)
       } else if (item.type === 'source') {
         mentionText = buildMentionText('source', item.id)
       } else if (item.type === 'file') {

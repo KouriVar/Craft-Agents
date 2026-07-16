@@ -66,7 +66,7 @@ function InlineBadge({ badge }: { badge: ContentBadge }) {
         />
       ) : (
         <span className="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[8px]">
-          {badge.type === 'skill' ? SKILL_ICON_TEXT : badge.type === 'context' ? CONTEXT_ICON_TEXT : SOURCE_ICON_TEXT}
+          {badge.type === 'skill' || badge.type === 'plugin' ? SKILL_ICON_TEXT : badge.type === 'context' ? CONTEXT_ICON_TEXT : SOURCE_ICON_TEXT}
         </span>
       )}
       <span className="truncate max-w-[200px]">{badge.label}</span>

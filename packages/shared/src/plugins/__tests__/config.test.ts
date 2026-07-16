@@ -30,7 +30,14 @@ beforeEach(() => {
     version: '0.4.20',
     description: 'Graph canvas plugin',
     defaultEnabled: false,
+    interface: {
+      displayName: 'Canvasight Brand',
+      brandColor: '#7857ff',
+      composerIcon: './assets/icon.svg',
+    },
   }));
+  mkdirSync(join(pluginRoot, 'assets'), { recursive: true });
+  writeFileSync(join(pluginRoot, 'assets', 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
 });
 
 afterEach(() => {
@@ -58,6 +65,9 @@ describe('plugin config storage', () => {
     expect(entry.manifestFormat).toBe('codex');
     expect(entry.displayName).toBe('Canvasight');
     expect(entry.description).toBe('Graph canvas plugin');
+    expect(entry.iconPath).toBe(resolve(workspaceRoot, 'plugins', 'icons', 'canvasight.svg'));
+    expect(entry.brandColor).toBe('#7857ff');
+    expect(existsSync(entry.iconPath!)).toBe(true);
     expect(entry.source).toBe('local');
     expect(isPluginEnabled(workspaceRoot, 'canvasight')).toBe(false);
   });

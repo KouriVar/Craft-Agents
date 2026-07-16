@@ -6,6 +6,7 @@
  *
  * Mention types:
  * - Skills:  [skill:slug] or [skill:workspaceId:slug]
+ * - Plugins: [plugin:name]
  * - Sources: [source:slug]
  * - Files:   [file:path]
  * - Folders: [folder:path]
@@ -35,6 +36,10 @@ export interface ParsedMentions {
   skills: string[]
   /** Invalid skill slugs mentioned but not found in availableSkillSlugs */
   invalidSkills: string[]
+  /** Plugin names mentioned via [plugin:name] */
+  plugins: string[]
+  /** Invalid plugin names not found in availablePluginNames */
+  invalidPlugins: string[]
   /** Source slugs mentioned via [source:slug] */
   sources: string[]
   /** File paths mentioned via [file:path] */
@@ -62,19 +67,32 @@ export interface ParsedMentions {
 export function parseMentions(
   text: string,
   availableSkillSlugs: string[],
-  availableSourceSlugs: string[]
+  availableSourceSlugs: string[],
+  availablePluginNames: string[] = []
 ): ParsedMentions {
   const result: ParsedMentions = {
     skills: [],
     invalidSkills: [],
+    plugins: [],
+    invalidPlugins: [],
     sources: [],
     files: [],
     folders: [],
   }
+  let match: RegExpExecArray | null
+
+  const pluginPattern = /\[plugin:([\w.-]+)\]/g
+  while ((match = pluginPattern.exec(text)) !== null) {
+    const name = match[1]!
+    if (availablePluginNames.includes(name)) {
+      if (!result.plugins.includes(name)) result.plugins.push(name)
+    } else if (!result.invalidPlugins.includes(name)) {
+      result.invalidPlugins.push(name)
+    }
+  }
 
   // Match source mentions: [source:slug]
   const sourcePattern = /\[source:([\w-]+)\]/g
-  let match: RegExpExecArray | null
   while ((match = sourcePattern.exec(text)) !== null) {
     const slug = match[1]!
     if (availableSourceSlugs.includes(slug) && !result.sources.includes(slug)) {
@@ -134,6 +152,7 @@ export function stripAllMentions(text: string): string {
     .replace(/\[source:([\w-]+)\]/g, '$1')
     // Replace [skill:slug] or [skill:workspaceId:slug] with just the slug
     .replace(new RegExp(`\\[skill:(?:${WS_ID_CHARS}+:)?([\\w-]+)\\]`, 'g'), '$1')
+    .replace(/\[plugin:([\w.-]+)\]/g, '$1')
     // Note: [file:...] and [folder:...] are NOT stripped — they are content
     // that gets resolved to absolute paths by resolveFileMentions().
     .replace(/\s+/g, ' ')
@@ -161,6 +180,14 @@ export function resolveSkillMentions(
       const name = skillNames.get(slug) || slug
       return `[Mentioned skill: ${name} (slug: ${slug})]`
     }
+  )
+}
+
+/** Resolve a plugin mention while its internal skill router is injected separately. */
+export function resolvePluginMentions(text: string): string {
+  return text.replace(
+    /\[plugin:([\w.-]+)\]/g,
+    (_match, name: string) => `[Mentioned plugin: ${name}]`
   )
 }
 

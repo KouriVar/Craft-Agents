@@ -8,6 +8,11 @@ export {
   loadPluginPackage,
 } from './storage.ts';
 export {
+  assessPluginCompatibility,
+  createNativeConnectorSourceInput,
+  loadPluginConnectors,
+} from './compatibility.ts';
+export {
   PLUGIN_CONFIG_DIR,
   PLUGIN_CONFIG_FILE,
   getDefaultPluginConfig,
@@ -25,6 +30,9 @@ export {
   loadPluginMcpServerDefinitions,
   loadPluginMcpServers,
   preflightPluginMcpServer,
+  createPluginMcpAuthSource,
+  findPluginMcpAuthSource,
+  resolvePluginMcpServerConfig,
 } from './mcp.ts';
 export type {
   PluginMcpServerDefinition,
@@ -36,7 +44,9 @@ export {
   loadPluginMcpStatus,
   savePluginMcpStatus,
   loadPreflightedPluginMcpServers,
+  loadResolvedPluginMcpServers,
   diagnosePluginMcpServers,
+  recordPluginMcpAuthFailure,
 } from './diagnostics.ts';
 export {
   PLUGIN_POLICY_FILE,

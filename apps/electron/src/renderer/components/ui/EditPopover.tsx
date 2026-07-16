@@ -390,6 +390,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Skills are specialized instructions with a SKILL.md file containing YAML frontmatter (name, description) and markdown instructions. ' +
         'Ask clarifying questions if needed: What should the skill do? When should it trigger? ' +
         'Create the skill folder and SKILL.md in the workspace skills directory. ' +
+        'Every skill must have a visually relevant icon. For personal skills, prefer a fitting emoji in the SKILL.md `icon` frontmatter; for branded skills, add icon.svg or icon.png in the skill folder. Do not finish with an iconless skill. ' +
         'Follow the patterns in ~/.craft-agent/docs/skills.md. ' +
         'After creating the skill, call skill_validate with the skill slug to verify the SKILL.md file.',
     },

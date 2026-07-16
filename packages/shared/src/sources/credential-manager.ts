@@ -430,6 +430,8 @@ export class SourceCredentialManager {
     switch (provider) {
       case 'google': {
         const api = source.config.api;
+        const appCredential = await getCredentialManager().get({ type: 'oauth_app', name: 'google' });
+        const sourceCredential = await this.load(source);
         let service: GoogleService | undefined;
         let scopes: string[] | undefined;
 
@@ -452,8 +454,8 @@ export class SourceCredentialManager {
           scopes,
           callbackPort,
           callbackUrl: providerCallbackUrl,
-          clientId: api?.googleOAuthClientId,
-          clientSecret: api?.googleOAuthClientSecret,
+          clientId: api?.googleOAuthClientId || appCredential?.clientId || sourceCredential?.clientId,
+          clientSecret: api?.googleOAuthClientSecret || appCredential?.value || sourceCredential?.clientSecret,
         });
         break;
       }
@@ -521,7 +523,12 @@ export class SourceCredentialManager {
         if (!source.config.mcp?.url) {
           throw new Error('MCP URL not configured');
         }
-        prepared = await prepareMcpOAuth(source.config.mcp.url, { callbackPort, callbackUrl: providerCallbackUrl });
+        prepared = await prepareMcpOAuth(source.config.mcp.url, {
+          callbackPort,
+          callbackUrl: providerCallbackUrl,
+          oauthResource: source.config.mcp.oauthResource,
+          scopes: source.config.mcp.oauthScopes,
+        });
         break;
       }
     }
@@ -654,7 +661,7 @@ export class SourceCredentialManager {
         sessionContext
       );
 
-      const { tokens, clientId } = await oauth.authenticate();
+      const { tokens, clientId, clientSecret } = await oauth.authenticate();
 
       // Save the credentials
       await this.save(source, {
@@ -662,6 +669,7 @@ export class SourceCredentialManager {
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
         clientId,
+        clientSecret,
         tokenType: tokens.tokenType,
       });
 
@@ -692,6 +700,8 @@ export class SourceCredentialManager {
     try {
       // Determine service/scopes from config
       const api = source.config.api;
+      const appCredential = await getCredentialManager().get({ type: 'oauth_app', name: 'google' });
+      const sourceCredential = await this.load(source);
       let service: GoogleService | undefined;
       let scopes: string[] | undefined;
 
@@ -720,8 +730,8 @@ export class SourceCredentialManager {
         scopes,
         appType: 'electron',
         // Pass user-provided OAuth credentials from source config (if available)
-        clientId: api?.googleOAuthClientId,
-        clientSecret: api?.googleOAuthClientSecret,
+        clientId: api?.googleOAuthClientId || appCredential?.clientId || sourceCredential?.clientId,
+        clientSecret: api?.googleOAuthClientSecret || appCredential?.value || sourceCredential?.clientSecret,
         sessionContext,
       };
 
@@ -1234,14 +1244,22 @@ export class SourceCredentialManager {
       }
 
       const oauth = new CraftOAuth(
-        { mcpUrl: source.config.mcp.url },
+        {
+          mcpUrl: source.config.mcp.url,
+          oauthResource: source.config.mcp.oauthResource,
+          scopes: source.config.mcp.oauthScopes,
+        },
         {
           onStatus: () => {},
           onError: () => {},
         }
       );
 
-      const tokens = await oauth.refreshAccessToken(cred.refreshToken!, cred.clientId);
+      const tokens = await oauth.refreshAccessToken(
+        cred.refreshToken!,
+        cred.clientId,
+        cred.clientSecret,
+      );
 
       // Update stored credentials
       await this.save(source, {

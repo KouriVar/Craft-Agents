@@ -1,9 +1,10 @@
 import * as React from 'react'
-import { AlertTriangle, CheckCircle2, ExternalLink, FolderOpen, Plug, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleHelp, ExternalLink, FolderOpen, KeyRound, Link2, LogOut, RefreshCw, RotateCcw, Settings2, Trash2, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type {
   PluginMcpServerDiagnostic,
+  PluginAuthStatus,
   PluginToolPolicy,
   PluginToolPolicyAction,
   WorkspacePluginEntry,
@@ -18,6 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { PluginAvatar } from '@/components/ui/plugin-avatar'
 
 const POLICY_ACTIONS: PluginToolPolicyAction[] = ['inherit', 'allow', 'ask', 'deny']
 
@@ -67,6 +69,14 @@ function ServerRow({ server }: { server: PluginMcpServerDiagnostic }) {
   )
 }
 
+function CompatibilityIcon({ level }: { level?: string }) {
+  if (level === 'ready') return <CheckCircle2 className="h-4 w-4 text-success" />
+  if (level === 'needs-auth') return <KeyRound className="h-4 w-4 text-warning" />
+  if (level === 'partial') return <AlertTriangle className="h-4 w-4 text-warning" />
+  if (level === 'unsupported') return <XCircle className="h-4 w-4 text-destructive" />
+  return <CircleHelp className="h-4 w-4 text-muted-foreground" />
+}
+
 interface PluginInfoPageProps {
   workspaceId: string
   pluginName: string
@@ -76,6 +86,7 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
   const { t } = useTranslation()
   const [plugin, setPlugin] = React.useState<WorkspacePluginEntry | null>(null)
   const [servers, setServers] = React.useState<PluginMcpServerDiagnostic[]>([])
+  const [authStatuses, setAuthStatuses] = React.useState<PluginAuthStatus[]>([])
   const [policies, setPolicies] = React.useState<WorkspacePluginPolicyConfig>({ version: 1, plugins: {} })
   const [loading, setLoading] = React.useState(true)
   const [busy, setBusy] = React.useState(false)
@@ -85,14 +96,16 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
-      const [entries, status, nextPolicies] = await Promise.all([
+      const [entries, status, nextPolicies, nextAuthStatuses] = await Promise.all([
         window.electronAPI.listPlugins(workspaceId),
         window.electronAPI.getPluginMcpStatus(workspaceId),
         window.electronAPI.getPluginPolicies(workspaceId),
+        window.electronAPI.getPluginAuthStatus(workspaceId, pluginName),
       ])
       setPlugin(entries.find(entry => entry.name === pluginName) ?? null)
       setServers(Object.values(status.servers).filter(server => server.pluginName === pluginName))
       setPolicies(nextPolicies)
+      setAuthStatuses(nextAuthStatuses)
     } catch (error) {
       toast.error(t('plugins.loadFailed', { defaultValue: 'Plugin details could not be loaded' }), {
         description: error instanceof Error ? error.message : String(error),
@@ -168,6 +181,66 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
     }
   }
 
+  const authenticateRequirement = async (
+    requirement: NonNullable<WorkspacePluginEntry['compatibility']>['authRequirements'][number],
+  ) => {
+    if (!plugin || busy || !requirement.supported) return
+    setBusy(true)
+    try {
+      let sourceSlug = requirement.sourceSlug
+      if (requirement.kind === 'native-source') {
+        const connected = await window.electronAPI.connectPluginNativeSource(
+          workspaceId,
+          plugin.name,
+          requirement.name,
+        )
+        sourceSlug = connected.sourceSlug
+      }
+      if (!sourceSlug) throw new Error('No authentication source is available for this capability.')
+      const result = await window.electronAPI.performOAuth({ sourceSlug })
+      if (!result.success) throw new Error(result.error || 'Authentication failed')
+      toast.success(t('plugins.authSuccess', { defaultValue: 'Account connected' }))
+      await diagnose()
+      await load()
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      const description = rawMessage.includes('Google OAuth not configured')
+        ? t('plugins.googleOAuthSetupRequired', {
+            defaultValue: 'This connector needs a Google OAuth app configured for Craft Agent. Add a Google client ID and client secret before connecting the account.',
+          })
+        : rawMessage.includes('only allows approved OAuth host applications')
+          ? t('plugins.oauthHostNotApproved', {
+              defaultValue: 'This service only authorizes approved host applications. The plugin skills still work, but its MCP tools require the provider to approve Craft Agent.',
+            })
+          : rawMessage
+      toast.error(t('plugins.authFailed', { defaultValue: 'Account could not be connected' }), {
+        description,
+      })
+      try {
+        setAuthStatuses(await window.electronAPI.getPluginAuthStatus(workspaceId, pluginName))
+      } catch {
+        // Keep the previous state if status refresh also fails.
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disconnectRequirement = async (status: PluginAuthStatus) => {
+    if (!status.sourceSlug || busy) return
+    setBusy(true)
+    try {
+      await window.electronAPI.oauthRevoke(status.sourceSlug)
+      toast.success(t('plugins.disconnected', { defaultValue: 'Account disconnected' }))
+      await load()
+      await diagnose()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('common.loading')}</div>
   }
@@ -196,9 +269,7 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
         <div className="mx-auto max-w-3xl px-6 py-6">
           <section className="border-b border-border/60 pb-6">
             <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-foreground/[0.05]">
-                <Plug className="h-5 w-5 text-muted-foreground" />
-              </div>
+              <PluginAvatar plugin={plugin} workspaceId={workspaceId} size="xl" />
               <div className="min-w-0 flex-1">
                 <h2 className="text-base font-semibold">{displayName}</h2>
                 {plugin.description && <p className="mt-1 text-sm leading-6 text-muted-foreground">{plugin.description}</p>}
@@ -206,6 +277,107 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
               <Switch checked={plugin.enabled} disabled={busy} onCheckedChange={enabled => { void setEnabled(enabled) }} />
             </div>
           </section>
+
+          {plugin.compatibility && (
+            <section className="border-b border-border/60 py-6">
+              <div className="flex items-center gap-2">
+                <CompatibilityIcon level={plugin.compatibility.level} />
+                <h3 className="text-sm font-medium">{plugin.compatibility.summary}</h3>
+              </div>
+              <div className="mt-4 border-y border-border/50">
+                {plugin.compatibility.capabilities.map((capability, index) => (
+                  <div key={`${capability.kind}-${index}`} className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 border-t border-border/40 py-3 text-sm first:border-t-0">
+                    <span className="text-muted-foreground">{capability.label}</span>
+                    <span>
+                      <span className="block">{capability.detail}</span>
+                      {capability.usage && <span className="mt-1 block text-xs text-muted-foreground">{capability.usage}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {plugin.compatibility.authRequirements.length > 0 && (
+                <div className="mt-4 grid gap-2">
+                  {plugin.compatibility.authRequirements.map(requirement => {
+                    const authStatus = authStatuses.find(status =>
+                      status.kind === requirement.kind && status.name === requirement.name
+                    )
+                    const state = authStatus?.state ?? (requirement.supported ? 'not-connected' : 'unsupported')
+                    return (
+                    <div key={`${requirement.kind}-${requirement.name}`} className="flex items-center justify-between gap-4 border-b border-border/40 py-2 last:border-b-0">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{requirement.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {requirement.kind === 'mcp-oauth'
+                            ? t('plugins.mcpOAuthRequired', { defaultValue: 'Sign in to the MCP service with its own account.' })
+                            : requirement.kind === 'native-source'
+                              ? requirement.provider === 'google'
+                                ? t('plugins.googleNativeSourceMapping', {
+                                    defaultValue: 'Uses a CA native Google data source. A Google OAuth app must be configured for Craft Agent before sign-in.',
+                                  })
+                                : t('plugins.nativeSourceMapping', { defaultValue: 'Uses a CA native data source instead of the OpenAI Connector.' })
+                              : t('plugins.openAiOnly', { defaultValue: 'Requires OpenAI hosted Connector infrastructure.' })}
+                        </p>
+                        <p className={cn(
+                          'mt-1 text-xs',
+                          state === 'connected' && 'text-success',
+                          (state === 'expired' || state === 'configuration-required') && 'text-warning',
+                          (state === 'host-not-approved' || state === 'unsupported') && 'text-destructive',
+                          state === 'not-connected' && 'text-muted-foreground',
+                        )}>
+                          {t(`plugins.authState.${state}`, { defaultValue: state })}
+                        </p>
+                      </div>
+                      {state === 'configuration-required' ? (
+                        <Button size="sm" variant="outline" onClick={() => navigate(routes.view.settings('accounts'))}>
+                          <Settings2 className="h-3.5 w-3.5" />
+                          {t('plugins.configureOAuth', { defaultValue: 'Configure OAuth' })}
+                        </Button>
+                      ) : state === 'connected' && authStatus ? (
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button size="sm" variant="outline" disabled={busy} onClick={() => { void authenticateRequirement(requirement) }}>
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            {t('plugins.reconnect', { defaultValue: 'Reconnect' })}
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { void disconnectRequirement(authStatus) }}>
+                            <LogOut className="h-3.5 w-3.5" />
+                            {t('plugins.disconnect', { defaultValue: 'Disconnect' })}
+                          </Button>
+                        </div>
+                      ) : state === 'expired' ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => { void authenticateRequirement(requirement) }}>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          {t('plugins.reconnect', { defaultValue: 'Reconnect' })}
+                        </Button>
+                      ) : state === 'host-not-approved' ? (
+                        <span className="max-w-[180px] text-right text-xs text-destructive">
+                          {t('plugins.hostApprovalRequired', { defaultValue: 'Provider approval required' })}
+                        </span>
+                      ) : requirement.supported ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => { void authenticateRequirement(requirement) }}>
+                          {requirement.kind === 'native-source' ? <Link2 className="h-3.5 w-3.5" /> : <KeyRound className="h-3.5 w-3.5" />}
+                          {requirement.kind === 'native-source'
+                            ? t('plugins.connectSource', { defaultValue: 'Connect source' })
+                            : t('plugins.signIn', { defaultValue: 'Sign in' })}
+                        </Button>
+                      ) : (
+                        <span className="shrink-0 text-xs text-destructive">{t('plugins.unsupported', { defaultValue: 'Not supported' })}</span>
+                      )}
+                    </div>
+                  )})}
+                </div>
+              )}
+              {plugin.compatibility.usage.length > 0 && (
+                <div className="mt-4 text-xs leading-5 text-muted-foreground">
+                  {plugin.compatibility.usage.map(item => <p key={item}>{item}</p>)}
+                </div>
+              )}
+              {plugin.compatibility.reasons.length > 0 && (
+                <div className="mt-3 text-xs leading-5 text-muted-foreground">
+                  {plugin.compatibility.reasons.map(item => <p key={item}>{item}</p>)}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="border-b border-border/60 py-6">
             <h3 className="mb-4 text-sm font-medium">{t('plugins.details', { defaultValue: 'Details' })}</h3>

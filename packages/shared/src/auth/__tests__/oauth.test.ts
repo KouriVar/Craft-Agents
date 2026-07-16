@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth } from '../oauth';
+import { getMcpBaseUrl, discoverOAuthMetadata, exchangeMcpOAuth, prepareMcpOAuth } from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -1150,7 +1150,7 @@ describe('prepareMcpOAuth', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('falls back to the default client ID when registration is forbidden', async () => {
+  it('stops when the provider only allows approved OAuth hosts', async () => {
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
       if (options?.method === 'HEAD') {
         return Promise.resolve(new Response(null, { status: 200 }));
@@ -1168,12 +1168,9 @@ describe('prepareMcpOAuth', () => {
       return Promise.resolve(new Response('Not Found', { status: 404 }));
     });
 
-    const result = await prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 });
-
-    expect(result.clientId).toBe('craft-agent');
-    expect(result.clientSecret).toBeUndefined();
-    expect(result.authUrl).toContain('client_id=craft-agent');
-    expect(result.provider).toBe('mcp');
+    await expect(
+      prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 }),
+    ).rejects.toThrow('only allows approved OAuth host applications');
   });
 
   it('keeps the dynamically registered client when registration succeeds', async () => {
@@ -1223,5 +1220,38 @@ describe('prepareMcpOAuth', () => {
     });
 
     await expect(prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 })).rejects.toThrow('Failed to register OAuth client: Server error');
+  });
+});
+
+describe('exchangeMcpOAuth', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('uses and preserves a dynamically registered client secret', async () => {
+    let requestBody = '';
+    globalThis.fetch = mock((_url: string, options?: RequestInit) => {
+      requestBody = String(options?.body ?? '');
+      return Promise.resolve(new Response(JSON.stringify({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+      }), { status: 200 }));
+    }) as unknown as typeof fetch;
+
+    const result = await exchangeMcpOAuth({
+      code: 'authorization-code',
+      codeVerifier: 'verifier',
+      tokenEndpoint: 'https://example.com/oauth/token',
+      clientId: 'dynamic-client',
+      clientSecret: 'secret-123',
+      redirectUri: 'http://localhost:8914/oauth/callback',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.oauthClientSecret).toBe('secret-123');
+    expect(new URLSearchParams(requestBody).get('client_secret')).toBe('secret-123');
   });
 });

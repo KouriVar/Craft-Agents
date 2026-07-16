@@ -19,7 +19,7 @@ import { load as loadYaml } from 'js-yaml';
 import type { LoadedSkill, SkillMetadata, SkillSource } from './types.ts';
 import { getWorkspaceSkillsPath } from '../workspaces/storage.ts';
 import { loadPluginPackage } from '../plugins/storage.ts';
-import { isPluginPackageEnabled } from '../plugins/config.ts';
+import { isPluginPackageEnabled, listPluginEntries } from '../plugins/config.ts';
 import {
   validateIconValue,
   findIconFile,
@@ -216,7 +216,12 @@ function parseSkillFile(content: string, skillDir: string): { metadata: SkillMet
  * @param slug - Skill directory name
  * @param source - Where this skill is loaded from
  */
-function loadSkillFromDir(skillsDir: string, slug: string, source: SkillSource): LoadedSkill | null {
+function loadSkillFromDir(
+  skillsDir: string,
+  slug: string,
+  source: SkillSource,
+  plugin?: { name: string; displayName?: string; iconPath?: string; brandColor?: string },
+): LoadedSkill | null {
   const skillDir = join(skillsDir, slug);
   const skillFile = join(skillDir, 'SKILL.md');
 
@@ -250,6 +255,10 @@ function loadSkillFromDir(skillsDir: string, slug: string, source: SkillSource):
     iconPath: findIconFile(skillDir),
     path: skillDir,
     source,
+    pluginName: plugin?.name,
+    pluginDisplayName: plugin?.displayName,
+    pluginIconPath: plugin?.iconPath,
+    pluginBrandColor: plugin?.brandColor,
   };
 }
 
@@ -258,7 +267,11 @@ function loadSkillFromDir(skillsDir: string, slug: string, source: SkillSource):
  * @param skillsDir - Absolute path to skills directory
  * @param source - Where these skills are loaded from
  */
-function loadSkillsFromDir(skillsDir: string, source: SkillSource): LoadedSkill[] {
+function loadSkillsFromDir(
+  skillsDir: string,
+  source: SkillSource,
+  plugin?: { name: string; displayName?: string; iconPath?: string; brandColor?: string },
+): LoadedSkill[] {
   if (!existsSync(skillsDir)) {
     return [];
   }
@@ -280,7 +293,7 @@ function loadSkillsFromDir(skillsDir: string, source: SkillSource): LoadedSkill[
         }
       }
 
-      const skill = loadSkillFromDir(skillsDir, entry.name, source);
+      const skill = loadSkillFromDir(skillsDir, entry.name, source, plugin);
       if (skill) {
         skills.push(skill);
       }
@@ -318,7 +331,7 @@ export function loadBundledSkills(): LoadedSkill[] {
 }
 
 // ── Skills cache ────────────────────────────────────────────────────────
-// loadAllSkills reads from up to 4 directories on every call (~100ms).
+// loadAllSkills reads from several skill tiers on every call (~100ms).
 // The result rarely changes during a session, so we cache it per
 // (workspaceRoot, projectRoot) pair with a 5-minute safety TTL.
 
@@ -331,9 +344,9 @@ export function invalidateSkillsCache(): void {
 }
 
 /**
- * Load all skills from all sources (builtin, global, workspace, project)
+ * Load all skills from all sources (builtin, global, managed plugins, workspace, project)
  * Skills with the same slug are overridden by higher-priority sources.
- * Priority: builtin (lowest) < global < workspace < project (highest)
+ * Priority: builtin (lowest) < global < plugin < workspace < project (highest)
  *
  * Results are cached per (workspaceRoot, projectRoot) pair. Call
  * invalidateSkillsCache() on working directory changes or skill file events.
@@ -361,18 +374,42 @@ export function loadAllSkills(workspaceRoot: string, projectRoot?: string): Load
     skillsBySlug.set(skill.slug, skill);
   }
 
-  // 3. Workspace skills (medium priority)
+  // 3. Enabled plugins installed or registered in this workspace.
+  for (const entry of listPluginEntries(workspaceRoot)) {
+    if (!entry.enabled || !entry.installPath) continue;
+    const pluginPackage = loadPluginPackage(entry.installPath);
+    if (!pluginPackage) continue;
+    const pluginPresentation = {
+      name: pluginPackage.manifest.name,
+      displayName: entry.displayName ?? pluginPackage.manifest.interface?.displayName,
+      iconPath: entry.iconPath ?? pluginPackage.iconPath,
+      brandColor: entry.brandColor ?? pluginPackage.manifest.interface?.brandColor,
+    };
+    for (const skillDir of pluginPackage.skillDirs) {
+      for (const skill of loadSkillsFromDir(skillDir, 'plugin', pluginPresentation)) {
+        skillsBySlug.set(skill.slug, skill);
+      }
+    }
+  }
+
+  // 4. Workspace skills (medium priority)
   for (const skill of loadWorkspaceSkills(workspaceRoot)) {
     skillsBySlug.set(skill.slug, skill);
   }
 
-  // 4. Project skills (highest priority): plugin package skills and .agents/skills from repo root to working dir
+  // 5. Project skills (highest priority): plugin package skills and .agents/skills from repo root to working dir
   if (projectRoot) {
     for (const packageRoot of getProjectPackageRoots(projectRoot)) {
       const pluginPackage = loadPluginPackage(packageRoot);
       if (pluginPackage && isPluginPackageEnabled(workspaceRoot, pluginPackage)) {
+        const pluginPresentation = {
+          name: pluginPackage.manifest.name,
+          displayName: pluginPackage.manifest.displayName ?? pluginPackage.manifest.interface?.displayName,
+          iconPath: pluginPackage.iconPath,
+          brandColor: pluginPackage.manifest.interface?.brandColor,
+        };
         for (const skillDir of pluginPackage.skillDirs) {
-          for (const skill of loadSkillsFromDir(skillDir, 'project')) {
+          for (const skill of loadSkillsFromDir(skillDir, 'project', pluginPresentation)) {
             skillsBySlug.set(skill.slug, skill);
           }
         }
@@ -389,7 +426,7 @@ export function loadAllSkills(workspaceRoot: string, projectRoot?: string): Load
 }
 
 /**
- * Load a single skill by slug from all sources (project > workspace > global > builtin).
+ * Load a single skill by slug from all sources (project > workspace > plugin > global > builtin).
  * Unlike loadAllSkills(), this only reads the specific slug directory — O(1) not O(N).
  *
  * @param workspaceRoot - Absolute path to workspace root
@@ -406,8 +443,14 @@ export function loadSkillBySlug(workspaceRoot: string, slug: string, projectRoot
 
       const pluginPackage = loadPluginPackage(packageRoot);
       if (pluginPackage && isPluginPackageEnabled(workspaceRoot, pluginPackage)) {
+        const pluginPresentation = {
+          name: pluginPackage.manifest.name,
+          displayName: pluginPackage.manifest.displayName ?? pluginPackage.manifest.interface?.displayName,
+          iconPath: pluginPackage.iconPath,
+          brandColor: pluginPackage.manifest.interface?.brandColor,
+        };
         for (const projectSkillsDir of [...pluginPackage.skillDirs].reverse()) {
-          const skill = loadSkillFromDir(projectSkillsDir, slug, 'project');
+          const skill = loadSkillFromDir(projectSkillsDir, slug, 'project', pluginPresentation);
           if (skill) return skill;
         }
       }
@@ -417,6 +460,23 @@ export function loadSkillBySlug(workspaceRoot: string, slug: string, projectRoot
   // Medium priority: workspace
   const workspaceSkill = loadSkillFromDir(getWorkspaceSkillsPath(workspaceRoot), slug, 'workspace');
   if (workspaceSkill) return workspaceSkill;
+
+  // Enabled workspace plugins are lower priority than user-authored workspace skills.
+  for (const entry of listPluginEntries(workspaceRoot)) {
+    if (!entry.enabled || !entry.installPath) continue;
+    const pluginPackage = loadPluginPackage(entry.installPath);
+    if (!pluginPackage) continue;
+    const pluginPresentation = {
+      name: pluginPackage.manifest.name,
+      displayName: entry.displayName ?? pluginPackage.manifest.interface?.displayName,
+      iconPath: entry.iconPath ?? pluginPackage.iconPath,
+      brandColor: entry.brandColor ?? pluginPackage.manifest.interface?.brandColor,
+    };
+    for (const pluginSkillsDir of [...pluginPackage.skillDirs].reverse()) {
+      const skill = loadSkillFromDir(pluginSkillsDir, slug, 'plugin', pluginPresentation);
+      if (skill) return skill;
+    }
+  }
 
   // User-global overrides the app-provided version.
   const globalSkill = loadSkillFromDir(GLOBAL_AGENT_SKILLS_DIR, slug, 'global');

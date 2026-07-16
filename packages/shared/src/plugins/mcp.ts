@@ -1,7 +1,10 @@
 import { accessSync, constants, existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import type { SdkMcpServerConfig } from '../agent/backend/types.ts';
 import { MCP_BLOCKED_ENV_VARS } from '../mcp/client.ts';
+import { getSourceCredentialManager } from '../sources/credential-manager.ts';
+import { TokenRefreshManager } from '../sources/token-refresh-manager.ts';
+import type { LoadedSource } from '../sources/types.ts';
 import { readJsonFileSync } from '../utils/files.ts';
 import { isPluginPackageEnabled, listPluginEntries } from './config.ts';
 import { loadPluginPackage } from './storage.ts';
@@ -12,6 +15,10 @@ export interface PluginMcpServerDefinition {
   pluginName: string;
   serverName: string;
   config: SdkMcpServerConfig;
+  authType?: 'oauth' | 'chatgpt';
+  authSourceSlug?: string;
+  oauthResource?: string;
+  scopes?: string[];
 }
 
 export interface PluginMcpPreflightResult {
@@ -122,11 +129,23 @@ function addPluginMcpServers(
     const slug = entries.length === 1 && serverSlug === pluginSlug
       ? pluginSlug
       : `${pluginSlug}_${serverSlug}`;
+    const rawConfig = isRecord(serverConfig) ? serverConfig : {};
+    const declaredAuth = normalizeString(rawConfig.auth)?.toLowerCase();
+    const oauthResource = normalizeString(rawConfig.oauth_resource) ?? normalizeString(rawConfig.oauthResource);
+    const authType = declaredAuth === 'chatgpt'
+      ? 'chatgpt'
+      : declaredAuth === 'oauth' || oauthResource
+        ? 'oauth'
+        : undefined;
     output.set(slug, {
       slug,
       pluginName: pluginPackage.manifest.name,
       serverName,
       config: normalized,
+      authType,
+      authSourceSlug: authType === 'oauth' ? `plugin-mcp-${slug}` : undefined,
+      oauthResource,
+      scopes: normalizeStringList(rawConfig.scopes),
     });
   }
 }
@@ -192,4 +211,69 @@ export function loadPluginMcpServers(workspaceRootPath: string): Record<string, 
   return Object.fromEntries(
     loadPluginMcpServerDefinitions(workspaceRootPath).map(definition => [definition.slug, definition.config]),
   );
+}
+
+export function createPluginMcpAuthSource(
+  workspaceRootPath: string,
+  definition: PluginMcpServerDefinition,
+): LoadedSource | null {
+  if (definition.authType !== 'oauth' || definition.config.type === 'stdio' || !definition.authSourceSlug) return null;
+  return {
+    config: {
+      id: definition.authSourceSlug,
+      name: `${definition.pluginName} / ${definition.serverName}`,
+      slug: definition.authSourceSlug,
+      enabled: true,
+      provider: definition.pluginName,
+      type: 'mcp',
+      createdAt: 0,
+      updatedAt: 0,
+      mcp: {
+        transport: definition.config.type,
+        url: definition.config.url,
+        authType: 'oauth',
+        headers: definition.config.headers,
+        oauthResource: definition.oauthResource,
+        oauthScopes: definition.scopes,
+      },
+    },
+    guide: null,
+    folderPath: resolve(workspaceRootPath, 'plugins'),
+    workspaceRootPath,
+    workspaceId: basename(workspaceRootPath),
+  };
+}
+
+export function findPluginMcpAuthSource(workspaceRootPath: string, sourceSlug: string): LoadedSource | null {
+  const definition = loadPluginMcpServerDefinitions(workspaceRootPath)
+    .find(item => item.authSourceSlug === sourceSlug);
+  return definition ? createPluginMcpAuthSource(workspaceRootPath, definition) : null;
+}
+
+export async function resolvePluginMcpServerConfig(
+  workspaceRootPath: string,
+  definition: PluginMcpServerDefinition,
+): Promise<SdkMcpServerConfig> {
+  if (definition.authType !== 'oauth' || definition.config.type === 'stdio') return definition.config;
+  const source = createPluginMcpAuthSource(workspaceRootPath, definition);
+  if (!source) return definition.config;
+
+  const credentialManager = getSourceCredentialManager();
+  const credential = await credentialManager.load(source);
+  if (!credential) return definition.config;
+
+  let token = credential.value;
+  if (credentialManager.isExpired(credential) || credentialManager.needsRefresh(credential)) {
+    const refreshed = await new TokenRefreshManager(credentialManager).ensureFreshToken(source);
+    if (!refreshed.success || !refreshed.token) return definition.config;
+    token = refreshed.token;
+  }
+
+  return {
+    ...definition.config,
+    headers: {
+      ...definition.config.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  };
 }

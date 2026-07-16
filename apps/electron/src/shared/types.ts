@@ -499,6 +499,9 @@ export interface ElectronAPI {
   // OAuth (server-owned credentials, client-orchestrated flow)
   performOAuth(args: { sourceSlug: string; sessionId?: string; authRequestId?: string }): Promise<{ success: boolean; error?: string; email?: string }>
   oauthRevoke(sourceSlug: string): Promise<{ success: boolean }>
+  getOAuthApp(provider: 'google'): Promise<{ provider: 'google'; configured: boolean; clientId?: string; hasClientSecret: boolean }>
+  setOAuthApp(input: { provider: 'google'; clientId: string; clientSecret?: string }): Promise<{ provider: 'google'; configured: boolean; clientId?: string; hasClientSecret: boolean }>
+  deleteOAuthApp(provider: 'google'): Promise<{ success: boolean }>
 
   // Session content search (full-text search via ripgrep)
   searchSessionContent(workspaceId: string, query: string, searchId?: string): Promise<SessionSearchResult[]>
@@ -524,6 +527,7 @@ export interface ElectronAPI {
   getPluginPolicies(workspaceId: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginPolicyConfig>
   setPluginPolicy(workspaceId: string, pluginName: string, policy: Partial<import('@craft-agent/shared/plugins').PluginToolPolicy>): Promise<import('@craft-agent/shared/plugins').PluginToolPolicy>
   getPluginMcpStatus(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
+  getPluginAuthStatus(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').PluginAuthStatus[]>
   diagnosePluginMcp(workspaceId: string, options?: { timeout?: number }): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
   installGitPlugin(workspaceId: string, gitUrl: string, options?: { ref?: string; enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
   listPluginMarketplaceSources(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource[]>
@@ -531,6 +535,7 @@ export interface ElectronAPI {
   removePluginMarketplaceSource(workspaceId: string, sourceId: string): Promise<void>
   getPluginMarketplaceCatalog(workspaceId: string, sourceId: string, options?: { refresh?: boolean }): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceCatalog>
   installMarketplacePlugin(workspaceId: string, marketplaceId: string, pluginName: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  connectPluginNativeSource(workspaceId: string, pluginName: string, connectorName: string): Promise<{ sourceSlug: string; created: boolean }>
   registerLocalPlugin(workspaceId: string, pluginRootPath: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
   setPluginEnabled(workspaceId: string, pluginName: string, enabled: boolean): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
   unregisterPlugin(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry | null>

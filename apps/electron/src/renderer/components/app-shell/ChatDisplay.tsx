@@ -168,6 +168,7 @@ function sanitizeLocatorText(content?: string): string {
     .replace(/<edit_request>[\s\S]*?<\/edit_request>/g, '')
     .replace(/<[^>]+>/g, '')
     .replace(/\[skill:(?:[\w-]+:)?[\w-]+\]/g, '')
+    .replace(/\[plugin:[\w.-]+\]/g, '')
     .replace(/\[source:[\w-]+\]/g, '')
     .replace(/\[(?:file|folder):[^\]]+\]/g, '')
     .replace(/[#*_`>~-]+/g, ' ')

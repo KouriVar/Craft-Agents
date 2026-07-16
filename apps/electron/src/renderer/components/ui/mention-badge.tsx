@@ -54,7 +54,7 @@ export function MentionBadge({
       )}
     >
       {/* Icon based on type */}
-      {type === 'skill' && skill && (
+      {(type === 'skill' || type === 'plugin') && skill && (
         <SkillAvatar skill={skill} size="xs" workspaceId={workspaceId} />
       )}
       {type === 'source' && source && (

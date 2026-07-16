@@ -38,7 +38,7 @@ import { FEATURE_FLAGS } from '../../feature-flags.ts';
 import { AGENTS_PLUGIN_NAME } from '../../skills/types.ts';
 import { GLOBAL_AGENT_SKILLS_DIR, PROJECT_AGENT_SKILLS_DIR, getProjectPackageRoots } from '../../skills/storage.ts';
 import { loadPluginPackage } from '../../plugins/storage.ts';
-import { isPluginPackageEnabled } from '../../plugins/config.ts';
+import { isPluginPackageEnabled, listPluginEntries } from '../../plugins/config.ts';
 import {
   shouldAllowToolInMode,
   isApiEndpointAllowed,
@@ -264,7 +264,7 @@ function resolveSkillPlugin(
   workspaceRootPath: string,
   workingDirectory?: string,
 ): string {
-  // Priority order matches loadAllSkills: project (highest) > workspace > global (lowest)
+  // Priority order matches loadAllSkills: project > workspace > managed plugin > global.
 
   // 1. Project: .agents/skills/{slug}/SKILL.md from working dir up to repo root.
   if (workingDirectory) {
@@ -291,7 +291,19 @@ function resolveSkillPlugin(
     return `${workspaceSlug}:${bareSlug}`;
   }
 
-  // 3. Global: ~/.agents/skills/{slug}/SKILL.md
+  // 3. Enabled plugin installed or registered in this workspace.
+  for (const entry of listPluginEntries(workspaceRootPath)) {
+    if (!entry.enabled || !entry.installPath) continue;
+    const pluginPackage = loadPluginPackage(entry.installPath);
+    if (!pluginPackage) continue;
+    for (const pluginSkillDir of [...pluginPackage.skillDirs].reverse()) {
+      if (existsSync(join(pluginSkillDir, bareSlug, 'SKILL.md'))) {
+        return `${pluginPackage.manifest.name}:${bareSlug}`;
+      }
+    }
+  }
+
+  // 4. Global: ~/.agents/skills/{slug}/SKILL.md
   if (existsSync(join(GLOBAL_AGENT_SKILLS_DIR, bareSlug, 'SKILL.md'))) {
     return `${AGENTS_PLUGIN_NAME}:${bareSlug}`;
   }

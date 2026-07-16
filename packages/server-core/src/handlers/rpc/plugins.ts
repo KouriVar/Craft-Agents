@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs'
-import { basename, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
@@ -14,6 +14,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.plugins.GET_POLICIES,
   RPC_CHANNELS.plugins.SET_POLICY,
   RPC_CHANNELS.plugins.GET_MCP_STATUS,
+  RPC_CHANNELS.plugins.GET_AUTH_STATUS,
   RPC_CHANNELS.plugins.DIAGNOSE_MCP,
   RPC_CHANNELS.plugins.INSTALL_GIT,
   RPC_CHANNELS.plugins.LIST_MARKETPLACE_SOURCES,
@@ -21,6 +22,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE,
   RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG,
   RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN,
+  RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE,
   RPC_CHANNELS.plugins.REGISTER_LOCAL,
   RPC_CHANNELS.plugins.SET_ENABLED,
   RPC_CHANNELS.plugins.UNREGISTER,
@@ -106,11 +108,45 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
     source: import('@craft-agent/shared/plugins').PluginMarketplaceSource,
     refresh = false,
   ) {
-    const { parsePluginMarketplaceCatalog } = await import('@craft-agent/shared/plugins')
+    const { assessPluginCompatibility, loadPluginPackage, parsePluginMarketplaceCatalog } = await import('@craft-agent/shared/plugins')
     const rootPath = await prepareMarketplaceRoot(workspaceRootPath, source, refresh)
     const catalogPath = findMarketplaceFile(rootPath, source.sparsePath)
     const parsed = JSON.parse(readFileSync(catalogPath, 'utf-8')) as unknown
-    return { rootPath, catalog: parsePluginMarketplaceCatalog(source, parsed) }
+    const catalog = parsePluginMarketplaceCatalog(source, parsed)
+    const localPaths = catalog.plugins
+      .filter(plugin => plugin.packageSource.source === 'local')
+      .map(plugin => plugin.packageSource.source === 'local' ? plugin.packageSource.path : '')
+      .filter(Boolean)
+
+    if (localPaths.length > 0 && existsSync(join(rootPath, '.git'))) {
+      const missingPaths = localPaths.filter(path => !existsSync(assertPathInside(rootPath, path)))
+      if (missingPaths.length > 0) {
+        await execFileAsync('git', ['-C', rootPath, 'sparse-checkout', 'add', '--skip-checks', ...missingPaths], {
+          timeout: 120_000,
+          maxBuffer: 1024 * 1024 * 8,
+        })
+      }
+    }
+
+    for (const plugin of catalog.plugins) {
+      if (plugin.packageSource.source !== 'local') continue
+      const packageRoot = assertPathInside(rootPath, plugin.packageSource.path)
+      const pluginPackage = loadPluginPackage(packageRoot)
+      if (!pluginPackage) continue
+      const report = assessPluginCompatibility(pluginPackage)
+      plugin.displayName = plugin.displayName
+        ?? pluginPackage.manifest.displayName
+        ?? pluginPackage.manifest.interface?.displayName
+      plugin.description = plugin.description
+        ?? pluginPackage.manifest.description
+        ?? pluginPackage.manifest.interface?.shortDescription
+      plugin.compatibilityReport = report
+      plugin.compatibility = report.level === 'unsupported' ? 'unsupported' : 'compatible'
+      plugin.compatibilityReason = report.reasons[0] ?? report.summary
+      plugin.iconPath = pluginPackage.iconPath
+      plugin.brandColor = pluginPackage.manifest.interface?.brandColor
+    }
+    return { rootPath, catalog }
   }
 
   async function installPreparedPackage(
@@ -125,7 +161,7 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
 
     const finalRoot = managedPluginDir(workspaceRootPath, pluginPackage.manifest.name)
     const stagingRoot = resolve(workspaceRootPath, 'plugins', `.installing-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    mkdirSync(resolve(workspaceRootPath, 'plugins'), { recursive: true })
+    mkdirSync(dirname(finalRoot), { recursive: true })
     rmSync(stagingRoot, { recursive: true, force: true })
     cpSync(packageRootPath, stagingRoot, { recursive: true, filter: path => basename(path) !== '.git' })
     rmSync(finalRoot, { recursive: true, force: true })
@@ -144,12 +180,18 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
   }
 
   async function broadcastChanged(workspaceId: string, workspaceRootPath: string): Promise<void> {
-    const [{ listPluginEntries }, { loadAllSkills }] = await Promise.all([
+    const [{ listPluginEntries }, { invalidateSkillsCache, loadAllSkills }] = await Promise.all([
       import('@craft-agent/shared/plugins'),
       import('@craft-agent/shared/skills'),
     ])
+    invalidateSkillsCache()
     pushTyped(server, RPC_CHANNELS.plugins.CHANGED, { to: 'workspace', workspaceId }, workspaceId, listPluginEntries(workspaceRootPath))
     pushTyped(server, RPC_CHANNELS.skills.CHANGED, { to: 'workspace', workspaceId }, workspaceId, loadAllSkills(workspaceRootPath))
+    try {
+      await deps.sessionManager.refreshPluginRuntime?.(workspaceRootPath)
+    } catch (error) {
+      log.warn(`Plugin runtime hot refresh failed for workspace ${workspaceId}: ${String(error)}`)
+    }
   }
 
   server.handle(RPC_CHANNELS.plugins.LIST, async (_ctx, workspaceId: string) => {
@@ -188,6 +230,113 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
 
     const { loadPluginMcpStatus } = await import('@craft-agent/shared/plugins')
     return loadPluginMcpStatus(workspace.rootPath)
+  })
+
+  server.handle(RPC_CHANNELS.plugins.GET_AUTH_STATUS, async (
+    _ctx,
+    workspaceId: string,
+    pluginName: string,
+  ) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+
+    const {
+      assessPluginCompatibility,
+      createNativeConnectorSourceInput,
+      findPluginMcpAuthSource,
+      loadPluginConnectors,
+      loadPluginMcpStatus,
+      loadPluginPackage,
+      listPluginEntries,
+    } = await import('@craft-agent/shared/plugins')
+    const { getCredentialManager } = await import('@craft-agent/shared/credentials')
+    const { getSourceCredentialManager, loadWorkspaceSources } = await import('@craft-agent/shared/sources')
+    const entry = listPluginEntries(workspace.rootPath).find(item => item.name === pluginName)
+    if (!entry?.installPath) throw new Error(`Plugin not found: ${pluginName}`)
+    const pluginPackage = loadPluginPackage(entry.installPath)
+    if (!pluginPackage) throw new Error(`Plugin package is unavailable: ${pluginName}`)
+
+    const report = assessPluginCompatibility(pluginPackage)
+    const diagnostics = loadPluginMcpStatus(workspace.rootPath)
+    const sources = loadWorkspaceSources(workspace.rootPath)
+    const sourceCredentialManager = getSourceCredentialManager()
+    const googleApp = await getCredentialManager().get({ type: 'oauth_app', name: 'google' })
+    const connectors = loadPluginConnectors(pluginPackage)
+    const statuses: import('@craft-agent/shared/plugins').PluginAuthStatus[] = []
+
+    for (const requirement of report.authRequirements) {
+      if (!requirement.supported || requirement.kind === 'openai-connector') {
+        statuses.push({ kind: requirement.kind, name: requirement.name, state: 'unsupported' })
+        continue
+      }
+
+      if (requirement.kind === 'mcp-oauth' && requirement.sourceSlug) {
+        const source = findPluginMcpAuthSource(workspace.rootPath, requirement.sourceSlug)
+        const credential = source ? await sourceCredentialManager.load(source) : null
+        if (credential) {
+          statuses.push({
+            kind: requirement.kind,
+            name: requirement.name,
+            sourceSlug: requirement.sourceSlug,
+            state: sourceCredentialManager.isExpired(credential) ? 'expired' : 'connected',
+          })
+          continue
+        }
+
+        const diagnostic = Object.values(diagnostics.servers)
+          .find(item => item.pluginName === pluginName && item.serverName === requirement.name)
+        statuses.push({
+          kind: requirement.kind,
+          name: requirement.name,
+          sourceSlug: requirement.sourceSlug,
+          state: diagnostic?.errorType === 'host-not-approved' ? 'host-not-approved' : 'not-connected',
+          error: diagnostic?.errorType === 'host-not-approved' ? diagnostic.error : undefined,
+        })
+        continue
+      }
+
+      const connector = connectors.find(item => item.name === requirement.name)
+      const input = connector ? createNativeConnectorSourceInput(connector) : null
+      const existing = input ? sources.find(source => {
+        if (source.config.provider !== input.provider || source.config.type !== input.type) return false
+        if (input.provider === 'google') return source.config.api?.googleService === input.api?.googleService
+        if (input.provider === 'slack') return source.config.api?.slackService === input.api?.slackService
+        if (input.provider === 'microsoft') return source.config.api?.microsoftService === input.api?.microsoftService
+        return false
+      }) : null
+
+      if (!existing) {
+        statuses.push({
+          kind: requirement.kind,
+          name: requirement.name,
+          state: requirement.provider === 'google' && (!googleApp?.clientId || !googleApp.value)
+            ? 'configuration-required'
+            : 'not-connected',
+        })
+        continue
+      }
+
+      const credential = await sourceCredentialManager.load(existing)
+      const canAuthorize = requirement.provider !== 'google'
+        || Boolean(
+          (googleApp?.clientId && googleApp.value)
+          || (credential?.clientId && credential.clientSecret)
+        )
+      const state = credential && existing.config.isAuthenticated
+        ? sourceCredentialManager.isExpired(credential) ? 'expired' : 'connected'
+        : !canAuthorize
+          ? 'configuration-required'
+          : existing.config.connectionStatus === 'needs_auth' ? 'expired' : 'not-connected'
+      statuses.push({
+        kind: requirement.kind,
+        name: requirement.name,
+        sourceSlug: existing.config.slug,
+        state,
+        error: existing.config.connectionError,
+      })
+    }
+
+    return statuses
   })
 
   server.handle(RPC_CHANNELS.plugins.DIAGNOSE_MCP, async (
@@ -372,6 +521,90 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
     } finally {
       if (checkoutRoot) rmSync(checkoutRoot, { recursive: true, force: true })
     }
+  })
+
+  server.handle(RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE, async (
+    _ctx,
+    workspaceId: string,
+    pluginName: string,
+    connectorName: string,
+  ) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const {
+      createNativeConnectorSourceInput,
+      loadPluginPackage,
+      loadPluginConnectors,
+      listPluginEntries,
+    } = await import('@craft-agent/shared/plugins')
+    const { createSource, loadWorkspaceSources, saveSourceGuide } = await import('@craft-agent/shared/sources')
+    const entry = listPluginEntries(workspace.rootPath).find(item => item.name === pluginName)
+    if (!entry?.installPath) throw new Error(`Plugin not found: ${pluginName}`)
+    const pluginPackage = loadPluginPackage(entry.installPath)
+    if (!pluginPackage) throw new Error(`Plugin package is unavailable: ${pluginName}`)
+    const connector = loadPluginConnectors(pluginPackage).find(item => item.name === connectorName)
+    if (!connector) throw new Error(`Connector not found: ${connectorName}`)
+    const input = createNativeConnectorSourceInput(connector)
+    if (!input) throw new Error(`No CA native source mapping is available for ${connectorName}`)
+
+    const existing = loadWorkspaceSources(workspace.rootPath).find(source => {
+      if (source.config.provider !== input.provider || source.config.type !== input.type) return false
+      if (input.provider === 'google') return source.config.api?.googleService === input.api?.googleService
+      if (input.provider === 'slack') return source.config.api?.slackService === input.api?.slackService
+      if (input.provider === 'microsoft') return source.config.api?.microsoftService === input.api?.microsoftService
+      return false
+    })
+    if (existing) return { sourceSlug: existing.config.slug, created: false }
+
+    const created = await createSource(workspace.rootPath, input)
+    const serviceNotes = input.provider === 'google' && input.api?.googleService === 'gmail'
+      ? `Use Gmail REST endpoints under users/me. Search messages with GET /users/me/messages and the q query parameter; read messages or threads by ID; use drafts and labels endpoints for write workflows.`
+      : input.provider === 'google' && input.api?.googleService === 'calendar'
+        ? `Use Calendar REST endpoints such as /calendars/primary/events. Prefer bounded timeMin/timeMax queries and confirm before creating, updating, or deleting events.`
+        : input.provider === 'google' && input.api?.googleService === 'drive'
+          ? `Use Drive REST endpoints under /files. Prefer fields and pageSize filters, and confirm before moving, sharing, or deleting files.`
+          : input.provider === 'slack'
+            ? `Use Slack Web API method paths such as /conversations.list, /conversations.history, /conversations.replies, /chat.postMessage, and /search.messages. Confirm before sending or modifying messages.`
+            : input.provider === 'microsoft'
+              ? `Use Microsoft Graph v1.0 endpoints for the configured service. Prefer /me-scoped endpoints and confirm before sending mail, changing calendars, posting messages, or modifying files.`
+              : `Use the service REST API through the generated authenticated API tool.`
+    saveSourceGuide(workspace.rootPath, created.slug, {
+      raw: `# ${created.name}
+
+## Guidelines
+
+This source is managed as a CA-native compatibility adapter for the ${pluginName} plugin.
+Use the \`api_${created.slug}\` tool for account-backed operations when bundled plugin skills mention OpenAI Connector tool names.
+Authentication is handled automatically. Read the official service API semantics before unfamiliar write operations.
+
+${serviceNotes}
+
+## Context
+
+Plugin: ${pluginName}
+Connector: ${connectorName}
+Provider: ${input.provider}
+`,
+    })
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+    const workspaceConfig = loadWorkspaceConfig(workspace.rootPath)
+    if (workspaceConfig) {
+      const enabled = new Set(workspaceConfig.defaults?.enabledSourceSlugs ?? [])
+      enabled.add(created.slug)
+      workspaceConfig.defaults = {
+        ...workspaceConfig.defaults,
+        enabledSourceSlugs: [...enabled],
+      }
+      saveWorkspaceConfig(workspace.rootPath, workspaceConfig)
+    }
+    pushTyped(
+      server,
+      RPC_CHANNELS.sources.CHANGED,
+      { to: 'workspace', workspaceId },
+      workspaceId,
+      loadWorkspaceSources(workspace.rootPath),
+    )
+    return { sourceSlug: created.slug, created: true }
   })
 
   server.handle(RPC_CHANNELS.plugins.REGISTER_LOCAL, async (

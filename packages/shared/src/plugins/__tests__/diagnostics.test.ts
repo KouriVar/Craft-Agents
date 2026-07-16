@@ -8,6 +8,7 @@ import {
   diagnosePluginMcpServers,
   loadPluginMcpStatus,
   loadPreflightedPluginMcpServers,
+  recordPluginMcpAuthFailure,
 } from '../diagnostics.ts';
 import { loadPluginPackage } from '../storage.ts';
 
@@ -77,5 +78,31 @@ describe('plugin MCP diagnostics', () => {
     expect(loadPreflightedPluginMcpServers(workspaceRoot)).toEqual({});
     expect(loadPluginMcpStatus(workspaceRoot).servers['blocked-token_worker']?.missingDependencies)
       .toEqual(['env-blocked:OPENAI_API_KEY']);
+  });
+
+  it('persists an OAuth host approval failure for plugin details', () => {
+    registerManifest({
+      name: 'figma',
+      mcpServers: {
+        figma: {
+          type: 'http',
+          url: 'https://mcp.figma.com/mcp',
+          oauth_resource: 'https://mcp.figma.com/mcp',
+        },
+      },
+    });
+
+    recordPluginMcpAuthFailure(
+      workspaceRoot,
+      'plugin-mcp-figma',
+      new Error('This MCP service only allows approved OAuth host applications.'),
+    );
+
+    expect(loadPluginMcpStatus(workspaceRoot).servers.figma).toMatchObject({
+      pluginName: 'figma',
+      serverName: 'figma',
+      state: 'error',
+      errorType: 'host-not-approved',
+    });
   });
 });

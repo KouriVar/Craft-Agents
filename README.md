@@ -1,7 +1,7 @@
 # Craft Agents
 
 本地优先的 Agent 桌面工作台。  
-基于 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) 二开，重点补强桌面端审阅、侧栏、消息接入、来源/技能管理和本地打包体验。
+基于 [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) 二开，重点补强桌面端审阅、侧栏、消息接入、来源/技能/插件管理和本地打包体验。
 
 <p>
   <a href="./CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-查看更新-7c3aed?style=flat-square"></a>
@@ -25,6 +25,8 @@
 | 📊 对话内可视化 | 交互式图表、模拟器、对比工具和动态控件，可直接在回答中运行 |
 | 🪟 右侧审阅 | 信息、文件、终端、浏览器、来源页、Cowart 画布入口 |
 | 📎 来源与资源 | Sources、Skills、会话文件、输出文件、上下文资源面板 |
+| 🔌 插件与扩展 | Codex / Claude / Craft 插件包、Git 市场、MCP Apps、兼容性诊断与热更新 |
+| 🔐 账号与认证 | 外部账号 OAuth 应用配置、插件连接状态、重连与断开 |
 | 💬 消息接入 | Telegram、WhatsApp、飞书 / Lark、微信 ilink 适配器 |
 | 🧰 桌面工具 | 内嵌终端、工作区文件浏览、浏览器工具栏、会话定位器 |
 | 🏗️ 本地打包 | macOS / Windows / Linux Electron 构建与运行时资源补齐 |
@@ -42,6 +44,10 @@
 ### 来源和输出
 
 会话资源面板把上下文、会话文件、输出和来源收在一个入口里。详细新增和修复记录见 [CHANGELOG.md](./CHANGELOG.md)。
+
+### 插件与账号
+
+支持从 Git、本地目录和插件市场安装扩展，并统一加载插件技能、MCP 工具、交互式 Widget 与品牌图标。插件详情会展示兼容性和认证状态；Google 外部账号应用凭据保存在本地加密凭据仓库中。
 
 ### 消息平台
 

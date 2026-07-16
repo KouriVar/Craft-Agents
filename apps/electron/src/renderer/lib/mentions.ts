@@ -3,6 +3,7 @@
  *
  * Mention types:
  * - Skills:  [skill:slug]
+ * - Plugins: [plugin:name]
  * - Sources: [source:slug]
  *
  * Bracket syntax allows mentions anywhere in text without word boundaries.
@@ -15,8 +16,8 @@ import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 import { getSourceIconSync, getSkillIconSync } from './icon-cache'
 
 // Import and re-export parsing functions from shared (pure string operations, no renderer deps)
-import { parseMentions, stripAllMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
-export { parseMentions, stripAllMentions, resolveSkillMentions, resolveSourceMentions, type ParsedMentions }
+import { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
+export { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, type ParsedMentions }
 
 // ============================================================================
 // Constants
@@ -54,7 +55,8 @@ export interface MentionMatch {
 export function findMentionMatches(
   text: string,
   availableSkillSlugs: string[],
-  availableSourceSlugs: string[]
+  availableSourceSlugs: string[],
+  availablePluginNames: string[] = []
 ): MentionMatch[] {
   const matches: MentionMatch[] = []
 
@@ -67,6 +69,19 @@ export function findMentionMatches(
       matches.push({
         type: 'source',
         id: slug,
+        fullMatch: match[1],
+        startIndex: match.index,
+      })
+    }
+  }
+
+  const pluginPattern = /(\[plugin:([\w.-]+)\])/g
+  while ((match = pluginPattern.exec(text)) !== null) {
+    const name = match[2]
+    if (availablePluginNames.includes(name)) {
+      matches.push({
+        type: 'plugin',
+        id: name,
         fullMatch: match[1],
         startIndex: match.index,
       })
@@ -130,6 +145,9 @@ export function removeMention(text: string, type: MentionItemType, id: string): 
     case 'source':
       pattern = new RegExp(`\\[source:${escapeRegExp(id)}\\]`, 'g')
       break
+    case 'plugin':
+      pattern = new RegExp(`\\[plugin:${escapeRegExp(id)}\\]`, 'g')
+      break
     case 'file':
       pattern = new RegExp(`\\[file:${escapeRegExp(id)}\\]`, 'g')
       break
@@ -156,10 +174,11 @@ export function removeMention(text: string, type: MentionItemType, id: string): 
 export function hasMentions(
   text: string,
   availableSkillSlugs: string[],
-  availableSourceSlugs: string[]
+  availableSourceSlugs: string[],
+  availablePluginNames: string[] = []
 ): boolean {
-  const mentions = parseMentions(text, availableSkillSlugs, availableSourceSlugs)
-  return mentions.skills.length > 0 || mentions.sources.length > 0 || mentions.files.length > 0 || mentions.folders.length > 0
+  const mentions = parseMentions(text, availableSkillSlugs, availableSourceSlugs, availablePluginNames)
+  return mentions.skills.length > 0 || mentions.plugins.length > 0 || mentions.sources.length > 0 || mentions.files.length > 0 || mentions.folders.length > 0
 }
 
 // ============================================================================
@@ -208,7 +227,8 @@ export function extractBadges(
 ): ContentBadge[] {
   const skillSlugs = skills.map(s => s.slug)
   const sourceSlugs = sources.map(s => s.config.slug)
-  const matches = findMentionMatches(text, skillSlugs, sourceSlugs)
+  const pluginNames = Array.from(new Set(skills.flatMap(skill => skill.pluginName ? [skill.pluginName] : [])))
+  const matches = findMentionMatches(text, skillSlugs, sourceSlugs, pluginNames)
 
   // Build lookup maps to avoid linear scans per match
   const skillsBySlug = new Map(skills.map(s => [s.slug, s]))
@@ -225,6 +245,12 @@ export function extractBadges(
 
       // Get cached icon as data URL (preserves mime type for SVG, PNG, etc.)
       iconDataUrl = getSkillIconSync(workspaceId, match.id) ?? undefined
+    } else if (match.type === 'plugin') {
+      const representativeSkill = skills.find(skill => skill.pluginName === match.id)
+      label = representativeSkill?.pluginDisplayName ?? match.id
+      if (representativeSkill) {
+        iconDataUrl = getSkillIconSync(workspaceId, representativeSkill.slug) ?? undefined
+      }
     } else if (match.type === 'source') {
       const source = sourcesBySlug.get(match.id)
       label = source?.config.name || match.id
@@ -247,12 +273,13 @@ export function extractBadges(
     let rawText = match.fullMatch
     if (match.type === 'skill') {
       const skill = skillsBySlug.get(match.id)
-      const pluginName = skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
+      const pluginName = skill?.pluginName
+        ?? (skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME)
       rawText = `[skill:${pluginName}:${match.id}]`
     }
 
     return {
-      type: match.type as 'source' | 'skill' | 'file' | 'folder',
+      type: match.type,
       label,
       rawText,
       iconDataUrl,

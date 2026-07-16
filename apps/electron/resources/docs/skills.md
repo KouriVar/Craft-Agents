@@ -220,6 +220,12 @@ Every skill should have a visually relevant icon. This helps users quickly ident
 
 **How to get an icon:**
 
+0. **Use a relevant emoji for personal skills:**
+   ```yaml
+   icon: "🔍"
+   ```
+   Emoji icons require no asset file and are ideal for quick workspace skills.
+
 1. **Search online icon libraries:**
    - [Heroicons](https://heroicons.com/) - MIT licensed
    - [Feather Icons](https://feathericons.com/) - MIT licensed

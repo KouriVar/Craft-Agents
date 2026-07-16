@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { extname, join, relative, resolve } from 'node:path';
 import type { LoadedPluginPackage, PluginDependencyEntry, PluginManifest, PluginManifestFormat } from './types.ts';
 
 export const CRAFT_PLUGIN_MANIFEST_DIR = '.craft-plugin';
@@ -59,6 +59,21 @@ function normalizeManifest(value: unknown): PluginManifest | null {
     mcpServers: value.mcpServers,
   };
 
+  if (isRecord(value.interface)) {
+    manifest.interface = {
+      displayName: normalizeString(value.interface.displayName),
+      shortDescription: normalizeString(value.interface.shortDescription),
+      longDescription: normalizeString(value.interface.longDescription),
+      developerName: normalizeString(value.interface.developerName),
+      category: normalizeString(value.interface.category),
+      brandColor: normalizeString(value.interface.brandColor),
+      brandColorDark: normalizeString(value.interface.brandColorDark),
+      composerIcon: normalizeString(value.interface.composerIcon),
+      logo: normalizeString(value.interface.logo),
+      logoDark: normalizeString(value.interface.logoDark),
+    };
+  }
+
   if (typeof value.author === 'string') {
     manifest.author = value.author;
   } else if (isRecord(value.author)) {
@@ -117,6 +132,35 @@ function resolveRelativePaths(rootPath: string, values: string[] | undefined): s
   return (values ?? []).map(value => resolve(rootPath, value));
 }
 
+const PLUGIN_ICON_EXTENSIONS = new Set(['.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.gif']);
+
+function resolvePluginIcon(rootPath: string, manifest: PluginManifest): string | undefined {
+  const declared = [
+    manifest.interface?.composerIcon,
+    manifest.interface?.logo,
+    manifest.interface?.logoDark,
+  ].filter((value): value is string => Boolean(value));
+  const fallbacks = [
+    'assets/icon.svg',
+    'assets/logo.png',
+    'assets/app-icon.png',
+    'assets/composer-icon.svg',
+  ];
+
+  for (const value of [...declared, ...fallbacks]) {
+    if (/^https?:\/\//i.test(value)) continue;
+    const candidate = resolve(rootPath, value);
+    const relation = relative(rootPath, candidate);
+    if (relation.startsWith('..') || PLUGIN_ICON_EXTENSIONS.has(extname(candidate).toLowerCase()) === false) continue;
+    try {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
 function readManifestAt(path: string): PluginManifest | null {
   try {
     return normalizeManifest(JSON.parse(readFileSync(path, 'utf-8')));
@@ -168,5 +212,11 @@ export function loadPluginPackage(rootPath: string): LoadedPluginPackage | null 
       join(root, 'assets'),
       join(root, '.scatter', 'assets'),
     ]),
+    hookDirs: existingDirectories([
+      join(root, 'hooks'),
+      join(root, '.codex-plugin', 'hooks'),
+      join(root, '.craft-plugin', 'hooks'),
+    ]),
+    iconPath: resolvePluginIcon(root, resolvedManifest.manifest),
   };
 }

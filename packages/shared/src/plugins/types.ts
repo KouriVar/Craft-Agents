@@ -13,6 +13,19 @@ export interface PluginDependency {
 
 export type PluginDependencyEntry = string | PluginDependency;
 
+export interface PluginInterface {
+  displayName?: string;
+  shortDescription?: string;
+  longDescription?: string;
+  developerName?: string;
+  category?: string;
+  brandColor?: string;
+  brandColorDark?: string;
+  composerIcon?: string;
+  logo?: string;
+  logoDark?: string;
+}
+
 export interface PluginManifest {
   name: string;
   displayName?: string;
@@ -27,6 +40,7 @@ export interface PluginManifest {
   dependencies?: PluginDependencyEntry[];
   skills?: string | string[];
   mcpServers?: unknown;
+  interface?: PluginInterface;
 }
 
 export interface LoadedPluginPackage {
@@ -38,6 +52,61 @@ export interface LoadedPluginPackage {
   mcpConfigPaths: string[];
   appConfigPaths: string[];
   widgetAssetDirs: string[];
+  hookDirs: string[];
+  /** Resolved package-provided composer icon or logo. */
+  iconPath?: string;
+}
+
+export type PluginCompatibilityLevel =
+  | 'ready'
+  | 'needs-auth'
+  | 'partial'
+  | 'unsupported'
+  | 'unknown';
+
+export type PluginCapabilityKind = 'skills' | 'mcp' | 'connectors' | 'widgets' | 'hooks';
+
+export type PluginCapabilityStatus =
+  | 'available'
+  | 'needs-auth'
+  | 'native-alternative'
+  | 'unsupported'
+  | 'unknown';
+
+export interface PluginCapabilitySummary {
+  kind: PluginCapabilityKind;
+  count: number;
+  status: PluginCapabilityStatus;
+  label: string;
+  detail: string;
+  usage?: string;
+}
+
+export interface PluginConnectorDefinition {
+  name: string;
+  id?: string;
+  provider?: string;
+  nativeSourceProvider?: 'google' | 'microsoft' | 'slack' | 'github';
+  nativeSourceService?: string;
+}
+
+export interface PluginAuthRequirement {
+  kind: 'mcp-oauth' | 'native-source' | 'openai-connector';
+  name: string;
+  sourceSlug?: string;
+  provider?: string;
+  service?: string;
+  supported: boolean;
+}
+
+export interface PluginCompatibilityReport {
+  level: PluginCompatibilityLevel;
+  summary: string;
+  capabilities: PluginCapabilitySummary[];
+  connectors: PluginConnectorDefinition[];
+  authRequirements: PluginAuthRequirement[];
+  reasons: string[];
+  usage: string[];
 }
 
 export interface WorkspacePluginEntry {
@@ -49,10 +118,13 @@ export interface WorkspacePluginEntry {
   version?: string;
   displayName?: string;
   description?: string;
+  iconPath?: string;
+  brandColor?: string;
   source?: 'local' | 'git' | 'unknown';
   sourceUrl?: string;
   gitRef?: string;
   updatedAt: number;
+  compatibility?: PluginCompatibilityReport;
 }
 
 export interface WorkspacePluginConfig {
@@ -84,7 +156,7 @@ export interface PluginMcpServerDiagnostic {
   durationMs: number;
   tools?: string[];
   error?: string;
-  errorType?: 'failed' | 'needs-auth' | 'invalid-schema' | 'missing-dependency' | 'unknown';
+  errorType?: 'failed' | 'needs-auth' | 'invalid-schema' | 'missing-dependency' | 'host-not-approved' | 'unknown';
   missingDependencies?: string[];
 }
 
@@ -92,6 +164,22 @@ export interface PluginMcpStatusFile {
   version: 1;
   checkedAt: number;
   servers: Record<string, PluginMcpServerDiagnostic>;
+}
+
+export type PluginAuthState =
+  | 'not-connected'
+  | 'connected'
+  | 'expired'
+  | 'configuration-required'
+  | 'host-not-approved'
+  | 'unsupported';
+
+export interface PluginAuthStatus {
+  kind: PluginAuthRequirement['kind'];
+  name: string;
+  sourceSlug?: string;
+  state: PluginAuthState;
+  error?: string;
 }
 
 export interface PluginMarketplaceSource {
@@ -125,6 +213,9 @@ export interface PluginMarketplaceEntry {
   packageSource: PluginMarketplacePackageSource;
   compatibility: 'compatible' | 'unknown' | 'unsupported';
   compatibilityReason?: string;
+  compatibilityReport?: PluginCompatibilityReport;
+  iconPath?: string;
+  brandColor?: string;
 }
 
 export interface PluginMarketplaceCatalog {

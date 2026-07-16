@@ -8,6 +8,8 @@ import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult } from
 
 export interface OAuthConfig {
   mcpUrl: string; // Full MCP URL including path (e.g., https://mcp.craft.do/my/mcp)
+  oauthResource?: string;
+  scopes?: string[];
 }
 
 export interface OAuthTokens {
@@ -26,7 +28,7 @@ export interface OAuthCallbacks {
 const CALLBACK_PORT_START = 8914;
 const CALLBACK_PORT_END = 8924;
 const CALLBACK_PATH = '/oauth/callback';
-const CLIENT_NAME = 'Claude Code (Craft Agent)';
+const CLIENT_NAME = 'Craft Agent';
 
 // Generate PKCE code verifier and challenge
 function generatePKCE(): { verifier: string; challenge: string } {
@@ -102,6 +104,7 @@ export class CraftOAuth {
     code: string,
     codeVerifier: string,
     clientId: string,
+    clientSecret: string | undefined,
     port: number
   ): Promise<OAuthTokens> {
     const redirectUri = `http://localhost:${port}${CALLBACK_PATH}`;
@@ -113,6 +116,7 @@ export class CraftOAuth {
       client_id: clientId,
       code_verifier: codeVerifier,
     });
+    if (clientSecret) params.set('client_secret', clientSecret);
 
     const response = await fetch(tokenEndpoint, {
       method: 'POST',
@@ -148,7 +152,8 @@ export class CraftOAuth {
   // Refresh access token
   async refreshAccessToken(
     refreshToken: string,
-    clientId: string
+    clientId: string,
+    clientSecret?: string,
   ): Promise<OAuthTokens> {
     const metadata = await this.getServerMetadata();
 
@@ -157,6 +162,8 @@ export class CraftOAuth {
       refresh_token: refreshToken,
       client_id: clientId,
     });
+    if (clientSecret) params.set('client_secret', clientSecret);
+    if (this.config.oauthResource) params.set('resource', this.config.oauthResource);
 
     const response = await fetch(metadata.token_endpoint, {
       method: 'POST',
@@ -210,7 +217,7 @@ export class CraftOAuth {
   }
 
   // Start the OAuth flow
-  async authenticate(): Promise<{ tokens: OAuthTokens; clientId: string }> {
+  async authenticate(): Promise<{ tokens: OAuthTokens; clientId: string; clientSecret?: string }> {
     this.callbacks.onStatus('Fetching OAuth server configuration...');
 
     // 1. Get server metadata — no port dependency
@@ -249,11 +256,13 @@ export class CraftOAuth {
 
     // 4. Register client if endpoint available — now has the bound port
     let clientId: string;
+    let clientSecret: string | undefined;
     if (metadata.registration_endpoint) {
       this.callbacks.onStatus(`Registering client at ${metadata.registration_endpoint}...`);
       try {
         const client = await this.registerClient(metadata.registration_endpoint, port);
         clientId = client.client_id;
+        clientSecret = client.client_secret;
         this.callbacks.onStatus(`Registered as client: ${clientId}`);
       } catch (error) {
         // Clean up the callback server if registration fails
@@ -277,6 +286,8 @@ export class CraftOAuth {
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('code_challenge', pkce.challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
+    if (this.config.oauthResource) authUrl.searchParams.set('resource', this.config.oauthResource);
+    if (this.config.scopes?.length) authUrl.searchParams.set('scope', this.config.scopes.join(' '));
 
     // 6. Open browser for authorization
     this.callbacks.onStatus('Opening browser for authorization...');
@@ -294,11 +305,12 @@ export class CraftOAuth {
       authCode,
       pkce.verifier,
       clientId,
+      clientSecret,
       port
     );
     this.callbacks.onStatus('Tokens received successfully!');
 
-    return { tokens, clientId };
+    return { tokens, clientId, clientSecret };
   }
 
   /**
@@ -458,10 +470,6 @@ class McpClientRegistrationError extends Error {
   }
 }
 
-function shouldFallbackToDefaultMcpClient(error: unknown): boolean {
-  return error instanceof McpClientRegistrationError && (error.status === 401 || error.status === 403);
-}
-
 async function registerMcpOAuthClient(
   registrationEndpoint: string,
   redirectUri: string
@@ -500,7 +508,9 @@ async function exchangeMcpCodeForTokens(
   code: string,
   codeVerifier: string,
   clientId: string,
-  redirectUri: string
+  clientSecret: string | undefined,
+  redirectUri: string,
+  oauthResource?: string,
 ): Promise<OAuthTokens> {
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -509,6 +519,8 @@ async function exchangeMcpCodeForTokens(
     client_id: clientId,
     code_verifier: codeVerifier,
   });
+  if (clientSecret) params.set('client_secret', clientSecret);
+  if (oauthResource) params.set('resource', oauthResource);
 
   const response = await fetch(tokenEndpoint, {
     method: 'POST',
@@ -547,7 +559,7 @@ async function exchangeMcpCodeForTokens(
  */
 export async function prepareMcpOAuth(
   mcpUrl: string,
-  options: { callbackPort?: number; callbackUrl?: string },
+  options: { callbackPort?: number; callbackUrl?: string; oauthResource?: string; scopes?: string[] },
 ): Promise<PreparedOAuthFlow> {
   const metadata = await discoverOAuthMetadata(mcpUrl);
   if (!metadata) {
@@ -567,14 +579,14 @@ export async function prepareMcpOAuth(
       clientId = client.client_id;
       clientSecret = client.client_secret;
     } catch (error) {
-      if (!shouldFallbackToDefaultMcpClient(error)) {
-        throw error;
+      if (error instanceof McpClientRegistrationError && (error.status === 401 || error.status === 403)) {
+        throw new Error(
+          'This MCP service only allows approved OAuth host applications. ' +
+          'Craft Agent cannot reuse another application\'s OAuth client. ' +
+          'The plugin skills remain available, but its MCP tools require provider approval for Craft Agent.',
+        );
       }
-
-      // Dynamic client registration can be intentionally gated by providers
-      // (for example returning 403 for unapproved clients). In that case,
-      // fall back to a default client ID and proceed with the flow.
-      clientId = 'craft-agent';
+      throw error;
     }
   } else {
     clientId = 'craft-agent';
@@ -587,6 +599,8 @@ export async function prepareMcpOAuth(
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', pkce.challenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
+  if (options.oauthResource) authUrl.searchParams.set('resource', options.oauthResource);
+  if (options.scopes?.length) authUrl.searchParams.set('scope', options.scopes.join(' '));
 
   return {
     authUrl: authUrl.toString(),
@@ -597,6 +611,8 @@ export async function prepareMcpOAuth(
     clientSecret,
     redirectUri,
     provider: 'mcp',
+    oauthResource: options.oauthResource,
+    scopes: options.scopes,
   };
 }
 
@@ -610,7 +626,9 @@ export async function exchangeMcpOAuth(params: OAuthExchangeParams): Promise<OAu
       params.code,
       params.codeVerifier,
       params.clientId,
-      params.redirectUri
+      params.clientSecret,
+      params.redirectUri,
+      params.oauthResource,
     );
 
     return {
@@ -619,6 +637,7 @@ export async function exchangeMcpOAuth(params: OAuthExchangeParams): Promise<OAu
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
       oauthClientId: params.clientId,
+      oauthClientSecret: params.clientSecret,
     };
   } catch (error) {
     return {

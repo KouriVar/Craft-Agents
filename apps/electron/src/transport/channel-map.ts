@@ -238,6 +238,9 @@ export const CHANNEL_MAP = {
 
   // OAuth (server-owned credentials)
   oauthRevoke: invoke(RPC_CHANNELS.oauth.REVOKE),
+  getOAuthApp: invoke(RPC_CHANNELS.oauth.APP_GET),
+  setOAuthApp: invoke(RPC_CHANNELS.oauth.APP_SET),
+  deleteOAuthApp: invoke(RPC_CHANNELS.oauth.APP_DELETE),
 
   // Sources change listener
   onSourcesChanged: listener(RPC_CHANNELS.sources.CHANGED),
@@ -255,6 +258,7 @@ export const CHANNEL_MAP = {
   getPluginPolicies: invoke(RPC_CHANNELS.plugins.GET_POLICIES),
   setPluginPolicy: invoke(RPC_CHANNELS.plugins.SET_POLICY),
   getPluginMcpStatus: invoke(RPC_CHANNELS.plugins.GET_MCP_STATUS),
+  getPluginAuthStatus: invoke(RPC_CHANNELS.plugins.GET_AUTH_STATUS),
   diagnosePluginMcp: invoke(RPC_CHANNELS.plugins.DIAGNOSE_MCP),
   installGitPlugin: invoke(RPC_CHANNELS.plugins.INSTALL_GIT),
   listPluginMarketplaceSources: invoke(RPC_CHANNELS.plugins.LIST_MARKETPLACE_SOURCES),
@@ -262,6 +266,7 @@ export const CHANNEL_MAP = {
   removePluginMarketplaceSource: invoke(RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE),
   getPluginMarketplaceCatalog: invoke(RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG),
   installMarketplacePlugin: invoke(RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN),
+  connectPluginNativeSource: invoke(RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE),
   registerLocalPlugin: invoke(RPC_CHANNELS.plugins.REGISTER_LOCAL),
   setPluginEnabled: invoke(RPC_CHANNELS.plugins.SET_ENABLED),
   unregisterPlugin: invoke(RPC_CHANNELS.plugins.UNREGISTER),

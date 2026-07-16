@@ -20,6 +20,7 @@ export type CredentialType =
   // Global credentials (legacy, kept for backwards compatibility)
   | 'anthropic_api_key'  // Anthropic API key for Claude
   | 'claude_oauth'       // Claude OAuth token (Max subscription)
+  | 'oauth_app'          // External OAuth application credentials (keyed by provider)
   // LLM connection credentials (keyed by connection slug)
   | 'llm_api_key'        // API key for LLM connection
   | 'llm_oauth'          // OAuth token for LLM connection
@@ -39,6 +40,7 @@ export type CredentialType =
 const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [
   'anthropic_api_key',
   'claude_oauth',
+  'oauth_app',
   'llm_api_key',
   'llm_oauth',
   'llm_iam',
@@ -186,6 +188,13 @@ export function credentialIdToAccount(id: CredentialId): string {
     return parts.join(CREDENTIAL_DELIMITER);
   }
 
+  // External OAuth application:
+  // oauth_app::{provider}
+  if (id.type === 'oauth_app' && id.name) {
+    parts.push(id.name);
+    return parts.join(CREDENTIAL_DELIMITER);
+  }
+
   // Source-scoped format:
   // Source credentials: source_oauth::{workspaceId}::{sourceId}
   if (isSourceCredential(id.type) && id.workspaceId && id.sourceId) {
@@ -256,6 +265,10 @@ export function accountToCredentialId(account: string): CredentialId | null {
   // workspace_oauth::{workspaceId}
   if (type === 'workspace_oauth' && parts.length === 2) {
     return { type, workspaceId: parts[1] };
+  }
+
+  if (type === 'oauth_app' && parts.length === 2 && parts[1]) {
+    return { type, name: parts[1] };
   }
 
   // Source-scoped format:

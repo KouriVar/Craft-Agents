@@ -22,6 +22,8 @@ export interface PendingOAuthFlow {
   clientSecret?: string;
   tokenEndpoint: string;
   provider: OAuthProvider;
+  oauthResource?: string;
+  scopes?: string[];
 
   // Binding fields — validated on oauth:complete
   ownerClientId: string;

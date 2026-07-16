@@ -7,7 +7,7 @@
  * "find the root cause in [Mentioned skill: Datadog API (slug: datadog-api)]").
  */
 import { describe, it, expect } from 'bun:test'
-import { resolveSkillMentions, resolveSourceMentions, stripAllMentions } from '../index.ts'
+import { parseMentions, resolvePluginMentions, resolveSkillMentions, resolveSourceMentions, stripAllMentions } from '../index.ts'
 
 // ============================================================================
 // resolveSkillMentions
@@ -125,6 +125,20 @@ describe('resolveSourceMentions', () => {
   it('leaves skill and file mentions untouched', () => {
     expect(resolveSourceMentions('[skill:commit] [file:index.ts]'))
       .toBe('[skill:commit] [file:index.ts]')
+  })
+})
+
+describe('plugin mentions', () => {
+  it('parses an available plugin as one top-level capability', () => {
+    const result = parseMentions('[plugin:figma] design this', [], [], ['figma'])
+    expect(result.plugins).toEqual(['figma'])
+    expect(result.invalidPlugins).toEqual([])
+  })
+
+  it('resolves and strips plugin mentions semantically', () => {
+    expect(resolvePluginMentions('use [plugin:figma] for this'))
+      .toBe('use [Mentioned plugin: figma] for this')
+    expect(stripAllMentions('[plugin:figma] design this')).toBe('figma design this')
   })
 })
 

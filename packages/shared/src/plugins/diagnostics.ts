@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { validateMcpConnection, validateStdioMcpConnection } from '../mcp/validation.ts';
 import { buildMcpStdioEnv } from '../mcp/client.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
-import { loadPluginMcpServerDefinitions, preflightPluginMcpServer } from './mcp.ts';
+import { loadPluginMcpServerDefinitions, preflightPluginMcpServer, resolvePluginMcpServerConfig } from './mcp.ts';
 import type { SdkMcpServerConfig } from '../agent/backend/types.ts';
 import type {
   PluginMcpServerDiagnostic,
@@ -56,6 +56,35 @@ export function savePluginMcpStatus(workspaceRootPath: string, status: PluginMcp
   atomicWriteFileSync(statusPath, JSON.stringify(status, null, 2));
 }
 
+export function recordPluginMcpAuthFailure(
+  workspaceRootPath: string,
+  sourceSlug: string,
+  error: unknown,
+): void {
+  const definition = loadPluginMcpServerDefinitions(workspaceRootPath)
+    .find(item => item.authSourceSlug === sourceSlug);
+  if (!definition) return;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const checkedAt = Date.now();
+  const status = loadPluginMcpStatus(workspaceRootPath);
+  status.checkedAt = checkedAt;
+  status.servers[definition.slug] = {
+    slug: definition.slug,
+    pluginName: definition.pluginName,
+    serverName: definition.serverName,
+    transport: definition.config.type,
+    state: 'error',
+    checkedAt,
+    durationMs: 0,
+    error: message,
+    errorType: message.includes('only allows approved OAuth host applications')
+      ? 'host-not-approved'
+      : 'unknown',
+  };
+  savePluginMcpStatus(workspaceRootPath, status);
+}
+
 export function loadPreflightedPluginMcpServers(
   workspaceRootPath: string,
 ): Record<string, SdkMcpServerConfig> {
@@ -97,12 +126,26 @@ export function loadPreflightedPluginMcpServers(
   return servers;
 }
 
+export async function loadResolvedPluginMcpServers(
+  workspaceRootPath: string,
+): Promise<Record<string, SdkMcpServerConfig>> {
+  const entries = await Promise.all(
+    loadPluginMcpServerDefinitions(workspaceRootPath).map(async definition => {
+      const preflight = preflightPluginMcpServer(definition);
+      if (!preflight.success) return null;
+      return [definition.slug, await resolvePluginMcpServerConfig(workspaceRootPath, definition)] as const;
+    }),
+  );
+  return Object.fromEntries(entries.filter((entry): entry is readonly [string, SdkMcpServerConfig] => Boolean(entry)));
+}
+
 export async function diagnosePluginMcpServers(
   workspaceRootPath: string,
   options: { timeout?: number } = {},
 ): Promise<PluginMcpStatusFile> {
   const checkedAt = Date.now();
   const definitions = loadPluginMcpServerDefinitions(workspaceRootPath);
+  const previousStatus = loadPluginMcpStatus(workspaceRootPath);
   const results = await Promise.all(definitions.map(async definition => {
     const startedAt = Date.now();
     const preflight = preflightPluginMcpServer(definition);
@@ -121,7 +164,7 @@ export async function diagnosePluginMcpServers(
       } satisfies PluginMcpServerDiagnostic;
     }
 
-    const config = definition.config;
+    const config = await resolvePluginMcpServerConfig(workspaceRootPath, definition);
     const validation = config.type === 'stdio'
       ? await validateStdioMcpConnection({
           command: config.command,
@@ -138,6 +181,10 @@ export async function diagnosePluginMcpServers(
           mcpAccessToken: config.bearerTokenEnvVar ? process.env[config.bearerTokenEnvVar] : undefined,
         });
 
+    const previous = previousStatus.servers[definition.slug];
+    const preserveHostApproval = !validation.success
+      && previous?.errorType === 'host-not-approved'
+      && validation.errorType === 'needs-auth';
     return {
       slug: definition.slug,
       pluginName: definition.pluginName,
@@ -147,9 +194,11 @@ export async function diagnosePluginMcpServers(
       checkedAt,
       durationMs: Date.now() - startedAt,
       tools: validation.tools,
-      error: validation.error,
-      errorType: validation.errorType === 'needs-auth' || validation.errorType === 'invalid-schema' || validation.errorType === 'failed'
-        ? validation.errorType
+      error: preserveHostApproval ? previous.error : validation.error,
+      errorType: preserveHostApproval
+        ? 'host-not-approved'
+        : validation.errorType === 'needs-auth' || validation.errorType === 'invalid-schema' || validation.errorType === 'failed'
+          ? validation.errorType
         : validation.success ? undefined : 'unknown',
     } satisfies PluginMcpServerDiagnostic;
   }));

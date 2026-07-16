@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { registerPluginPackage, setPluginEnabled } from '../config.ts';
-import { loadPluginMcpServers } from '../mcp.ts';
+import { createPluginMcpAuthSource, loadPluginMcpServerDefinitions, loadPluginMcpServers } from '../mcp.ts';
 import { loadPluginPackage } from '../storage.ts';
 
 let tempDir: string;
@@ -99,5 +99,35 @@ describe('loadPluginMcpServers', () => {
     setPluginEnabled(workspaceRoot, 'disabled-plugin', false);
 
     expect(loadPluginMcpServers(workspaceRoot)).toEqual({});
+  });
+
+  it('preserves plugin MCP OAuth metadata and creates a virtual auth source', () => {
+    writeJson(join(pluginRoot, '.codex-plugin', 'plugin.json'), { name: 'figma' });
+    writeJson(join(pluginRoot, '.mcp.json'), {
+      mcpServers: {
+        figma: {
+          type: 'http',
+          url: 'https://mcp.figma.com/mcp',
+          oauth_resource: 'https://mcp.figma.com/mcp',
+          scopes: ['files:read'],
+        },
+      },
+    });
+    registerInstalledPlugin();
+
+    const definition = loadPluginMcpServerDefinitions(workspaceRoot)[0]!;
+    expect(definition).toMatchObject({
+      slug: 'figma',
+      authType: 'oauth',
+      authSourceSlug: 'plugin-mcp-figma',
+      oauthResource: 'https://mcp.figma.com/mcp',
+      scopes: ['files:read'],
+    });
+    expect(createPluginMcpAuthSource(workspaceRoot, definition)?.config.mcp).toMatchObject({
+      url: 'https://mcp.figma.com/mcp',
+      authType: 'oauth',
+      oauthResource: 'https://mcp.figma.com/mcp',
+      oauthScopes: ['files:read'],
+    });
   });
 });

@@ -26,7 +26,8 @@ import type { PermissionMode } from './mode-manager.ts';
 import type { LoadedSource } from '../sources/types.ts';
 import { buildCallLlmRequest, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 import { getLlmConnections, getDefaultLlmConnection } from '../config/storage.ts';
-import { loadAllSources } from '../sources/storage.ts';
+import { loadAllSources, loadWorkspaceSources } from '../sources/storage.ts';
+import { listPluginEntries } from '../plugins/config.ts';
 import type { ApiServerConfig } from '../mcp/mcp-pool.ts';
 
 import type {
@@ -64,8 +65,9 @@ import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
 
 // Skill extraction for Codex/Copilot backends (Claude uses native SDK Skill tool)
-import { parseMentions, resolveSkillMentions, resolveSourceMentions, resolveFileMentions } from '../mentions/index.ts';
+import { parseMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, resolveFileMentions } from '../mentions/index.ts';
 import { loadAllSkills } from '../skills/storage.ts';
+import type { LoadedSkill } from '../skills/types.ts';
 
 // ============================================================
 // Mini Agent Configuration
@@ -951,15 +953,18 @@ ${formattedMessages}
     skillPaths: Map<string, string>;
     cleanMessage: string;
     missingSkills: string[];
+    missingPlugins: string[];
+    pluginSkillCatalogs: Map<string, LoadedSkill[]>;
   } {
     const workspaceRoot = this.config.workspace?.rootPath ?? this.workingDirectory;
     const projectRoot = this.config.session?.workingDirectory;
     const skills = loadAllSkills(workspaceRoot, projectRoot);
     const skillSlugs = skills.map(s => s.slug);
+    const pluginNames = Array.from(new Set(skills.flatMap(skill => skill.pluginName ? [skill.pluginName] : [])));
 
     this.debug(`[extractSkillPaths] Available skills: ${skillSlugs.join(', ')}`);
 
-    const parsed = parseMentions(message, skillSlugs, []);
+    const parsed = parseMentions(message, skillSlugs, [], pluginNames);
     this.debug(`[extractSkillPaths] Parsed skills: ${JSON.stringify(parsed.skills)}`);
     if (parsed.invalidSkills && parsed.invalidSkills.length > 0) {
       this.debug(`[extractSkillPaths] Invalid skills: ${JSON.stringify(parsed.invalidSkills)}`);
@@ -980,12 +985,18 @@ ${formattedMessages}
       }
     }
 
+    const pluginSkillCatalogs = new Map<string, LoadedSkill[]>();
+    for (const pluginName of parsed.plugins) {
+      pluginSkillCatalogs.set(pluginName, skills.filter(skill => skill.pluginName === pluginName));
+    }
+
     // Resolve mentions to semantic markers (like file mentions) instead of stripping them.
     // This preserves sentence structure: "find the bug in [skill:datadog-api]"
     // becomes "find the bug in [Mentioned skill: Datadog API (slug: datadog-api)]"
     const skillNames = new Map(skills.map(s => [s.slug, s.metadata.name]));
     const withSkills = resolveSkillMentions(message, skillNames);
-    const withSources = resolveSourceMentions(withSkills);
+    const withPlugins = resolvePluginMentions(withSkills);
+    const withSources = resolveSourceMentions(withPlugins);
     const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
     const resolved = resolveFileMentions(withSources, workDir).trim();
 
@@ -999,7 +1010,9 @@ ${formattedMessages}
     return {
       skillPaths,
       cleanMessage,
-      missingSkills: parsed.invalidSkills || []
+      missingSkills: parsed.invalidSkills || [],
+      missingPlugins: parsed.invalidPlugins || [],
+      pluginSkillCatalogs,
     };
   }
 
@@ -1007,12 +1020,44 @@ ${formattedMessages}
    * Format a directive telling the model to read skill SKILL.md files before proceeding.
    * Called from chat() — all agents get the same directive prepended to their message.
    */
-  protected formatSkillDirective(skillPaths: Map<string, string>): string {
-    if (skillPaths.size === 0) return '';
+  protected formatSkillDirective(
+    skillPaths: Map<string, string>,
+    pluginSkillCatalogs: Map<string, LoadedSkill[]> = new Map(),
+  ): string {
+    if (skillPaths.size === 0 && pluginSkillCatalogs.size === 0) return '';
     const pathList = [...skillPaths.entries()]
       .map(([slug, path]) => `- ${path} (skill: ${slug})`)
       .join('\n');
-    return `Before proceeding with the user's request, you MUST read the following skill instruction files using the Read tool or \`cat\` via Bash:\n${pathList}\n\nDo not take any other action until you have read these files.`;
+    const explicitSkills = pathList
+      ? `Before proceeding with the user's request, you MUST read the following skill instruction files using the Read tool or \`cat\` via Bash:\n${pathList}\n\nDo not take any other action until you have read these files.`
+      : '';
+    const pluginCatalogs = [...pluginSkillCatalogs.entries()].map(([pluginName, pluginSkills]) => {
+      const catalog = pluginSkills.map(skill =>
+        `- ${skill.metadata.name} (${skill.slug}): ${skill.metadata.description}\n  Instructions: ${join(skill.path, 'SKILL.md')}`
+      ).join('\n');
+      const compatibility = listPluginEntries(this.config.workspace?.rootPath ?? this.workingDirectory)
+        .find(plugin => plugin.name === pluginName)?.compatibility;
+      const sources = loadWorkspaceSources(this.config.workspace?.rootPath ?? this.workingDirectory);
+      const nativeAdapters = compatibility?.authRequirements
+        .filter(requirement => requirement.kind === 'native-source' && requirement.supported)
+        .map(requirement => {
+          const source = sources.find(candidate => {
+            if (candidate.config.provider !== requirement.provider || candidate.config.type !== 'api') return false;
+            if (requirement.provider === 'google') return candidate.config.api?.googleService === requirement.service;
+            if (requirement.provider === 'slack') return candidate.config.api?.slackService === requirement.service;
+            if (requirement.provider === 'microsoft') return candidate.config.api?.microsoftService === requirement.service;
+            return false;
+          });
+          return source
+            ? `- ${requirement.name}: OpenAI Connector tool names in the skill are aliases only. Translate them to authenticated requests through \`api_${source.config.slug}\`; read \`sources/${source.config.slug}/guide.md\` before the first call.`
+            : `- ${requirement.name}: this workflow requires the mapped CA data source to be connected in the plugin details page before its account-backed steps can run.`;
+        }) ?? [];
+      const adapterDirective = nativeAdapters.length > 0
+        ? `\n\nConnector compatibility rules:\n${nativeAdapters.join('\n')}`
+        : '';
+      return `The user selected the ${pluginName} plugin. Choose only the skill or skills relevant to the request from this catalog, then read each selected SKILL.md before using its workflow or tools:\n${catalog}${adapterDirective}`;
+    }).join('\n\n');
+    return [explicitSkills, pluginCatalogs].filter(Boolean).join('\n\n');
   }
 
   // ============================================================
@@ -1030,9 +1075,13 @@ ${formattedMessages}
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
-    const { skillPaths, cleanMessage, missingSkills } = this.extractSkillPaths(message);
-    if (missingSkills.length > 0) {
-      yield { type: 'error', message: `Skill(s) not found: ${missingSkills.join(', ')}` };
+    const { skillPaths, cleanMessage, missingSkills, missingPlugins, pluginSkillCatalogs } = this.extractSkillPaths(message);
+    if (missingSkills.length > 0 || missingPlugins.length > 0) {
+      const missing = [
+        missingSkills.length > 0 ? `Skill(s) not found: ${missingSkills.join(', ')}` : '',
+        missingPlugins.length > 0 ? `Plugin(s) not found: ${missingPlugins.join(', ')}` : '',
+      ].filter(Boolean).join('; ');
+      yield { type: 'error', message: missing };
       yield { type: 'complete' };
       return;
     }
@@ -1057,7 +1106,7 @@ ${formattedMessages}
     }
 
     // Prepend read directive to the message so the model reads SKILL.md first.
-    const directive = this.formatSkillDirective(skillPaths);
+    const directive = this.formatSkillDirective(skillPaths, pluginSkillCatalogs);
     const messageParts = [branchSeedContext, transferredSessionContext, directive, cleanMessage].filter(Boolean);
     const effectiveMessage = messageParts.join('\n\n');
 

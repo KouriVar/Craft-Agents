@@ -1,17 +1,19 @@
-import { Plug } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, KeyRound, Plug, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { WorkspacePluginEntry } from '@craft-agent/shared/plugins'
 import { EntityList } from '@/components/ui/entity-list'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { EntityRow } from '@/components/ui/entity-row'
+import { PluginAvatar } from '@/components/ui/plugin-avatar'
 
 interface PluginsListPanelProps {
+  workspaceId: string
   plugins: WorkspacePluginEntry[]
   selectedPluginName?: string | null
   onPluginClick: (plugin: WorkspacePluginEntry) => void
 }
 
-export function PluginsListPanel({ plugins, selectedPluginName, onPluginClick }: PluginsListPanelProps) {
+export function PluginsListPanel({ workspaceId, plugins, selectedPluginName, onPluginClick }: PluginsListPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -28,13 +30,17 @@ export function PluginsListPanel({ plugins, selectedPluginName, onPluginClick }:
       }
       renderItem={(plugin, _index, isFirst) => (
         <EntityRow
-          icon={<Plug className="h-4 w-4 text-muted-foreground" />}
+          icon={<PluginAvatar plugin={plugin} workspaceId={workspaceId} size="sm" />}
           title={plugin.displayName || plugin.name}
           titleSuffix={plugin.version ? <span className="text-[10px] text-muted-foreground">v{plugin.version}</span> : undefined}
           badges={
             <span className="flex min-w-0 items-center gap-1.5">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${plugin.enabled ? 'bg-success' : 'bg-muted-foreground/40'}`} />
-              <span className="truncate">{plugin.description || plugin.sourceUrl || plugin.installPath || plugin.name}</span>
+              {plugin.compatibility?.level === 'ready' && <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />}
+              {plugin.compatibility?.level === 'needs-auth' && <KeyRound className="h-3 w-3 shrink-0 text-warning" />}
+              {plugin.compatibility?.level === 'partial' && <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />}
+              {plugin.compatibility?.level === 'unsupported' && <XCircle className="h-3 w-3 shrink-0 text-destructive" />}
+              <span className="truncate">{plugin.compatibility?.summary || plugin.description || plugin.sourceUrl || plugin.installPath || plugin.name}</span>
             </span>
           }
           isSelected={selectedPluginName === plugin.name}

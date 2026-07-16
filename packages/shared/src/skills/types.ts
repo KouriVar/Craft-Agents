@@ -39,7 +39,7 @@ export interface SkillMetadata {
 }
 
 /** Source of a loaded skill, ordered from lowest to highest override priority. */
-export type SkillSource = 'builtin' | 'global' | 'workspace' | 'project';
+export type SkillSource = 'builtin' | 'global' | 'plugin' | 'workspace' | 'project';
 
 /**
  * Plugin name for project-level and global skills.
@@ -66,4 +66,10 @@ export interface LoadedSkill {
   path: string;
   /** Where this skill was loaded from */
   source: SkillSource;
+  /** Owning plugin manifest name for plugin-packaged skills. */
+  pluginName?: string;
+  /** Plugin-level presentation metadata shared by its internal skills. */
+  pluginDisplayName?: string;
+  pluginIconPath?: string;
+  pluginBrandColor?: string;
 }

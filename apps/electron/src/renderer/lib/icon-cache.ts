@@ -44,6 +44,7 @@ interface SourceConfig {
 interface SkillConfig {
   slug: string
   iconPath?: string
+  pluginIconPath?: string
   metadata?: { icon?: string }
 }
 
@@ -326,10 +327,11 @@ export async function loadSkillIcon(
   }
 
   // Priority 3: Known icon path - load file
-  if (skill.iconPath) {
-    const skillsMatch = skill.iconPath.match(/skills\/([^/]+)\/(.+)$/)
-    if (skillsMatch) {
-      const relativePath = `skills/${skillsMatch[1]}/${skillsMatch[2]}`
+  const resolvedIconPath = skill.iconPath ?? skill.pluginIconPath
+  if (resolvedIconPath) {
+    const relativeMatch = resolvedIconPath.match(/(?:skills|plugins)\/.+$/)
+    if (relativeMatch) {
+      const relativePath = relativeMatch[0]
       const loaded = await loadWorkspaceIcon(workspaceId, relativePath)
       if (loaded) {
         skillIconCache.set(cacheKey, loaded)
@@ -469,7 +471,7 @@ const ICON_FILE_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg']
  * Matches any known entity directory prefix (skills/, sources/, statuses/)
  * followed by the rest of the path.
  */
-const ICON_PATH_PATTERN = /(?:skills|sources|statuses)\/.+$/
+const ICON_PATH_PATTERN = /(?:plugins|skills|sources|statuses)\/.+$/
 
 /**
  * Options for the useEntityIcon hook.

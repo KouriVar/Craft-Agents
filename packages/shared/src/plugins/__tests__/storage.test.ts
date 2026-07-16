@@ -76,11 +76,18 @@ describe('loadPluginPackage', () => {
       mcpServers: {
         graph: { command: 'node', args: ['server.js'] },
       },
+      interface: {
+        displayName: 'Portable Plugin',
+        brandColor: '#123456',
+        composerIcon: './assets/plugin-icon.svg',
+      },
     });
     mkdirSync(join(tempDir, 'skills'), { recursive: true });
     mkdirSync(join(tempDir, 'extra-skills'), { recursive: true });
     mkdirSync(join(tempDir, 'widgets'), { recursive: true });
     mkdirSync(join(tempDir, '.scatter', 'assets'), { recursive: true });
+    mkdirSync(join(tempDir, 'assets'), { recursive: true });
+    writeFileSync(join(tempDir, 'assets', 'plugin-icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
     writeJson(join(tempDir, '.mcp.json'), { mcpServers: {} });
     writeJson(join(tempDir, '.app.json'), { app: {} });
 
@@ -93,6 +100,9 @@ describe('loadPluginPackage', () => {
       'base-plugin',
       { name: 'widget-runtime', marketplace: 'local' },
     ]);
+    expect(pluginPackage!.manifest.interface?.displayName).toBe('Portable Plugin');
+    expect(pluginPackage!.manifest.interface?.brandColor).toBe('#123456');
+    expect(pluginPackage!.iconPath).toBe(resolve(tempDir, 'assets', 'plugin-icon.svg'));
     expect(pluginPackage!.skillDirs).toEqual([
       resolve(tempDir, 'skills'),
       resolve(tempDir, 'extra-skills'),
@@ -101,6 +111,7 @@ describe('loadPluginPackage', () => {
     expect(pluginPackage!.appConfigPaths).toEqual([resolve(tempDir, '.app.json')]);
     expect(pluginPackage!.widgetAssetDirs).toEqual([
       resolve(tempDir, 'widgets'),
+      resolve(tempDir, 'assets'),
       resolve(tempDir, '.scatter', 'assets'),
     ]);
   });

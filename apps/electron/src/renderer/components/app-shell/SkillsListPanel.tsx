@@ -1,8 +1,9 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Zap } from 'lucide-react'
+import { ChevronRight, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
+import { PluginAvatar } from '@/components/ui/plugin-avatar'
 import { EntityPanel } from '@/components/ui/entity-panel'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { skillSelection } from '@/hooks/useEntitySelection'
@@ -12,6 +13,7 @@ import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
 import type { LoadedSkill } from '../../../shared/types'
+import { buildSkillListItems, type SkillListItem } from './skill-list-items'
 
 export interface SkillsListPanelProps {
   skills: LoadedSkill[]
@@ -37,6 +39,23 @@ export function SkillsListPanel({
   const canRevealLocally = !activeWorkspace?.remoteServer
   const { workspaces, activeWorkspaceId } = useAppShellContext()
   const hasOtherWorkspaces = workspaces.length > 1
+  const [expandedPlugins, setExpandedPlugins] = React.useState<Set<string>>(new Set())
+
+  React.useEffect(() => {
+    if (!selectedSkillSlug) return
+    const selected = skills.find(skill => skill.slug === selectedSkillSlug)
+    if (!selected?.pluginName) return
+    setExpandedPlugins(current => {
+      if (current.has(selected.pluginName!)) return current
+      const next = new Set(current)
+      next.add(selected.pluginName!)
+      return next
+    })
+  }, [selectedSkillSlug, skills])
+
+  const items = React.useMemo<SkillListItem[]>(() => {
+    return buildSkillListItems(skills, expandedPlugins)
+  }, [expandedPlugins, skills])
 
   // Send to Workspace dialog state
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
@@ -45,12 +64,23 @@ export function SkillsListPanel({
 
   return (
     <>
-    <EntityPanel<LoadedSkill>
-      items={skills}
-      getId={(s) => s.slug}
+    <EntityPanel<SkillListItem>
+      items={items}
+      getId={(item) => item.id}
       selection={skillSelection}
       selectedId={selectedSkillSlug}
-      onItemClick={onSkillClick}
+      onItemClick={(item) => {
+        if (item.kind === 'skill') {
+          onSkillClick(item.skill)
+          return
+        }
+        setExpandedPlugins(current => {
+          const next = new Set(current)
+          if (next.has(item.pluginName)) next.delete(item.pluginName)
+          else next.add(item.pluginName)
+          return next
+        })
+      }}
       className={className}
       containerProps={{ 'data-list-role': 'skills' }}
       emptyState={
@@ -73,33 +103,55 @@ export function SkillsListPanel({
           )}
         </EntityListEmptyScreen>
       }
-      mapItem={(skill) => ({
-        icon: <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />,
-        title: skill.metadata.name,
+      mapItem={(item) => item.kind === 'plugin' ? {
+        icon: (
+          <PluginAvatar
+            plugin={{ name: item.pluginName, displayName: item.displayName, iconPath: item.iconPath }}
+            size="sm"
+            workspaceId={workspaceId || ''}
+          />
+        ),
+        title: item.displayName,
+        badges: (
+          <span className="truncate">
+            {t('skillsList.pluginSkillCount', {
+              defaultValue: '{{count}} skills',
+              count: item.skills.length,
+            })}
+          </span>
+        ),
+        trailing: (
+          <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${item.expanded ? 'rotate-90' : ''}`} />
+        ),
+        disableSelection: true,
+        dataAttributes: { 'data-skill-plugin-group': item.pluginName },
+      } : {
+        icon: <SkillAvatar skill={item.skill} size="sm" workspaceId={workspaceId} />,
+        title: item.skill.metadata.name,
         badges: (
           <span className="flex items-center gap-1.5 min-w-0">
-            {skill.source === 'project' && (
+            {item.skill.source === 'project' && (
               <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-foreground/5 text-muted-foreground">
                 {t('skillsList.projectBadge')}
               </span>
             )}
-            {skill.source === 'builtin' && (
+            {item.skill.source === 'builtin' && (
               <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-foreground/5 text-muted-foreground">
                 {t('skillsList.builtinBadge')}
               </span>
             )}
-            <span className="truncate">{skill.metadata.description}</span>
+            <span className="truncate">{item.skill.metadata.description}</span>
           </span>
         ),
         menu: (
           <SkillMenu
-            skillSlug={skill.slug}
-            skillName={skill.metadata.name}
-            onOpenInNewWindow={() => window.electronAPI.openUrl(`craftagents://skills/skill/${skill.slug}?window=focused`)}
+            skillSlug={item.skill.slug}
+            skillName={item.skill.metadata.name}
+            onOpenInNewWindow={() => window.electronAPI.openUrl(`craftagents://skills/skill/${item.skill.slug}?window=focused`)}
             onShowInFinder={async () => {
               if (!canRevealLocally) return
               try {
-                await window.electronAPI.showInFolder(skill.path)
+                await window.electronAPI.showInFolder(item.skill.path)
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err)
                 toast.error(t('toast.failedToReveal', { fileManager: getFileManagerName() }), {
@@ -108,21 +160,25 @@ export function SkillsListPanel({
               }
             }}
             canShowInFinder={canRevealLocally}
-            onDelete={skill.source === 'workspace' ? () => onDeleteSkill(skill.slug) : undefined}
-            canDelete={skill.source === 'workspace'}
-            deleteLabel={skill.source === 'workspace'
+            onDelete={item.skill.source === 'workspace' ? () => onDeleteSkill(item.skill.slug) : undefined}
+            canDelete={item.skill.source === 'workspace'}
+            deleteLabel={item.skill.source === 'workspace'
               ? t('skillsList.deleteSkill')
-              : skill.source === 'builtin'
+              : item.skill.source === 'builtin'
                 ? t('skillsList.managedByApp')
                 : t('skillsList.managedByProject')}
-            onSendToWorkspace={hasOtherWorkspaces && skill.source === 'workspace' ? () => {
-              setSendResourceSlug(skill.slug)
-              setSendResourceLabel(skill.metadata.name)
+            onSendToWorkspace={hasOtherWorkspaces && item.skill.source === 'workspace' ? () => {
+              setSendResourceSlug(item.skill.slug)
+              setSendResourceLabel(item.skill.metadata.name)
               setSendDialogOpen(true)
             } : undefined}
           />
         ),
-      })}
+        className: item.nested ? 'pl-5' : undefined,
+        dataAttributes: item.nested
+          ? { 'data-skill-plugin-child': item.skill.pluginName }
+          : undefined,
+      }}
     />
 
     {/* Send to Workspace dialog */}

@@ -87,7 +87,7 @@ import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlA
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import {
   loadPluginMcpServerDefinitions,
-  loadPreflightedPluginMcpServers,
+  loadResolvedPluginMcpServers,
   resolvePluginToolPolicy,
 } from '@craft-agent/shared/plugins'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
@@ -438,7 +438,7 @@ async function buildServersFromSources(
     getCredentialForSource,
   )
   span.mark('servers.built')
-  const pluginMcpServers = loadPreflightedPluginMcpServers(workspaceRootPath)
+  const pluginMcpServers = await loadResolvedPluginMcpServers(workspaceRootPath)
   result.mcpServers = { ...pluginMcpServers, ...result.mcpServers }
   span.setMetadata('pluginMcpCount', Object.keys(pluginMcpServers).length)
   span.setMetadata('mcpCount', Object.keys(result.mcpServers).length)
@@ -1767,6 +1767,10 @@ export class SessionManager implements ISessionManager {
         await this.reloadSessionSources(managed)
       }
     }
+  }
+
+  async refreshPluginRuntime(workspaceRootPath: string): Promise<void> {
+    await this.reloadSourcesForWorkspace(workspaceRootPath)
   }
 
   private broadcastSourcesChanged(workspaceId: string, sources: LoadedSource[]): void {
@@ -6032,13 +6036,11 @@ export class SessionManager implements ISessionManager {
 
     const mcpCount = Object.keys(mcpServers).length
     const apiCount = Object.keys(apiServers).length
-    if (mcpCount > 0 || apiCount > 0 || enabledSlugs.length > 0) {
-      const usableSources = sources.filter(isSourceUsable)
-      const intendedSlugs = usableSources.map(s => s.config.slug)
-      await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-      await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message', managed.poolServer?.url)
-      sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API/plugin servers to session ${sessionId} (${allSources.length} total sources)`)
-    }
+    const usableSources = sources.filter(isSourceUsable)
+    const intendedSlugs = usableSources.map(s => s.config.slug)
+    await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+    await applyBridgeUpdates(agent, sessionPath, usableSources, mcpServers, sessionId, workspaceRootPath, 'send message', managed.poolServer?.url)
+    sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API/plugin servers to session ${sessionId} (${allSources.length} total sources)`)
     sendSpan.mark('servers.applied')
 
     try {

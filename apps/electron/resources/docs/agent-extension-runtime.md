@@ -39,6 +39,8 @@ Current implementation baseline:
 - Recognizes `.craft-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `.claude-plugin/plugin.json`.
 - Normalizes core package metadata such as `name`, `displayName`, `version`, `description`, `author`, `license`, `keywords`, `defaultEnabled`, and dependencies.
 - Discovers package-local `skills/`, manifest-declared skill folders, `.mcp.json`, `.app.json`, and common widget asset folders.
+- Produces one compatibility report across skills, MCP, connectors, widgets, and hooks, with explicit ready, authentication-required, partial, unsupported, and unknown states.
+- Parses `.app.json` connector declarations and maps supported common services to CA-native data sources while keeping OpenAI-hosted connector IDs outside the local runtime boundary.
 - Uses the shared manifest reader for workspace/plugin name resolution.
 - Stores workspace plugin state in `plugins/config.json`, including install path, manifest path, manifest format, source, enabled state, and display metadata.
 - Applies plugin enabled state to package-local skill discovery and skill validation.
@@ -69,6 +71,9 @@ Current implementation baseline:
 - Merges enabled plugin MCP servers into session MCP server builds, so plugin tools are available through the same pool as workspace sources.
 - Supports plugin MCP stdio fields including `command`, `args`, `env`, `envVars`, and plugin-relative `cwd`.
 - Supports plugin MCP HTTP/SSE fields including `url`, `headers`, and `bearerTokenEnvVar`.
+- Preserves plugin MCP `auth`, `oauth_resource` / `oauthResource`, and `scopes` metadata.
+- Reuses the Source OAuth broker for plugin servers through workspace-scoped virtual auth identities, including PKCE, dynamic client registration, encrypted token storage, refresh, and bearer injection.
+- Keeps ChatGPT model OAuth credentials isolated from third-party plugin servers; `auth = "chatgpt"` remains limited to trusted OpenAI-hosted infrastructure and is reported as unsupported locally.
 - Preserves MCP tool annotations through proxy tool definitions, the in-process Claude proxy, and the HTTP pool server.
 - Honors MCP `annotations.readOnlyHint` in Explore mode so declared read-only plugin tools can run without broad allowlist patterns.
 - Preserves MCP tool `structuredContent` and `_meta` through the pool, in-process Claude proxy, and HTTP pool server while keeping text `content` backward-compatible for chat display.
@@ -78,7 +83,7 @@ Current implementation baseline:
 
 Not implemented yet:
 
-- No remaining common-protocol MCP/tool gaps are tracked for the current compatibility target.
+- Automatic aliases for every host-specific connector tool schema. Known connectors use CA-native authenticated API tools plus injected translation guidance; exact hosted tool contracts still require service-specific adapters.
 
 ### 4. Apps And Widget Layer
 
@@ -137,6 +142,8 @@ Current implementation baseline:
 - Tracks widget loading, ready, error, and closed states; sidebar errors are visible and failed resources can be retried in place.
 - Removes widget tabs when their bound session is deleted.
 - Provides a Plugins settings page for enablement and MCP diagnostics, including missing dependencies, authentication failures, invalid schemas, transport errors, and discovered tool counts.
+- Shows compatibility and invocation guidance before installation and repeats the same capability report in installed-plugin details.
+- Provides direct actions for standard plugin MCP OAuth, CA-native connector source setup, and explicit unsupported-state messaging for private hosted connectors.
 - Stores workspace plugin policy in `plugins/policies.json`, with default and per-tool `inherit`, `allow`, `ask`, and `deny` controls that cannot bypass Explore mode.
 - Coalesces concurrent restart attempts for a failed MCP transport and restores open MCP App tabs as paused, reconnectable views after a full application restart.
 
