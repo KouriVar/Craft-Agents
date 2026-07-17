@@ -11,7 +11,7 @@ import ReactDOM from 'react-dom/client'
 import { useTranslation, initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { setupI18n } from '@craft-agent/shared/i18n'
-import { EyeOff, X, XCircle } from 'lucide-react'
+import { EyeOff, KeyRound, Pin, Puzzle, ShieldCheck, Star, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import {
@@ -37,17 +37,24 @@ interface ToolbarState {
   canGoBack: boolean
   canGoForward: boolean
   themeColor?: string | null
+  bookmarked?: boolean
+  embedded?: boolean
 }
 
 declare global {
   interface Window {
     browserToolbar: {
       instanceId: string
+      embedded: boolean
       navigate: (url: string) => Promise<void>
       goBack: () => Promise<void>
       goForward: () => Promise<void>
       reload: () => Promise<void>
       stop: () => Promise<void>
+      setRevealed: (revealed: boolean) => Promise<void>
+      pinEmbedded: () => Promise<void>
+      showEmbeddedMenu: (kind: 'extensions' | 'permissions' | 'passwords') => Promise<void>
+      toggleBookmark: () => Promise<void>
       setMenuGeometry: (open: boolean, height?: number) => Promise<void>
       hideWindow: () => Promise<void>
       closeWindowEntirely: () => Promise<void>
@@ -73,6 +80,8 @@ function BrowserToolbarApp() {
   })
   const [themeColor, setThemeColor] = useState<string | null>(null)
   const [windowMenuOpen, setWindowMenuOpen] = useState(false)
+  const [embeddedRevealed, setEmbeddedRevealed] = useState(false)
+  const [embeddedFocused, setEmbeddedFocused] = useState(false)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
 
   const api = window.browserToolbar
@@ -162,8 +171,36 @@ function BrowserToolbarApp() {
     void api?.closeWindowEntirely()
   }, [api])
 
+  const embedded = Boolean(api?.embedded)
+
   return (
-    <>
+    <div
+      className={embedded
+        ? (embeddedRevealed
+            ? 'h-full overflow-hidden rounded-[10px] border border-foreground/20 bg-background shadow-modal-small'
+            : 'h-full overflow-hidden border border-transparent bg-transparent shadow-none')
+        : 'h-full'}
+      onMouseEnter={embedded ? () => {
+        setEmbeddedRevealed(true)
+        void api?.setRevealed(true)
+      } : undefined}
+      onMouseLeave={embedded ? () => {
+        if (embeddedFocused) return
+        setEmbeddedRevealed(false)
+        void api?.setRevealed(false)
+      } : undefined}
+      onFocusCapture={embedded ? () => {
+        setEmbeddedFocused(true)
+        setEmbeddedRevealed(true)
+        void api?.setRevealed(true)
+      } : undefined}
+      onBlurCapture={embedded ? (event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        setEmbeddedFocused(false)
+        setEmbeddedRevealed(false)
+        void api?.setRevealed(false)
+      } : undefined}
+    >
       {/*
         Full-window outside-tap catcher while menu is open.
         Critical for draggable titlebar windows (Windows) where outside-click
@@ -189,7 +226,42 @@ function BrowserToolbarApp() {
         onGoForward={handleGoForward}
         onReload={handleReload}
         onStop={handleStop}
-        trailingContent={(
+        trailingContent={embedded ? (
+          <div className="ml-2 flex items-center gap-1 titlebar-no-drag">
+            <HeaderIconButton
+              icon={<ShieldCheck className="h-4 w-4" />}
+              aria-label={t('browser.sitePermissions', { defaultValue: 'Site permissions' })}
+              onClick={() => { void api?.showEmbeddedMenu('permissions') }}
+              className="bg-background hover:bg-foreground/5"
+            />
+            <HeaderIconButton
+              icon={<KeyRound className="h-4 w-4" />}
+              aria-label={t('browser.passwords', { defaultValue: 'Passwords' })}
+              onClick={() => { void api?.showEmbeddedMenu('passwords') }}
+              className="bg-background hover:bg-foreground/5"
+            />
+            <HeaderIconButton
+              icon={<Puzzle className="h-4 w-4" />}
+              aria-label={t('plugins.browserExtensions', { defaultValue: 'Extensions' })}
+              onClick={() => { void api?.showEmbeddedMenu('extensions') }}
+              className="bg-background hover:bg-foreground/5"
+            />
+            <HeaderIconButton
+              icon={<Star className={state.bookmarked ? 'h-4 w-4 fill-current' : 'h-4 w-4'} />}
+              aria-label={state.bookmarked
+                ? t('browser.removeBookmark', { defaultValue: 'Remove bookmark' })
+                : t('browser.addBookmark', { defaultValue: 'Add bookmark' })}
+              onClick={() => { void api?.toggleBookmark() }}
+              className={state.bookmarked ? 'bg-foreground/[0.08] text-foreground' : 'bg-background hover:bg-foreground/5'}
+            />
+            <HeaderIconButton
+              icon={<Pin className="h-4 w-4 rotate-45" />}
+              aria-label={t('rightSidebar.pinToolbar', { defaultValue: '固定工具栏' })}
+              onClick={() => { void api?.pinEmbedded() }}
+              className="bg-background hover:bg-foreground/5"
+            />
+          </div>
+        ) : (
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
             <DropdownMenu open={windowMenuOpen} onOpenChange={setWindowMenuOpen}>
               <DropdownMenuTrigger asChild>
@@ -225,7 +297,7 @@ function BrowserToolbarApp() {
         urlBarClassName="max-w-[600px]"
         className="titlebar-drag-region bg-background"
       />
-    </>
+    </div>
   )
 }
 

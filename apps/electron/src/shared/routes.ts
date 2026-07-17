@@ -164,6 +164,12 @@ export const routes = {
       return `plugins/plugin/${encodeURIComponent(pluginName)}` as const
     },
 
+    /** Browser workspace view. */
+    browser: (tabId?: string) => {
+      if (!tabId) return 'browser' as const
+      return `browser/tab/${encodeURIComponent(tabId)}` as const
+    },
+
     /** Automations view (automations navigator) - supports type filtering */
     automations: (params?: { automationId?: string; type?: 'scheduled' | 'event' | 'agentic' }) => {
       const { automationId, type } = params ?? {}

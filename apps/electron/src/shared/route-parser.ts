@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'automations' | 'projects' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'browser' | 'automations' | 'projects' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'automations', 'projects', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'browser', 'automations', 'projects', 'settings'
 ]
 
 /**
@@ -186,6 +186,19 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       return {
         navigator: 'plugins',
         details: { type: 'plugin', id: decodeURIComponent(segments[2]) },
+      }
+    }
+    return null
+  }
+
+  if (first === 'browser') {
+    if (segments.length === 1) {
+      return { navigator: 'browser', details: null }
+    }
+    if (segments[1] === 'tab' && segments[2]) {
+      return {
+        navigator: 'browser',
+        details: { type: 'browser-tab', id: decodeURIComponent(segments[2]) },
       }
     }
     return null
@@ -328,6 +341,11 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
     return `plugins/plugin/${encodeURIComponent(parsed.details.id)}`
   }
 
+  if (parsed.navigator === 'browser') {
+    if (!parsed.details) return 'browser'
+    return `browser/tab/${encodeURIComponent(parsed.details.id)}`
+  }
+
   if (parsed.navigator === 'automations') {
     // Build base from filter (automations, automations/scheduled, automations/event, automations/agentic)
     let base = 'automations'
@@ -464,6 +482,11 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
   if (compound.navigator === 'plugins') {
     if (!compound.details) return { type: 'view', name: 'plugins', params: {} }
     return { type: 'view', name: 'plugin-info', id: compound.details.id, params: {} }
+  }
+
+  if (compound.navigator === 'browser') {
+    if (!compound.details) return { type: 'view', name: 'browser', params: {} }
+    return { type: 'view', name: 'browser-tab', id: compound.details.id, params: {} }
   }
 
   // Automations
@@ -611,6 +634,16 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     }
   }
 
+  if (compound.navigator === 'browser') {
+    if (!compound.details) {
+      return { navigator: 'browser', details: null }
+    }
+    return {
+      navigator: 'browser',
+      details: { type: 'browser-tab', tabId: compound.details.id },
+    }
+  }
+
   // Automations - include filter if present
   if (compound.navigator === 'automations') {
     if (!compound.details) {
@@ -713,6 +746,16 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
         }
       }
       return { navigator: 'plugins', details: null }
+    case 'browser':
+      return { navigator: 'browser', details: null }
+    case 'browser-tab':
+      if (parsed.id) {
+        return {
+          navigator: 'browser',
+          details: { type: 'browser-tab', tabId: parsed.id },
+        }
+      }
+      return { navigator: 'browser', details: null }
     case 'automations':
       return { navigator: 'automations', details: null }
     case 'automation-info':
@@ -840,6 +883,13 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     return {
       navigator: 'plugins',
       details: state.details ? { type: 'plugin', id: state.details.pluginName } : null,
+    }
+  }
+
+  if (state.navigator === 'browser') {
+    return {
+      navigator: 'browser',
+      details: state.details ? { type: 'browser-tab', id: state.details.tabId } : null,
     }
   }
 

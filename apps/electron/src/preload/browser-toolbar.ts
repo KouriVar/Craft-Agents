@@ -14,6 +14,10 @@ const CHANNELS = {
   GO_FORWARD: 'browser-toolbar:go-forward',
   RELOAD: 'browser-toolbar:reload',
   STOP: 'browser-toolbar:stop',
+  SET_REVEALED: 'browser-toolbar:set-revealed',
+  PIN_EMBEDDED: 'browser-toolbar:pin-embedded',
+  SHOW_EMBEDDED_MENU: 'browser-toolbar:show-embedded-menu',
+  TOGGLE_BOOKMARK: 'browser-toolbar:toggle-bookmark',
   MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
   FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
   HIDE: 'browser-toolbar:hide',
@@ -24,14 +28,20 @@ const CHANNELS = {
 
 // Instance ID is passed via query parameter by BrowserPaneManager
 const instanceId = new URLSearchParams(location.search).get('instanceId') || ''
+const embedded = new URLSearchParams(location.search).get('embedded') === '1'
 
 contextBridge.exposeInMainWorld('browserToolbar', {
   instanceId,
+  embedded,
   navigate: (url: string) => ipcRenderer.invoke(CHANNELS.NAVIGATE, instanceId, url),
   goBack: () => ipcRenderer.invoke(CHANNELS.GO_BACK, instanceId),
   goForward: () => ipcRenderer.invoke(CHANNELS.GO_FORWARD, instanceId),
   reload: () => ipcRenderer.invoke(CHANNELS.RELOAD, instanceId),
   stop: () => ipcRenderer.invoke(CHANNELS.STOP, instanceId),
+  setRevealed: (revealed: boolean) => ipcRenderer.invoke(CHANNELS.SET_REVEALED, instanceId, revealed),
+  pinEmbedded: () => ipcRenderer.invoke(CHANNELS.PIN_EMBEDDED, instanceId),
+  showEmbeddedMenu: (kind: 'extensions' | 'permissions' | 'passwords') => ipcRenderer.invoke(CHANNELS.SHOW_EMBEDDED_MENU, instanceId, kind),
+  toggleBookmark: () => ipcRenderer.invoke(CHANNELS.TOGGLE_BOOKMARK, instanceId),
   setMenuGeometry: (open: boolean, height = 0) => ipcRenderer.invoke(CHANNELS.MENU_GEOMETRY, instanceId, open, height),
   hideWindow: () => ipcRenderer.invoke(CHANNELS.HIDE, instanceId),
   closeWindowEntirely: () => ipcRenderer.invoke(CHANNELS.DESTROY, instanceId),

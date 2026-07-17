@@ -1,4 +1,4 @@
-import { RPC_CHANNELS, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload } from '../../shared/types'
+import { RPC_CHANNELS, type BrowserPaneBounds, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload, type BrowserWorkspaceSnapshot } from '../../shared/types'
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -13,6 +13,40 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.browserPane.RELOAD,
   RPC_CHANNELS.browserPane.STOP,
   RPC_CHANNELS.browserPane.FOCUS,
+  RPC_CHANNELS.browserPane.SET_EMBEDDED_BOUNDS,
+  RPC_CHANNELS.browserPane.SET_EMBEDDED_VISIBLE,
+  RPC_CHANNELS.browserPane.SET_EMBEDDED_TOOLBAR_MODE,
+  RPC_CHANNELS.browserPane.LOAD_WORKSPACE_STATE,
+  RPC_CHANNELS.browserPane.SAVE_WORKSPACE_STATE,
+  RPC_CHANNELS.browserPane.LIST_BOOKMARKS,
+  RPC_CHANNELS.browserPane.ADD_BOOKMARK,
+  RPC_CHANNELS.browserPane.UPDATE_BOOKMARK,
+  RPC_CHANNELS.browserPane.REMOVE_BOOKMARK,
+  RPC_CHANNELS.browserPane.LIST_BOOKMARK_FOLDERS,
+  RPC_CHANNELS.browserPane.CREATE_BOOKMARK_FOLDER,
+  RPC_CHANNELS.browserPane.RENAME_BOOKMARK_FOLDER,
+  RPC_CHANNELS.browserPane.REMOVE_BOOKMARK_FOLDER,
+  RPC_CHANNELS.browserPane.IMPORT_BOOKMARKS,
+  RPC_CHANNELS.browserPane.EXPORT_BOOKMARKS,
+  RPC_CHANNELS.browserPane.LIST_HISTORY,
+  RPC_CHANNELS.browserPane.REMOVE_HISTORY_ENTRY,
+  RPC_CHANNELS.browserPane.CLEAR_HISTORY,
+  RPC_CHANNELS.browserPane.LIST_DOWNLOADS,
+  RPC_CHANNELS.browserPane.CLEAR_DOWNLOADS,
+  RPC_CHANNELS.browserPane.OPEN_DOWNLOAD,
+  RPC_CHANNELS.browserPane.SHOW_DOWNLOAD,
+  RPC_CHANNELS.browserPane.PAUSE_DOWNLOAD,
+  RPC_CHANNELS.browserPane.RESUME_DOWNLOAD,
+  RPC_CHANNELS.browserPane.CANCEL_DOWNLOAD,
+  RPC_CHANNELS.browserPane.RETRY_DOWNLOAD,
+  RPC_CHANNELS.browserPane.LIST_PERMISSIONS,
+  RPC_CHANNELS.browserPane.CLEAR_PERMISSION,
+  RPC_CHANNELS.browserPane.LIST_EXTENSIONS,
+  RPC_CHANNELS.browserPane.INSTALL_EXTENSION,
+  RPC_CHANNELS.browserPane.REMOVE_EXTENSION,
+  RPC_CHANNELS.browserPane.OPEN_EXTENSION_ACTION,
+  RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU,
+  RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE,
   RPC_CHANNELS.browserPane.LAUNCH,
   RPC_CHANNELS.browserPane.SNAPSHOT,
   RPC_CHANNELS.browserPane.CLICK,
@@ -45,7 +79,12 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       })
     }
 
-    return browserPaneManager.createInstance(input?.id, { show: input?.show, workspaceId })
+    return browserPaneManager.createInstance(input?.id, {
+      show: input?.show,
+      workspaceId,
+      embeddedHostWebContentsId: input?.embedded ? (ctx.webContentsId ?? undefined) : undefined,
+      initialUrl: input?.initialUrl,
+    })
   })
 
   server.handle(RPC_CHANNELS.browserPane.DESTROY, (_ctx, id: string) => {
@@ -98,6 +137,132 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
   server.handle(RPC_CHANNELS.browserPane.FOCUS, (_ctx, id: string) => {
     browserPaneManager.focus(id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.SET_EMBEDDED_BOUNDS, (ctx, id: string, bounds: BrowserPaneBounds) => {
+    browserPaneManager.setEmbeddedBounds(id, ctx.webContentsId!, bounds)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.SET_EMBEDDED_VISIBLE, (ctx, id: string, visible: boolean) => {
+    browserPaneManager.setEmbeddedVisible(id, ctx.webContentsId!, visible)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.SET_EMBEDDED_TOOLBAR_MODE, (ctx, id: string, mode: 'fixed' | 'floating') => {
+    browserPaneManager.setEmbeddedToolbarMode(id, ctx.webContentsId!, mode)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LOAD_WORKSPACE_STATE, (ctx) => {
+    return browserPaneManager.loadWorkspaceState(ctx.workspaceId ?? '')
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.SAVE_WORKSPACE_STATE, (ctx, snapshot: BrowserWorkspaceSnapshot) => {
+    browserPaneManager.saveWorkspaceState(ctx.workspaceId ?? '', snapshot)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_BOOKMARKS, (ctx) => {
+    return browserPaneManager.listBookmarks(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.ADD_BOOKMARK, (ctx, entry: { url: string; title: string; favicon?: string | null; folderId?: string | null }) => {
+    return browserPaneManager.addBookmark(ctx.workspaceId ?? null, entry)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.UPDATE_BOOKMARK, (ctx, id: string, changes: { title?: string; folderId?: string | null }) => {
+    return browserPaneManager.updateBookmark(ctx.workspaceId ?? null, id, changes)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.REMOVE_BOOKMARK, (ctx, idOrUrl: string) => {
+    browserPaneManager.removeBookmark(ctx.workspaceId ?? null, idOrUrl)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_BOOKMARK_FOLDERS, (ctx) => {
+    return browserPaneManager.listBookmarkFolders(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.CREATE_BOOKMARK_FOLDER, (ctx, name: string) => {
+    return browserPaneManager.createBookmarkFolder(ctx.workspaceId ?? null, name)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.RENAME_BOOKMARK_FOLDER, (ctx, id: string, name: string) => {
+    return browserPaneManager.renameBookmarkFolder(ctx.workspaceId ?? null, id, name)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.REMOVE_BOOKMARK_FOLDER, (ctx, id: string) => {
+    browserPaneManager.removeBookmarkFolder(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.IMPORT_BOOKMARKS, (ctx) => {
+    return browserPaneManager.importBookmarks(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.EXPORT_BOOKMARKS, (ctx) => {
+    return browserPaneManager.exportBookmarks(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_HISTORY, (ctx, limit?: number) => {
+    return browserPaneManager.listHistory(ctx.workspaceId ?? null, limit)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.REMOVE_HISTORY_ENTRY, (ctx, id: string) => {
+    browserPaneManager.removeHistoryEntry(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_HISTORY, (ctx) => {
+    browserPaneManager.clearHistory(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_DOWNLOADS, (ctx, limit?: number) => {
+    return browserPaneManager.listBrowserDownloads(ctx.workspaceId ?? null, limit)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_DOWNLOADS, (ctx) => {
+    browserPaneManager.clearBrowserDownloads(ctx.workspaceId ?? null)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.OPEN_DOWNLOAD, async (ctx, id: string) => {
+    await browserPaneManager.openBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.SHOW_DOWNLOAD, (ctx, id: string) => {
+    browserPaneManager.showBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.PAUSE_DOWNLOAD, (ctx, id: string) => {
+    browserPaneManager.pauseBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.RESUME_DOWNLOAD, (ctx, id: string) => {
+    browserPaneManager.resumeBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.CANCEL_DOWNLOAD, (ctx, id: string) => {
+    browserPaneManager.cancelBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.RETRY_DOWNLOAD, (ctx, id: string) => {
+    browserPaneManager.retryBrowserDownload(ctx.workspaceId ?? null, id)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_PERMISSIONS, (_ctx, origin?: string) => {
+    return browserPaneManager.listBrowserPermissions(origin)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_PERMISSION, (_ctx, origin: string, permission?: string) => {
+    browserPaneManager.clearBrowserPermission(origin, permission)
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_EXTENSIONS, () => browserPaneManager.listExtensions())
+  server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION, (_ctx, path: string) => browserPaneManager.installExtension(path))
+  server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE, (_ctx, urlOrId: string) => browserPaneManager.installExtensionFromStore(urlOrId))
+  server.handle(RPC_CHANNELS.browserPane.REMOVE_EXTENSION, (_ctx, id: string) => browserPaneManager.removeExtension(id))
+  server.handle(RPC_CHANNELS.browserPane.OPEN_EXTENSION_ACTION, (_ctx, extensionId: string, tabId?: string | null) => {
+    return browserPaneManager.openExtensionAction(extensionId, tabId)
+  })
+  server.handle(RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU, (_ctx, kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null) => {
+    browserPaneManager.showToolbarMenu(kind, tabId, origin)
+  })
+  server.handle(RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE, (_ctx, extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }) => {
+    browserPaneManager.setExtensionPreference(extensionId, preference)
   })
 
   server.handle(RPC_CHANNELS.browserPane.LAUNCH, async (ctx, payload: BrowserEmptyStateLaunchPayload) => {

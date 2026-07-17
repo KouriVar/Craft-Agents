@@ -263,6 +263,7 @@ function getOAuthDefines(): Record<string, string> {
     "SLACK_OAUTH_CLIENT_SECRET",
     "MICROSOFT_OAUTH_CLIENT_ID",
     "MICROSOFT_OAUTH_CLIENT_SECRET",
+    "CRAFT_WEBAUTHN_KEYCHAIN_ACCESS_GROUP",
   ];
 
   const defines: Record<string, string> = {};
@@ -440,6 +441,25 @@ async function main(): Promise<void> {
   const vitePort = process.env.CRAFT_VITE_PORT || "5173";
   const oauthDefines = getOAuthDefines();
 
+  if (process.platform === "darwin") {
+    const keychainHelper = spawn({
+      cmd: [
+        "xcrun", "swiftc",
+        join(ROOT_DIR, "apps/electron/src/native/browser-keychain-helper.swift"),
+        "-o", join(DIST_DIR, "browser-keychain-helper"),
+        "-framework", "Security",
+      ],
+      cwd: ROOT_DIR,
+      stdin: "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (await keychainHelper.exited !== 0) {
+      console.error("❌ Browser Keychain helper build failed");
+      process.exit(1);
+    }
+  }
+
   // Kill any existing process on the Vite port
   await killProcessOnPort(vitePort);
 
@@ -451,14 +471,16 @@ async function main(): Promise<void> {
   const mainCjsPath = join(DIST_DIR, "main.cjs");
   const preloadCjsPath = join(DIST_DIR, "bootstrap-preload.cjs");
   const toolbarPreloadCjsPath = join(DIST_DIR, "browser-toolbar-preload.cjs");
+  const pagePreloadCjsPath = join(DIST_DIR, "browser-page-preload.cjs");
 
   // Remove old build files to ensure fresh build
   if (existsSync(mainCjsPath)) rmSync(mainCjsPath);
   if (existsSync(preloadCjsPath)) rmSync(preloadCjsPath);
   if (existsSync(toolbarPreloadCjsPath)) rmSync(toolbarPreloadCjsPath);
+  if (existsSync(pagePreloadCjsPath)) rmSync(pagePreloadCjsPath);
 
   // Build main and preload entries in parallel
-  const [mainResult, preloadResult, toolbarPreloadResult] = await Promise.all([
+  const [mainResult, preloadResult, toolbarPreloadResult, pagePreloadResult] = await Promise.all([
     runEsbuild(
       "apps/electron/src/main/index.ts",
       "apps/electron/dist/main.cjs",
@@ -472,6 +494,10 @@ async function main(): Promise<void> {
     runEsbuild(
       "apps/electron/src/preload/browser-toolbar.ts",
       "apps/electron/dist/browser-toolbar-preload.cjs"
+    ),
+    runEsbuild(
+      "apps/electron/src/preload/browser-page.ts",
+      "apps/electron/dist/browser-page-preload.cjs"
     ),
   ]);
 
@@ -489,26 +515,32 @@ async function main(): Promise<void> {
     console.error("❌ Browser toolbar preload build failed:", toolbarPreloadResult.error);
     process.exit(1);
   }
+  if (!pagePreloadResult.success) {
+    console.error("❌ Browser page preload build failed:", pagePreloadResult.error);
+    process.exit(1);
+  }
 
   // Wait for files to stabilize (filesystem flush)
   console.log("⏳ Waiting for build files to stabilize...");
-  const [mainStable, preloadStable, toolbarPreloadStable] = await Promise.all([
+  const [mainStable, preloadStable, toolbarPreloadStable, pagePreloadStable] = await Promise.all([
     waitForFileStable(mainCjsPath),
     waitForFileStable(preloadCjsPath),
     waitForFileStable(toolbarPreloadCjsPath),
+    waitForFileStable(pagePreloadCjsPath),
   ]);
 
-  if (!mainStable || !preloadStable || !toolbarPreloadStable) {
+  if (!mainStable || !preloadStable || !toolbarPreloadStable || !pagePreloadStable) {
     console.error("❌ Build files did not stabilize");
     process.exit(1);
   }
 
   // Verify the built files are valid JavaScript
   console.log("🔍 Verifying build output...");
-  const [mainValid, preloadValid, toolbarPreloadValid] = await Promise.all([
+  const [mainValid, preloadValid, toolbarPreloadValid, pagePreloadValid] = await Promise.all([
     verifyJsFile(mainCjsPath),
     verifyJsFile(preloadCjsPath),
     verifyJsFile(toolbarPreloadCjsPath),
+    verifyJsFile(pagePreloadCjsPath),
   ]);
 
   if (!mainValid.valid) {
@@ -523,6 +555,10 @@ async function main(): Promise<void> {
 
   if (!toolbarPreloadValid.valid) {
     console.error("❌ browser-toolbar-preload.cjs is invalid:", toolbarPreloadValid.error);
+    process.exit(1);
+  }
+  if (!pagePreloadValid.valid) {
+    console.error("❌ browser-page-preload.cjs is invalid:", pagePreloadValid.error);
     process.exit(1);
   }
 
@@ -590,6 +626,19 @@ async function main(): Promise<void> {
   await toolbarPreloadContext.watch();
   esbuildContexts.push(toolbarPreloadContext);
   console.log("👀 Watching browser toolbar preload...");
+
+  const pagePreloadContext = await esbuild.context({
+    entryPoints: [join(ROOT_DIR, "apps/electron/src/preload/browser-page.ts")],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    outfile: join(ROOT_DIR, "apps/electron/dist/browser-page-preload.cjs"),
+    external: ["electron"],
+    logLevel: "info",
+  });
+  await pagePreloadContext.watch();
+  esbuildContexts.push(pagePreloadContext);
+  console.log("👀 Watching browser page preload...");
 
   // 5. Start Electron (build already verified)
   console.log("🚀 Starting Electron...\n");

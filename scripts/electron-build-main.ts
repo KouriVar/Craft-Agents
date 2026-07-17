@@ -20,6 +20,8 @@ const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 const WA_WORKER_DIR = join(ROOT_DIR, "packages/messaging-whatsapp-worker");
 const WA_WORKER_SOURCE = join(WA_WORKER_DIR, "src/worker.ts");
 const WA_WORKER_OUTPUT = join(WA_WORKER_DIR, "dist/worker.cjs");
+const KEYCHAIN_HELPER_SOURCE = join(ROOT_DIR, "apps/electron/src/native/browser-keychain-helper.swift");
+const KEYCHAIN_HELPER_OUTPUT = join(DIST_DIR, "browser-keychain-helper");
 
 // Load .env file if it exists
 function loadEnvFile(): void {
@@ -57,6 +59,7 @@ function getBuildDefines(): string[] {
     "MICROSOFT_OAUTH_CLIENT_SECRET",
     "SENTRY_ELECTRON_INGEST_URL",
     "CRAFT_DEV_RUNTIME",
+    "CRAFT_WEBAUTHN_KEYCHAIN_ACCESS_GROUP",
   ];
 
   return definedVars.map((varName) => {
@@ -333,6 +336,21 @@ async function main(): Promise<void> {
 
   // Build WhatsApp worker (Baileys subprocess — optional package)
   await buildWhatsAppWorker();
+
+  if (process.platform === "darwin") {
+    console.log("🔐 Building browser Keychain helper...");
+    const helper = spawn({
+      cmd: ["xcrun", "swiftc", KEYCHAIN_HELPER_SOURCE, "-o", KEYCHAIN_HELPER_OUTPUT, "-framework", "Security"],
+      cwd: ROOT_DIR,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const helperExitCode = await helper.exited;
+    if (helperExitCode !== 0 || !existsSync(KEYCHAIN_HELPER_OUTPUT)) {
+      console.error("❌ Browser Keychain helper build failed");
+      process.exit(helperExitCode || 1);
+    }
+  }
 
   const buildDefines = getBuildDefines();
 

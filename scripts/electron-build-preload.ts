@@ -4,6 +4,7 @@
  * Builds preload entry points:
  * - apps/electron/src/preload/bootstrap.ts -> dist/bootstrap-preload.cjs
  * - apps/electron/src/preload/browser-toolbar.ts -> dist/browser-toolbar-preload.cjs
+ * - apps/electron/src/preload/browser-page.ts -> dist/browser-page-preload.cjs
  */
 
 import { spawn } from "bun";
@@ -23,6 +24,11 @@ const OUTPUTS = [
     entry: "apps/electron/src/preload/browser-toolbar.ts",
     outfile: "apps/electron/dist/browser-toolbar-preload.cjs",
     label: "browser-toolbar-preload.cjs",
+  },
+  {
+    entry: "apps/electron/src/preload/browser-page.ts",
+    outfile: "apps/electron/dist/browser-page-preload.cjs",
+    label: "browser-page-preload.cjs",
   },
   {
     entry: "apps/electron/src/preload/cowart.ts",

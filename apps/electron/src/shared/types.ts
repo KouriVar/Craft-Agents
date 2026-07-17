@@ -86,7 +86,12 @@ export const BROWSER_TOOLBAR_CHANNELS = {
   GO_FORWARD: 'browser-toolbar:go-forward',
   RELOAD: 'browser-toolbar:reload',
   STOP: 'browser-toolbar:stop',
-  OPEN_MENU: 'browser-toolbar:open-menu',
+  SET_REVEALED: 'browser-toolbar:set-revealed',
+  PIN_EMBEDDED: 'browser-toolbar:pin-embedded',
+  SHOW_EMBEDDED_MENU: 'browser-toolbar:show-embedded-menu',
+  TOGGLE_BOOKMARK: 'browser-toolbar:toggle-bookmark',
+  MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
+  FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
   HIDE: 'browser-toolbar:hide',
   DESTROY: 'browser-toolbar:destroy',
   STATE_UPDATE: 'browser-toolbar:state-update',
@@ -109,6 +114,17 @@ export interface BrowserPaneCreateOptions {
   id?: string
   show?: boolean
   bindToSessionId?: string
+  /** Render the runtime as a child surface inside the requesting app window. */
+  embedded?: boolean
+  /** Navigate after the runtime's internal new-tab page has initialized. */
+  initialUrl?: string
+}
+
+export interface BrowserPaneBounds {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 /**
@@ -215,6 +231,13 @@ import type {
   WorkspaceSettings,
   PermissionModeState,
   BrowserInstanceInfo,
+  BrowserBookmarkEntry,
+  BrowserBookmarkFolder,
+  BrowserHistoryEntry,
+  BrowserDownloadRecord,
+  BrowserExtensionEntry,
+  BrowserPermissionEntry,
+  BrowserWorkspaceSnapshot,
   DeepLinkNavigation,
   TestAutomationPayload,
   TestAutomationResult,
@@ -686,6 +709,41 @@ export interface ElectronAPI {
     reload(id: string): Promise<void>
     stop(id: string): Promise<void>
     focus(id: string): Promise<void>
+    setEmbeddedBounds(id: string, bounds: BrowserPaneBounds): Promise<void>
+    setEmbeddedVisible(id: string, visible: boolean): Promise<void>
+    setEmbeddedToolbarMode(id: string, mode: 'fixed' | 'floating'): Promise<void>
+    loadWorkspaceState(): Promise<BrowserWorkspaceSnapshot>
+    saveWorkspaceState(snapshot: BrowserWorkspaceSnapshot): Promise<void>
+    listBookmarks(): Promise<BrowserBookmarkEntry[]>
+    addBookmark(entry: { url: string; title: string; favicon?: string | null; folderId?: string | null }): Promise<BrowserBookmarkEntry>
+    updateBookmark(id: string, changes: { title?: string; folderId?: string | null }): Promise<BrowserBookmarkEntry>
+    removeBookmark(idOrUrl: string): Promise<void>
+    listBookmarkFolders(): Promise<BrowserBookmarkFolder[]>
+    createBookmarkFolder(name: string): Promise<BrowserBookmarkFolder>
+    renameBookmarkFolder(id: string, name: string): Promise<BrowserBookmarkFolder>
+    removeBookmarkFolder(id: string): Promise<void>
+    importBookmarks(): Promise<{ canceled: boolean; imported: number; skipped: number }>
+    exportBookmarks(): Promise<{ canceled: boolean; path?: string; exported: number }>
+    listHistory(limit?: number): Promise<BrowserHistoryEntry[]>
+    removeHistoryEntry(id: string): Promise<void>
+    clearHistory(): Promise<void>
+    listDownloads(limit?: number): Promise<BrowserDownloadRecord[]>
+    clearDownloads(): Promise<void>
+    openDownload(id: string): Promise<void>
+    showDownload(id: string): Promise<void>
+    pauseDownload(id: string): Promise<void>
+    resumeDownload(id: string): Promise<void>
+    cancelDownload(id: string): Promise<void>
+    retryDownload(id: string): Promise<void>
+    listPermissions(origin?: string): Promise<BrowserPermissionEntry[]>
+    clearPermission(origin: string, permission?: string): Promise<void>
+    listExtensions(): Promise<BrowserExtensionEntry[]>
+    installExtension(path: string): Promise<BrowserExtensionEntry>
+    installExtensionFromStore(urlOrId: string): Promise<BrowserExtensionEntry>
+    removeExtension(id: string): Promise<void>
+    openExtensionAction(extensionId: string, tabId?: string | null): Promise<void>
+    showToolbarMenu(kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null): Promise<void>
+    setExtensionPreference(extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }): Promise<void>
     emptyStateLaunch(payload: BrowserEmptyStateLaunchPayload): Promise<BrowserEmptyStateLaunchResult>
     onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
     onRemoved(callback: (id: string) => void): () => void
@@ -946,6 +1004,12 @@ export interface PluginsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface BrowserNavigationState {
+  navigator: 'browser'
+  details: { type: 'browser-tab'; tabId: string } | null
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Automations navigation state
  */
@@ -974,6 +1038,7 @@ export type NavigationState =
   | SettingsNavigationState
   | SkillsNavigationState
   | PluginsNavigationState
+  | BrowserNavigationState
   | AutomationsNavigationState
   | ProjectsNavigationState
 
@@ -996,6 +1061,10 @@ export const isSkillsNavigation = (
 export const isPluginsNavigation = (
   state: NavigationState
 ): state is PluginsNavigationState => state.navigator === 'plugins'
+
+export const isBrowserNavigation = (
+  state: NavigationState
+): state is BrowserNavigationState => state.navigator === 'browser'
 
 export const isAutomationsNavigation = (
   state: NavigationState
@@ -1029,6 +1098,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `plugins/plugin/${state.details.pluginName}`
     }
     return 'plugins'
+  }
+  if (state.navigator === 'browser') {
+    if (state.details?.type === 'browser-tab') {
+      return `browser/tab/${state.details.tabId}`
+    }
+    return 'browser'
   }
   if (state.navigator === 'automations') {
     if (state.details?.type === 'automation') {
@@ -1086,6 +1161,14 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
     return pluginName
       ? { navigator: 'plugins', details: { type: 'plugin', pluginName } }
       : { navigator: 'plugins', details: null }
+  }
+
+  if (key === 'browser') return { navigator: 'browser', details: null }
+  if (key.startsWith('browser/tab/')) {
+    const tabId = key.slice(12)
+    return tabId
+      ? { navigator: 'browser', details: { type: 'browser-tab', tabId } }
+      : { navigator: 'browser', details: null }
   }
 
   // Handle automations

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
-import { useAtomValue, useStore } from "jotai"
+import { useAtom, useAtomValue, useStore } from "jotai"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Archive,
@@ -89,11 +89,13 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WidgetDescriptor } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WidgetDescriptor, BrowserInstanceInfo } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
-import { pluginsAtom } from "@/atoms/plugins"
+import { pluginListKindAtom, pluginsAtom } from "@/atoms/plugins"
+import { browserNavigatorKindAtom, browserWorkspaceTabsAtom } from "@/atoms/browser-workspace"
+import { filterInstancesForWorkspace } from "@/atoms/browser-pane"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
@@ -107,6 +109,7 @@ import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, e
 import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
+import { loadBrowserWorkspace } from "@/lib/browser-workspace-storage"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
 import {
@@ -117,6 +120,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isPluginsNavigation,
+  isBrowserNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
   type NavigationState,
@@ -126,6 +130,11 @@ import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { PluginsListPanel } from "../plugins/PluginsListPanel"
 import { PluginInstallMenu } from "../plugins/PluginInstallMenu"
+import { PluginListToggle } from "../plugins/PluginListToggle"
+import { BrowserExtensionsListPanel } from "../plugins/BrowserExtensionsListPanel"
+import { BrowserTabsListPanel } from "../browser/BrowserTabsListPanel"
+import { BrowserNavigatorToggle } from "../browser/BrowserNavigatorToggle"
+import { BrowserCollectionListPanel } from "../browser/BrowserCollectionListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
@@ -1007,12 +1016,158 @@ function AppShellContent({
   }, [skills, setSkillsAtom])
 
   const [plugins, setPlugins] = React.useState<WorkspacePluginEntry[]>([])
+  const [pluginListKind, setPluginListKind] = useAtom(pluginListKindAtom)
   const setPluginsAtom = useSetAtom(pluginsAtom)
   React.useEffect(() => {
     setPluginsAtom(plugins)
   }, [plugins, setPluginsAtom])
+  const [browserTabs, setBrowserTabs] = useAtom(browserWorkspaceTabsAtom)
+  const [browserNavigatorKind, setBrowserNavigatorKind] = useAtom(browserNavigatorKindAtom)
+  const [browserHydratedWorkspaceId, setBrowserHydratedWorkspaceId] = React.useState<string | null>(null)
+  const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const remoteBrowserWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId ?? null
+
+  React.useEffect(() => {
+    const api = window.electronAPI?.browserPane
+    if (!activeWorkspaceId || !api || !window.electronAPI.isChannelAvailable('browser-pane:list')) {
+      setBrowserTabs([])
+      setBrowserHydratedWorkspaceId(null)
+      setLastActiveBrowserTabId(null)
+      return
+    }
+
+    let disposed = false
+    setBrowserHydratedWorkspaceId(null)
+    const belongsHere = (info: BrowserInstanceInfo) => filterInstancesForWorkspace(
+      [info],
+      activeWorkspaceId,
+      remoteBrowserWorkspaceId,
+    ).length > 0
+
+    const hydrate = async () => {
+      try {
+        let persisted = await api.loadWorkspaceState()
+        // One-time migration from the old renderer-local snapshot. The
+        // canonical copy now lives beside the persistent browser profile so a
+        // renderer crash cannot erase tab recovery state.
+        if (persisted.tabs.length === 0) {
+          const legacy = loadBrowserWorkspace(activeWorkspaceId)
+          if (legacy.tabs.length > 0) {
+            persisted = { ...legacy, updatedAt: Date.now() }
+            await api.saveWorkspaceState(persisted)
+          }
+        }
+        if (disposed) return
+        setLastActiveBrowserTabId(persisted.activeTabId)
+
+        const initialInstances = await api.list()
+        const initialWorkspaceInstances = filterInstancesForWorkspace(
+          initialInstances,
+          activeWorkspaceId,
+          remoteBrowserWorkspaceId,
+        )
+        const workspaceIds = new Set(initialWorkspaceInstances.map((instance) => instance.id))
+        const allIds = new Set(initialInstances.map((instance) => instance.id))
+        const restoredIds: string[] = []
+        const idMap = new Map<string, string>()
+
+        for (const savedTab of persisted.tabs) {
+          if (disposed) return
+          if (workspaceIds.has(savedTab.id)) {
+            restoredIds.push(savedTab.id)
+            idMap.set(savedTab.id, savedTab.id)
+            continue
+          }
+
+          const hasCrossWorkspaceConflict = allIds.has(savedTab.id)
+          const restoredId = await api.create({
+            id: hasCrossWorkspaceConflict ? undefined : savedTab.id,
+            embedded: true,
+            show: false,
+            initialUrl: savedTab.url && savedTab.url !== 'about:blank' ? savedTab.url : undefined,
+          })
+          restoredIds.push(restoredId)
+          idMap.set(savedTab.id, restoredId)
+          allIds.add(restoredId)
+
+        }
+
+        const refreshed = filterInstancesForWorkspace(
+          await api.list(),
+          activeWorkspaceId,
+          remoteBrowserWorkspaceId,
+        )
+        if (disposed) return
+
+        const order = new Map(restoredIds.map((id, index) => [id, index]))
+        refreshed.sort((a, b) => {
+          const aIndex = order.get(a.id) ?? Number.MAX_SAFE_INTEGER
+          const bIndex = order.get(b.id) ?? Number.MAX_SAFE_INTEGER
+          return aIndex - bIndex
+        })
+        setBrowserTabs(refreshed)
+
+        const restoredActiveId = persisted.activeTabId
+          ? (idMap.get(persisted.activeTabId) ?? persisted.activeTabId)
+          : null
+        setLastActiveBrowserTabId(
+          restoredActiveId && refreshed.some((tab) => tab.id === restoredActiveId)
+            ? restoredActiveId
+            : (refreshed[0]?.id ?? null),
+        )
+        setBrowserHydratedWorkspaceId(activeWorkspaceId)
+      } catch (error) {
+        console.warn('[AppShell] Failed to restore browser runtime tabs:', error)
+        if (!disposed) setBrowserHydratedWorkspaceId(activeWorkspaceId)
+      }
+    }
+
+    const cleanupState = api.onStateChanged((info) => {
+      if (disposed) return
+      setBrowserTabs((current) => {
+        const index = current.findIndex((tab) => tab.id === info.id)
+        if (!belongsHere(info)) {
+          return index < 0 ? current : current.filter((tab) => tab.id !== info.id)
+        }
+        if (index < 0) return [...current, info]
+        const next = [...current]
+        next[index] = info
+        return next
+      })
+    })
+    const cleanupRemoved = api.onRemoved((id) => {
+      if (disposed) return
+      setBrowserTabs((current) => current.filter((tab) => tab.id !== id))
+    })
+    void hydrate()
+
+    return () => {
+      disposed = true
+      cleanupState()
+      cleanupRemoved()
+    }
+  }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
+
+  React.useEffect(() => {
+    if (isBrowserNavigation(navState) && navState.details?.tabId) {
+      setLastActiveBrowserTabId(navState.details.tabId)
+    }
+  }, [navState])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId || browserHydratedWorkspaceId !== activeWorkspaceId) return
+    const activeTabId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
+      ? lastActiveBrowserTabId
+      : (browserTabs[0]?.id ?? null)
+    void window.electronAPI.browserPane.saveWorkspaceState({
+      version: 1,
+      activeTabId,
+      tabs: browserTabs.map((tab) => ({ id: tab.id, url: tab.url, title: tab.title })),
+      updatedAt: Date.now(),
+    })
+  }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, lastActiveBrowserTabId])
 
   // Send to Workspace dialog state (driven by sendToWorkspaceAtom set from SessionMenu/BatchSessionMenu)
   const sendToWorkspaceIds = useAtomValue(sendToWorkspaceAtom)
@@ -1979,6 +2134,81 @@ function AppShellContent({
     navigate(routes.view.plugins())
   }, [])
 
+  const createRuntimeBrowserTab = useCallback(async (initialUrl?: string) => {
+    const api = window.electronAPI?.browserPane
+    if (!api) return null
+    try {
+      const id = await api.create({ embedded: true, show: false, initialUrl })
+      const instances = await api.list()
+      setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
+      return id
+    } catch (error) {
+      console.warn('[AppShell] Failed to create embedded browser tab:', error)
+      return null
+    }
+  }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
+
+  const handleBrowserClick = useCallback(() => {
+    const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
+      ? lastActiveBrowserTabId
+      : browserTabs[0]?.id
+    if (existingId) {
+      navigate(routes.view.browser(existingId))
+      return
+    }
+    void createRuntimeBrowserTab().then((id) => {
+      if (id) navigate(routes.view.browser(id))
+    })
+  }, [browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId])
+
+  const handleBrowserTabSelect = useCallback((tabId: string) => {
+    setLastActiveBrowserTabId(tabId)
+    navigate(routes.view.browser(tabId))
+  }, [])
+
+  const handleAddBrowserTab = useCallback(() => {
+    void createRuntimeBrowserTab().then((id) => {
+      if (id) {
+        setLastActiveBrowserTabId(id)
+        navigate(routes.view.browser(id))
+      }
+    })
+  }, [createRuntimeBrowserTab])
+
+  const handleOpenBrowserUrl = useCallback((url: string) => {
+    setBrowserNavigatorKind('tabs')
+    void createRuntimeBrowserTab(url).then((id) => {
+      if (!id) return
+      setLastActiveBrowserTabId(id)
+      navigate(routes.view.browser(id))
+    })
+  }, [createRuntimeBrowserTab, setBrowserNavigatorKind])
+
+  const handleCloseBrowserTab = useCallback((tabId: string) => {
+    const index = browserTabs.findIndex((tab) => tab.id === tabId)
+    if (index < 0) return
+
+    const next = browserTabs.filter((tab) => tab.id !== tabId)
+    void window.electronAPI.browserPane.destroy(tabId).catch((error) => {
+      console.warn(`[AppShell] Failed to close browser runtime tab ${tabId}:`, error)
+    })
+    setBrowserTabs(next)
+
+    if (!isBrowserNavigation(navState) || navState.details?.tabId !== tabId) return
+    const fallback = next[Math.max(0, index - 1)] ?? next[0]
+    if (fallback) {
+      setLastActiveBrowserTabId(fallback.id)
+      navigate(routes.view.browser(fallback.id))
+      return
+    }
+    void createRuntimeBrowserTab().then((id) => {
+      if (id) {
+        setLastActiveBrowserTabId(id)
+        navigate(routes.view.browser(id))
+      }
+    })
+  }, [browserTabs, createRuntimeBrowserTab, navState, setBrowserTabs])
+
   // Handlers for automations view
   const handleAutomationsClick = useCallback(() => {
     navigate(routes.view.automations())
@@ -2276,7 +2506,8 @@ function AppShellContent({
     }
     flattenTree(labelTree)
 
-    // 3. Sources, Skills, Settings
+    // 3. Browser, Sources, Skills, Settings
+    result.push({ id: 'nav:browser', type: 'nav', action: handleBrowserClick })
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:plugins', type: 'nav', action: handlePluginsClick })
@@ -2285,7 +2516,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handlePluginsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleBrowserClick, handleSourcesClick, handleSkillsClick, handlePluginsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2405,7 +2636,9 @@ function AppShellContent({
     }
 
     if (isPluginsNavigation(navState)) {
-      return t("sidebar.allPlugins", { defaultValue: "All Plugins" })
+      return pluginListKind === 'extensions'
+        ? t("sidebar.allExtensions", { defaultValue: "All Extensions" })
+        : t("sidebar.allPlugins", { defaultValue: "All Plugins" })
     }
 
     // Projects navigator
@@ -2444,7 +2677,7 @@ function AppShellContent({
       default:
         return t("sidebar.allSessions")
     }
-  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses])
+  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses, pluginListKind])
 
   // Build recursive sidebar items from the shared display-sorted label tree.
   // Each node renders with condensed height (compact: true) since many labels expected.
@@ -2677,6 +2910,14 @@ function AppShellContent({
                     { id: "separator:chats-sources", type: "separator" },
                     // --- Sources & Skills Section ---
                     {
+                      id: "nav:browser",
+                      title: t("sidebar.browser", { defaultValue: "Browser" }),
+                      label: String(browserTabs.length),
+                      icon: Globe,
+                      variant: isBrowserNavigation(navState) ? "default" : "ghost",
+                      onClick: handleBrowserClick,
+                    },
+                    {
                       id: "nav:sources",
                       title: t("sidebar.sources"),
                       label: String(sources.length),
@@ -2861,7 +3102,7 @@ function AppShellContent({
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
             <PanelHeader
-              title={isSidebarVisible ? listTitle : undefined}
+              title={isSidebarVisible && !isBrowserNavigation(navState) ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
               badge={automationFilter?.automationType === 'scheduled' ? (
                 <Tooltip>
@@ -2885,6 +3126,27 @@ function AppShellContent({
                       onChange={view => {
                         if (view === 'board') navigate(routes.view.board())
                       }}
+                    />
+                  )}
+                  {isPluginsNavigation(navState) && (
+                    <PluginListToggle
+                      value={pluginListKind}
+                      onChange={setPluginListKind}
+                    />
+                  )}
+                  {isBrowserNavigation(navState) && (
+                    <BrowserNavigatorToggle
+                      value={browserNavigatorKind}
+                      onChange={setBrowserNavigatorKind}
+                      compact={sessionListWidth < 284}
+                    />
+                  )}
+                  {isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip={t('browser.newTab', { defaultValue: 'New Tab' })}
+                      aria-label={t('browser.newTab', { defaultValue: 'New Tab' })}
+                      onClick={handleAddBrowserTab}
                     />
                   )}
                   {/* Filter dropdown - available in ALL chat views.
@@ -3603,7 +3865,7 @@ function AppShellContent({
                       {...getEditConfig('add-skill', activeWorkspace.rootPath)}
                     />
                   )}
-                  {isPluginsNavigation(navState) && activeWorkspaceId && (
+                  {isPluginsNavigation(navState) && activeWorkspaceId && pluginListKind === 'plugins' && (
                     <PluginInstallMenu
                       workspaceId={activeWorkspaceId}
                       installedPluginNames={plugins.map(plugin => plugin.name)}
@@ -3660,13 +3922,27 @@ function AppShellContent({
                 selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
               />
             )}
-            {isPluginsNavigation(navState) && activeWorkspaceId && (
+            {isPluginsNavigation(navState) && activeWorkspaceId && pluginListKind === 'plugins' && (
               <PluginsListPanel
                 workspaceId={activeWorkspaceId}
                 plugins={plugins}
                 onPluginClick={handlePluginSelect}
                 selectedPluginName={navState.details?.pluginName ?? null}
               />
+            )}
+            {isPluginsNavigation(navState) && pluginListKind === 'extensions' && (
+              <BrowserExtensionsListPanel />
+            )}
+            {isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
+              <BrowserTabsListPanel
+                tabs={browserTabs}
+                selectedTabId={navState.details?.tabId ?? null}
+                onTabClick={handleBrowserTabSelect}
+                onTabClose={handleCloseBrowserTab}
+              />
+            )}
+            {isBrowserNavigation(navState) && browserNavigatorKind !== 'tabs' && (
+              <BrowserCollectionListPanel kind={browserNavigatorKind} onOpenUrl={handleOpenBrowserUrl} />
             )}
             {isProjectsNavigation(navState) && activeWorkspaceId && (
               /* Projects List */

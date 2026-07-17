@@ -208,6 +208,24 @@ done
 # 6. Build Electron app
 echo "Building Electron app..."
 cd "$ROOT_DIR"
+
+# Touch ID WebAuthn credentials must use a keychain group that matches both
+# the runtime configuration and the code-signing entitlement.
+GENERATED_ENTITLEMENTS="$ELECTRON_DIR/build/entitlements.mac.generated.plist"
+ENTITLEMENTS_ARGS=""
+if [ -n "$APPLE_TEAM_ID" ]; then
+    export CRAFT_WEBAUTHN_KEYCHAIN_ACCESS_GROUP="${APPLE_TEAM_ID}.com.lukilabs.craft-agent.webauthn"
+    sed "/<\/dict>/i\\
+    <key>keychain-access-groups</key>\\
+    <array>\\
+      <string>${CRAFT_WEBAUTHN_KEYCHAIN_ACCESS_GROUP}</string>\\
+    </array>" "$ELECTRON_DIR/build/entitlements.mac.plist" > "$GENERATED_ENTITLEMENTS"
+    ENTITLEMENTS_ARGS="--config.mac.entitlements=$GENERATED_ENTITLEMENTS --config.mac.entitlementsInherit=$GENERATED_ENTITLEMENTS"
+else
+    rm -f "$GENERATED_ENTITLEMENTS"
+    echo "Warning: APPLE_TEAM_ID is not set; Touch ID WebAuthn will be disabled for this unsigned build."
+fi
+
 bun run electron:build
 
 # 7. Package with electron-builder
@@ -242,7 +260,7 @@ if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PA
 fi
 
 # Run electron-builder
-npx electron-builder $BUILDER_ARGS
+npx electron-builder $BUILDER_ARGS $ENTITLEMENTS_ARGS
 
 # 8. Verify the DMG was built
 # electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg

@@ -824,6 +824,79 @@ export interface BrowserInstanceInfo {
    * and main processes that pre-date the field working unchanged.
    */
   workspaceId?: string | null
+  /** Integrated browser toolbar layout. Floating mode is rendered as a native overlay. */
+  toolbarMode?: 'fixed' | 'floating'
+}
+
+export interface BrowserBookmarkEntry {
+  id: string
+  workspaceId: string | null
+  url: string
+  title: string
+  favicon: string | null
+  folderId?: string | null
+  createdAt: number
+}
+
+export interface BrowserBookmarkFolder {
+  id: string
+  workspaceId: string | null
+  name: string
+  createdAt: number
+}
+
+export interface BrowserHistoryEntry {
+  id: string
+  workspaceId: string | null
+  tabId: string
+  url: string
+  title: string
+  favicon: string | null
+  visitedAt: number
+}
+
+export interface BrowserDownloadRecord {
+  id: string
+  workspaceId: string | null
+  tabId: string
+  timestamp: number
+  url: string
+  filename: string
+  state: string
+  bytesReceived: number
+  totalBytes: number
+  mimeType: string
+  savePath?: string
+}
+
+export interface BrowserExtensionEntry {
+  id: string
+  name: string
+  version: string
+  path: string
+  enabled: boolean
+  hasAction: boolean
+  pinned: boolean
+  hidden: boolean
+  order: number
+}
+
+export interface BrowserPermissionEntry {
+  origin: string
+  permission: string
+  allowed: boolean
+  updatedAt: number
+}
+
+export interface BrowserWorkspaceSnapshot {
+  version: 1
+  activeTabId: string | null
+  tabs: Array<{
+    id: string
+    url: string
+    title: string
+  }>
+  updatedAt: number
 }
 
 export interface DeepLinkNavigation {

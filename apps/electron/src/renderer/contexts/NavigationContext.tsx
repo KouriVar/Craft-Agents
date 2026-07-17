@@ -70,6 +70,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isPluginsNavigation,
+  isBrowserNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
   DEFAULT_NAVIGATION_STATE,
@@ -78,6 +79,7 @@ import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/a
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { pluginsAtom } from '@/atoms/plugins'
+import { browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
 import {
   panelStackAtom,
   pushPanelAtom,
@@ -95,7 +97,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isPluginsNavigation, isAutomationsNavigation, isProjectsNavigation }
+export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isPluginsNavigation, isBrowserNavigation, isAutomationsNavigation, isProjectsNavigation }
 
 // =============================================================================
 // Context
@@ -684,6 +686,14 @@ export function NavigationProvider({
         const firstPluginName = getFirstPluginName()
         if (firstPluginName) {
           return { ...nextState, details: { type: 'plugin', pluginName: firstPluginName } }
+        }
+        return nextState
+      }
+
+      if (isBrowserNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
+        const firstTabId = store.get(browserWorkspaceTabsAtom)[0]?.id
+        if (firstTabId) {
+          return { ...nextState, details: { type: 'browser-tab', tabId: firstTabId } }
         }
         return nextState
       }

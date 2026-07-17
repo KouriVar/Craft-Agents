@@ -7,20 +7,28 @@
  */
 
 import { join, parse as parsePath } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, type Session as ElectronSession } from 'electron'
+import { BrowserWindow, Menu, WebContentsView, app, clipboard, dialog, ipcMain, nativeTheme, net, session, shell, type DownloadItem, type MenuItemConstructorOptions, type MessageBoxOptions, type Rectangle, type Session as ElectronSession } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
 import {
+  type BrowserPaneBounds,
   type BrowserEmptyStateLaunchPayload,
   type BrowserEmptyStateLaunchResult,
   type BrowserInstanceInfo,
+  type BrowserBookmarkEntry,
+  type BrowserBookmarkFolder,
+  type BrowserHistoryEntry,
+  type BrowserDownloadRecord,
+  type BrowserExtensionEntry,
+  type BrowserPermissionEntry,
+  type BrowserWorkspaceSnapshot,
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
 import { CodedError } from '@craft-agent/shared/protocol'
-import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 import type {
   IBrowserPaneManager,
   BrowserInstanceSnapshot,
@@ -29,6 +37,9 @@ import type {
   BrowserCapabilityRequest,
   ScreenshotResultWire,
 } from '@craft-agent/server-core/transport'
+import { BrowserProfileStore } from './browser-profile-store'
+import { BrowserPasswordVault } from './browser-password-vault'
+import extractZip from 'extract-zip'
 
 export type { BrowserInstanceInfo }
 
@@ -36,6 +47,7 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const TOOLBAR_LOAD_MAX_RETRIES = 4
 const TOOLBAR_LOAD_RETRY_DELAY_MS = 500
 const TOOLBAR_HEIGHT = 48
+const EMBEDDED_VIEW_RADIUS = 10
 const MAX_CONSOLE_LOG_ENTRIES = 500
 const MAX_NETWORK_LOG_ENTRIES = 500
 const MAX_DOWNLOAD_LOG_ENTRIES = 200
@@ -52,6 +64,32 @@ const THEME_OBSERVER_MIN_INTERVAL_MS = 120
 const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
+const DANGEROUS_DOWNLOAD_EXTENSIONS = new Set([
+  '.app', '.bat', '.cmd', '.com', '.command', '.dmg', '.exe', '.jar', '.msi', '.pkg', '.ps1', '.scr', '.sh',
+])
+const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'file:', 'http:', 'https:', 'javascript:'])
+const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/
+const MAX_EXTENSION_PACKAGE_BYTES = 100 * 1024 * 1024
+
+function escapeBookmarkHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function decodeBookmarkHtml(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&')
+}
+
+function readHtmlAttribute(tag: string, name: string): string | null {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i'))
+  return match ? decodeBookmarkHtml(match[1] ?? match[2] ?? '') : null
+}
 
 const THEME_COLOR_EXTRACTOR_FN = String.raw`
 () => {
@@ -115,6 +153,10 @@ const TOOLBAR_CHANNELS = {
   GO_FORWARD: 'browser-toolbar:go-forward',
   RELOAD: 'browser-toolbar:reload',
   STOP: 'browser-toolbar:stop',
+  SET_REVEALED: 'browser-toolbar:set-revealed',
+  PIN_EMBEDDED: 'browser-toolbar:pin-embedded',
+  SHOW_EMBEDDED_MENU: 'browser-toolbar:show-embedded-menu',
+  TOGGLE_BOOKMARK: 'browser-toolbar:toggle-bookmark',
   MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
   FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
   HIDE: 'browser-toolbar:hide',
@@ -140,9 +182,9 @@ interface AgentControlLockState {
 interface BrowserInstance {
   id: string
   window: BrowserWindow
-  toolbarView: BrowserView
-  pageView: BrowserView
-  nativeOverlayView: BrowserView
+  toolbarView: WebContentsView
+  pageView: WebContentsView
+  nativeOverlayView: WebContentsView
   cdp: BrowserCDP
   currentUrl: string
   title: string
@@ -181,6 +223,18 @@ interface BrowserInstance {
   networkLogs: BrowserNetworkEntry[]
   downloads: BrowserDownloadEntry[]
   lastLaunchToken: string | null
+  /** Main app renderer that currently hosts this instance as an embedded tab. */
+  embeddedHostWebContentsId: number | null
+  /** Native host for embedded WebContentsViews. The shell BrowserWindow stays hidden. */
+  embeddedHostWindow: BrowserWindow | null
+  /** Last page bounds in host content coordinates. */
+  embeddedBounds: Rectangle | null
+  /** Whether the integrated toolbar occupies layout or floats above the page. */
+  embeddedToolbarMode: 'fixed' | 'floating'
+  embeddedToolbarRevealed: boolean
+  lastCrashAt: number
+  crashRecoveryAttempts: number
+  credentialOfferUrl: string | null
 }
 
 interface CreateBrowserInstanceOptions {
@@ -188,6 +242,8 @@ interface CreateBrowserInstanceOptions {
   ownerType?: 'session' | 'manual'
   ownerSessionId?: string
   workspaceId?: string | null
+  embeddedHostWebContentsId?: number
+  initialUrl?: string
 }
 
 export interface BrowserScreenshotOptions {
@@ -265,7 +321,7 @@ export interface BrowserDownloadEntry {
   timestamp: number
   url: string
   filename: string
-  state: 'started' | 'completed' | 'interrupted' | 'cancelled'
+  state: 'started' | 'paused' | 'completed' | 'interrupted' | 'cancelled'
   bytesReceived: number
   totalBytes: number
   mimeType: string
@@ -339,9 +395,39 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private popupParentByWebContentsId = new Map<number, string>()
   private windowManager: WindowManager | null = null
   private sessionPathResolver: ((sessionId: string) => string | null) | null = null
+  private readonly profileStore = new BrowserProfileStore()
+  private readonly permissionDecisions = new Map<string, boolean>()
+  private readonly activeDownloads = new Map<string, { item: DownloadItem; instanceId: string }>()
+  private readonly passwordVault = new BrowserPasswordVault()
+  private readonly pendingCredentialPrompts = new Set<string>()
+
+  constructor() {
+    for (const entry of this.profileStore.listPermissions()) {
+      this.permissionDecisions.set(`${entry.origin}|${entry.permission}`, entry.allowed)
+    }
+    void this.restoreExtensions()
+  }
 
   setWindowManager(windowManager: WindowManager): void {
     this.windowManager = windowManager
+  }
+
+  handleCertificateError(webContentsId: number, url: string, error: string, callback: (trusted: boolean) => void): boolean {
+    const instance = this.getInstanceByWebContentsId(webContentsId)
+    if (!instance) return false
+    const host = instance.embeddedHostWindow ?? instance.window
+    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+    void dialog.showMessageBox(host, {
+      type: 'warning',
+      title: localeIsChinese ? '连接不安全' : 'Connection is not private',
+      message: localeIsChinese ? '此网站的安全证书无效。' : 'This site presented an invalid security certificate.',
+      detail: `${url}\n\n${error}`,
+      buttons: [localeIsChinese ? '返回安全页面' : 'Go back', localeIsChinese ? '仍然继续（不安全）' : 'Continue (unsafe)'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }).then((result) => callback(result.response === 1), () => callback(false))
+    return true
   }
 
   setSessionPathResolver(fn: (sessionId: string) => string | null): void {
@@ -361,11 +447,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   createInstance(id?: string, options?: CreateBrowserInstanceOptions): string {
-    const instanceId = id || `browser-${++instanceCounter}`
+    let instanceId = id
+    if (!instanceId) {
+      do {
+        instanceId = `browser-${++instanceCounter}`
+      } while (this.instances.has(instanceId))
+    }
     const shouldShow = options?.show ?? false
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
     const workspaceId = options?.workspaceId ?? null
+    const embeddedHostWebContentsId = options?.embeddedHostWebContentsId ?? null
+    const embeddedHostWindow = embeddedHostWebContentsId !== null
+      ? this.windowManager?.getWindowByWebContentsId(embeddedHostWebContentsId) ?? null
+      : null
 
     if (this.instances.has(instanceId)) {
       mainLog.warn(`[browser-pane] Instance already exists, reusing: ${instanceId}`)
@@ -380,14 +475,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const bgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
 
     const window = new BrowserWindow({
-      width: 1200,
-      height: 900,
-      minWidth: 700,
-      minHeight: 500,
+      width: embeddedHostWindow ? 1 : 1200,
+      height: embeddedHostWindow ? 1 : 900,
+      minWidth: embeddedHostWindow ? 1 : 700,
+      minHeight: embeddedHostWindow ? 1 : 500,
       show: false, // Always hidden until toolbar is painted (ready-to-show)
       backgroundColor: bgColor,
-      // Fully chromeless — toolbar is rendered in a dedicated BrowserView
+      // Fully chromeless — standalone mode renders into this hidden shell.
+      // Embedded mode moves the page views into the owning Craft window.
       frame: false,
+      hasShadow: !embeddedHostWindow,
+      skipTaskbar: Boolean(embeddedHostWindow),
+      movable: !embeddedHostWindow,
+      resizable: !embeddedHostWindow,
       webPreferences: {
         partition: SESSION_PARTITION,
         session: ses,
@@ -397,7 +497,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const toolbarView = new BrowserView({
+    const toolbarView = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, 'browser-toolbar-preload.cjs'),
         partition: SESSION_PARTITION,
@@ -408,7 +508,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const pageView = new BrowserView({
+    const pageView = new WebContentsView({
+      webPreferences: {
+        preload: join(__dirname, 'browser-page-preload.cjs'),
+        partition: SESSION_PARTITION,
+        session: ses,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+
+    const nativeOverlayView = new WebContentsView({
       webPreferences: {
         partition: SESSION_PARTITION,
         session: ses,
@@ -418,22 +529,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const supportsMultiView = typeof window.addBrowserView === 'function' && typeof window.setTopBrowserView === 'function'
-    if (!supportsMultiView) {
-      throw new Error('[browser-pane] Native overlay requires BrowserWindow.addBrowserView + setTopBrowserView')
-    }
-
-    const nativeOverlayView = new BrowserView({
-      webPreferences: {
-        partition: SESSION_PARTITION,
-        session: ses,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    })
-
-    // Set BrowserView backgrounds to match theme so about:blank doesn't flash white
+    // Match the native views to the app theme so about:blank never flashes.
     const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
     const pageWcWithBg = pageView.webContents as typeof pageView.webContents & { setBackgroundColor?: (color: string) => void }
@@ -484,6 +580,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       networkLogs: [],
       downloads: [],
       lastLaunchToken: null,
+      embeddedHostWebContentsId,
+      embeddedHostWindow,
+      embeddedBounds: null,
+      embeddedToolbarMode: embeddedHostWindow ? 'floating' : 'fixed',
+      embeddedToolbarRevealed: false,
+      lastCrashAt: 0,
+      crashRecoveryAttempts: 0,
+      credentialOfferUrl: null,
     }
 
     const defaultUa = pageView.webContents.userAgent || ''
@@ -492,10 +596,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       pageView.webContents.setUserAgent(sanitizedUa)
     }
 
-    window.addBrowserView(pageView)
-    window.addBrowserView(nativeOverlayView)
-    window.addBrowserView(toolbarView)
-    window.setTopBrowserView(toolbarView)
+    if (embeddedHostWindow) {
+      pageView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      nativeOverlayView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      pageView.setVisible(false)
+      nativeOverlayView.setVisible(false)
+      embeddedHostWindow.contentView.addChildView(pageView)
+      embeddedHostWindow.contentView.addChildView(nativeOverlayView)
+    } else {
+      window.contentView.addChildView(pageView)
+      window.contentView.addChildView(nativeOverlayView)
+      window.contentView.addChildView(toolbarView)
+      nativeOverlayView.setVisible(false)
+    }
     void this.loadNativeOverlayPage(instance)
 
     this.layoutAllViews(instance)
@@ -506,6 +619,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
     mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'})`)
 
+    if (embeddedHostWindow) {
+      toolbarView.setVisible(false)
+      instance.toolbarReady = true
+    }
     void this.loadToolbarPage(instance)
       .finally(() => {
         // Safety net: if Electron never fires ready-to-show, still unblock focus/show behavior.
@@ -513,10 +630,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           this.markToolbarReady(instance, 'toolbar-load-finalized')
         }
       })
-    void this.loadEmptyStatePage(instance).catch((error) => {
-      mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-      void pageView.webContents.loadURL('about:blank')
-    })
+    void this.loadEmptyStatePage(instance)
+      .then(async () => {
+        const initialUrl = options?.initialUrl?.trim()
+        if (initialUrl && initialUrl !== 'about:blank') {
+          await this.navigate(instance.id, initialUrl)
+        }
+      })
+      .catch((error) => {
+        mainLog.warn(`[browser-pane] initial page load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+        void pageView.webContents.loadURL('about:blank')
+      })
 
     return instanceId
   }
@@ -744,6 +868,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
     }
 
+    if (normalizedUrl !== 'about:blank') {
+      let parsed: URL
+      try {
+        parsed = new URL(normalizedUrl)
+      } catch {
+        throw new Error('Invalid browser URL.')
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`Unsupported browser protocol: ${parsed.protocol}`)
+      }
+    }
+
     const timeoutMs = 30_000
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
@@ -796,6 +932,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const win = instance.window
     if (win.isDestroyed()) return
 
+    if (instance.embeddedHostWindow && !instance.embeddedHostWindow.isDestroyed()) {
+      instance.pageView.setVisible(true)
+      instance.embeddedHostWindow.contentView.addChildView(instance.pageView)
+      this.updateNativeOverlayState(instance)
+      instance.pageView.webContents.focus()
+      instance.isVisible = true
+      this.emitStateChange(instance)
+      return
+    }
+
     // If toolbar hasn't painted yet, defer showing until markToolbarReady runs.
     // Token guard prevents stale deferred focus from showing after hide/destroy.
     if (!instance.toolbarReady) {
@@ -814,17 +960,118 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.emitStateChange(instance)
   }
 
+  /** Embed the live page directly in the requesting Craft window. */
+  setEmbeddedBounds(id: string, hostWebContentsId: number, bounds: BrowserPaneBounds): void {
+    const instance = this.requireAliveInstance(id)
+    const hostWindow = this.windowManager?.getWindowByWebContentsId(hostWebContentsId)
+    if (!hostWindow || hostWindow.isDestroyed()) {
+      throw new Error(`Browser embed host not found: ${hostWebContentsId}`)
+    }
+
+    if (instance.embeddedHostWebContentsId !== hostWebContentsId) {
+      this.detachPageViews(instance)
+      instance.embeddedHostWebContentsId = hostWebContentsId
+      instance.embeddedHostWindow = hostWindow
+      instance.isVisible = false
+      if (!instance.window.isDestroyed()) instance.window.contentView.removeChildView(instance.toolbarView)
+      hostWindow.contentView.addChildView(instance.pageView)
+      hostWindow.contentView.addChildView(instance.nativeOverlayView)
+      hostWindow.contentView.addChildView(instance.toolbarView)
+      instance.pageView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      instance.nativeOverlayView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      instance.toolbarView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      if (!instance.window.isDestroyed()) instance.window.hide()
+      this.forceCloseToolbarMenu(instance, 'embedded-attach')
+      void this.loadToolbarPage(instance)
+    }
+
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) {
+      throw new Error('Browser embed bounds must contain finite numbers.')
+    }
+    const contentBounds = hostWindow.getContentBounds()
+    const zoomFactor = hostWindow.webContents.getZoomFactor?.() || 1
+    const contentWidth = Math.max(1, contentBounds.width)
+    const contentHeight = Math.max(1, contentBounds.height)
+    const x = Math.max(0, Math.min(contentWidth - 1, Math.round(bounds.x * zoomFactor)))
+    const y = Math.max(0, Math.min(contentHeight - 1, Math.round(bounds.y * zoomFactor)))
+    const width = Math.max(1, Math.min(contentWidth - x, Math.round(bounds.width * zoomFactor)))
+    const height = Math.max(1, Math.min(contentHeight - y, Math.round(bounds.height * zoomFactor)))
+    const nextBounds = {
+      x,
+      y,
+      width,
+      height,
+    }
+
+    instance.embeddedHostWindow = hostWindow
+    instance.embeddedBounds = nextBounds
+    instance.pageView.setBounds(nextBounds)
+    instance.pageView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+    this.layoutEmbeddedToolbar(instance)
+    if (instance.agentControl?.active || instance.toolbarMenuOverlayActive) {
+      instance.nativeOverlayView.setBounds(nextBounds)
+      instance.nativeOverlayView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+    }
+  }
+
+  /** Show or hide an embedded tab without changing its navigation state. */
+  setEmbeddedVisible(id: string, hostWebContentsId: number, visible: boolean): void {
+    const instance = this.requireAliveInstance(id)
+    if (instance.embeddedHostWebContentsId !== hostWebContentsId) return
+    if (instance.isVisible === visible) return
+
+    if (visible) {
+      instance.pageView.setVisible(true)
+      instance.embeddedHostWindow?.contentView.addChildView(instance.pageView)
+      instance.isVisible = true
+    } else {
+      instance.pageView.setVisible(false)
+      instance.nativeOverlayView.setVisible(false)
+      instance.isVisible = false
+    }
+    this.layoutEmbeddedToolbar(instance)
+    this.updateNativeOverlayState(instance)
+    this.emitStateChange(instance)
+  }
+
+  setEmbeddedToolbarMode(id: string, hostWebContentsId: number, mode: 'fixed' | 'floating'): void {
+    const instance = this.requireAliveInstance(id)
+    if (instance.embeddedHostWebContentsId !== hostWebContentsId) return
+    if (instance.embeddedToolbarMode === mode) return
+
+    instance.embeddedToolbarMode = mode
+    instance.embeddedToolbarRevealed = false
+    this.layoutEmbeddedToolbar(instance)
+    this.pushToolbarState(instance)
+    this.emitStateChange(instance)
+  }
+
+  loadWorkspaceState(workspaceId: string): BrowserWorkspaceSnapshot {
+    return this.profileStore.loadWorkspaceState(workspaceId)
+  }
+
+  saveWorkspaceState(workspaceId: string, snapshot: BrowserWorkspaceSnapshot): void {
+    if (!workspaceId) return
+    this.profileStore.saveWorkspaceState(workspaceId, snapshot)
+  }
+
   hide(id: string): void {
     const instance = this.instances.get(id)
     if (!instance) return
 
-    // Re-entrancy guard: bail if a hide is already in progress. Prevents the
-    // 'close' listener from re-entering hide() during teardown, which can crash
-    // Chromium's compositor when the BrowserView is mid-load.
+    // Re-entrancy guard for standalone shell teardown.
     if (instance.isHiding) return
 
     const win = instance.window
     if (win.isDestroyed()) return
+
+    if (instance.embeddedHostWindow) {
+      instance.pageView.setVisible(false)
+      instance.nativeOverlayView.setVisible(false)
+      instance.isVisible = false
+      this.emitStateChange(instance)
+      return
+    }
 
     instance.isHiding = true
 
@@ -836,9 +1083,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     this.forceCloseToolbarMenu(instance, 'window-hide')
 
-    // Cancel an in-flight page load before hiding. Hiding the window while the
-    // BrowserView is still loading can trigger a Chromium compositor assertion
-    // and kill the main process.
+    // Cancel an in-flight page load before hiding the standalone shell.
     if (instance.isLoading) {
       try {
         const pageWc = instance.pageView.webContents
@@ -852,8 +1097,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     instance.isVisible = false
 
-    // Defer the state-change callback so native window teardown completes before
-    // listeners (which may touch BrowserView/Chromium internals) run.
+    // Defer the state-change callback until native window teardown completes.
     queueMicrotask(() => {
       instance.isHiding = false
       this.emitStateChange(instance)
@@ -1607,6 +1851,498 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return instance.downloads.slice(-limit)
   }
 
+  listBookmarks(workspaceId: string | null): BrowserBookmarkEntry[] {
+    return this.profileStore.listBookmarks(workspaceId)
+  }
+
+  addBookmark(workspaceId: string | null, input: { url: string; title: string; favicon?: string | null; folderId?: string | null }): BrowserBookmarkEntry {
+    const parsed = new URL(input.url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only HTTP(S) pages can be bookmarked.')
+    }
+    return this.profileStore.addBookmark({
+      id: randomUUID(),
+      workspaceId,
+      url: parsed.toString(),
+      title: input.title.trim() || parsed.hostname,
+      favicon: input.favicon ?? null,
+      folderId: input.folderId ?? null,
+      createdAt: Date.now(),
+    })
+  }
+
+  updateBookmark(
+    workspaceId: string | null,
+    id: string,
+    changes: { title?: string; folderId?: string | null },
+  ): BrowserBookmarkEntry {
+    const next = { ...changes }
+    if (next.title !== undefined) {
+      next.title = next.title.trim()
+      if (!next.title) throw new Error('Bookmark title cannot be empty.')
+    }
+    if (next.folderId) {
+      const exists = this.profileStore.listBookmarkFolders(workspaceId).some((folder) => folder.id === next.folderId)
+      if (!exists) throw new Error('Bookmark folder not found.')
+    }
+    return this.profileStore.updateBookmark(workspaceId, id, next)
+  }
+
+  removeBookmark(workspaceId: string | null, idOrUrl: string): void {
+    this.profileStore.removeBookmark(workspaceId, idOrUrl)
+  }
+
+  listBookmarkFolders(workspaceId: string | null): BrowserBookmarkFolder[] {
+    return this.profileStore.listBookmarkFolders(workspaceId)
+  }
+
+  createBookmarkFolder(workspaceId: string | null, name: string): BrowserBookmarkFolder {
+    const normalizedName = name.trim().slice(0, 120)
+    if (!normalizedName) throw new Error('Folder name cannot be empty.')
+    return this.profileStore.createBookmarkFolder({
+      id: randomUUID(),
+      workspaceId,
+      name: normalizedName,
+      createdAt: Date.now(),
+    })
+  }
+
+  renameBookmarkFolder(workspaceId: string | null, id: string, name: string): BrowserBookmarkFolder {
+    const normalizedName = name.trim().slice(0, 120)
+    if (!normalizedName) throw new Error('Folder name cannot be empty.')
+    return this.profileStore.renameBookmarkFolder(workspaceId, id, normalizedName)
+  }
+
+  removeBookmarkFolder(workspaceId: string | null, id: string): void {
+    this.profileStore.removeBookmarkFolder(workspaceId, id)
+  }
+
+  async exportBookmarks(workspaceId: string | null): Promise<{ canceled: boolean; path?: string; exported: number }> {
+    const bookmarks = this.profileStore.listBookmarks(workspaceId)
+    const folders = this.profileStore.listBookmarkFolders(workspaceId)
+    const result = await dialog.showSaveDialog({
+      title: 'Export bookmarks',
+      defaultPath: join(app.getPath('documents'), 'craft-agents-bookmarks.html'),
+      filters: [{ name: 'Bookmarks HTML', extensions: ['html'] }],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true, exported: 0 }
+
+    const lines = [
+      '<!DOCTYPE NETSCAPE-Bookmark-file-1>',
+      '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
+      '<TITLE>Bookmarks</TITLE>',
+      '<H1>Bookmarks</H1>',
+      '<DL><p>',
+    ]
+    const appendBookmark = (bookmark: BrowserBookmarkEntry, indent: string) => {
+      const icon = bookmark.favicon ? ` ICON="${escapeBookmarkHtml(bookmark.favicon)}"` : ''
+      lines.push(`${indent}<DT><A HREF="${escapeBookmarkHtml(bookmark.url)}" ADD_DATE="${Math.floor(bookmark.createdAt / 1_000)}"${icon}>${escapeBookmarkHtml(bookmark.title)}</A>`)
+    }
+    for (const bookmark of bookmarks.filter((entry) => !entry.folderId)) appendBookmark(bookmark, '  ')
+    for (const folder of folders) {
+      lines.push(`  <DT><H3 ADD_DATE="${Math.floor(folder.createdAt / 1_000)}">${escapeBookmarkHtml(folder.name)}</H3>`)
+      lines.push('  <DL><p>')
+      for (const bookmark of bookmarks.filter((entry) => entry.folderId === folder.id)) appendBookmark(bookmark, '    ')
+      lines.push('  </DL><p>')
+    }
+    lines.push('</DL><p>')
+    writeFileSync(result.filePath, `${lines.join('\n')}\n`, 'utf8')
+    return { canceled: false, path: result.filePath, exported: bookmarks.length }
+  }
+
+  async importBookmarks(workspaceId: string | null): Promise<{ canceled: boolean; imported: number; skipped: number }> {
+    const result = await dialog.showOpenDialog({
+      title: 'Import bookmarks',
+      properties: ['openFile'],
+      filters: [{ name: 'Bookmarks HTML', extensions: ['html', 'htm'] }],
+    })
+    if (result.canceled || !result.filePaths[0]) return { canceled: true, imported: 0, skipped: 0 }
+
+    const html = readFileSync(result.filePaths[0], 'utf8')
+    const tokens = html.match(/<DT>\s*<H3\b[^>]*>[\s\S]*?<\/H3>|<DT>\s*<A\b[^>]*>[\s\S]*?<\/A>|<DL\b[^>]*>|<\/DL>/gi) ?? []
+    const folderStack: Array<BrowserBookmarkFolder | null> = []
+    let pendingFolder: BrowserBookmarkFolder | null = null
+    let imported = 0
+    let skipped = 0
+    for (const token of tokens) {
+      const folderMatch = token.match(/<H3\b[^>]*>([\s\S]*?)<\/H3>/i)
+      if (folderMatch) {
+        const rawName = decodeBookmarkHtml(folderMatch[1].replace(/<[^>]+>/g, '')).trim()
+        const parentNames = folderStack.filter((entry): entry is BrowserBookmarkFolder => Boolean(entry)).map((entry) => entry.name)
+        const name = [...parentNames, rawName].filter(Boolean).join(' / ').slice(0, 120)
+        pendingFolder = name ? this.createBookmarkFolder(workspaceId, name) : null
+        continue
+      }
+      if (/^<DL\b/i.test(token)) {
+        folderStack.push(pendingFolder)
+        pendingFolder = null
+        continue
+      }
+      if (/^<\/DL/i.test(token)) {
+        folderStack.pop()
+        continue
+      }
+      const anchorMatch = token.match(/(<A\b[^>]*>)([\s\S]*?)<\/A>/i)
+      if (!anchorMatch) continue
+      const url = readHtmlAttribute(anchorMatch[1], 'HREF')
+      if (!url) { skipped += 1; continue }
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') { skipped += 1; continue }
+        const title = decodeBookmarkHtml(anchorMatch[2].replace(/<[^>]+>/g, '')).trim() || parsed.hostname
+        const favicon = readHtmlAttribute(anchorMatch[1], 'ICON')
+        const folder = [...folderStack].reverse().find(Boolean) ?? null
+        this.addBookmark(workspaceId, { url, title, favicon, folderId: folder?.id ?? null })
+        imported += 1
+      } catch {
+        skipped += 1
+      }
+    }
+    return { canceled: false, imported, skipped }
+  }
+
+  listHistory(workspaceId: string | null, limit?: number): BrowserHistoryEntry[] {
+    return this.profileStore.listHistory(workspaceId, limit)
+  }
+
+  clearHistory(workspaceId: string | null): void {
+    this.profileStore.clearHistory(workspaceId)
+  }
+
+  removeHistoryEntry(workspaceId: string | null, id: string): void {
+    this.profileStore.removeHistoryEntry(workspaceId, id)
+  }
+
+  listBrowserDownloads(workspaceId: string | null, limit?: number): BrowserDownloadRecord[] {
+    return this.profileStore.listDownloads(workspaceId, limit)
+  }
+
+  clearBrowserDownloads(workspaceId: string | null): void {
+    this.profileStore.clearDownloads(workspaceId)
+  }
+
+  async openBrowserDownload(workspaceId: string | null, id: string): Promise<void> {
+    const entry = this.profileStore.listDownloads(workspaceId, 2_000).find((item) => item.id === id)
+    if (!entry?.savePath || !existsSync(entry.savePath)) throw new Error('Downloaded file no longer exists.')
+    const error = await shell.openPath(entry.savePath)
+    if (error) throw new Error(error)
+  }
+
+  showBrowserDownload(workspaceId: string | null, id: string): void {
+    const entry = this.profileStore.listDownloads(workspaceId, 2_000).find((item) => item.id === id)
+    if (!entry?.savePath || !existsSync(entry.savePath)) throw new Error('Downloaded file no longer exists.')
+    shell.showItemInFolder(entry.savePath)
+  }
+
+  pauseBrowserDownload(workspaceId: string | null, id: string): void {
+    const active = this.requireActiveDownload(workspaceId, id)
+    active.item.pause()
+    this.updateActiveDownloadState(id, 'paused')
+  }
+
+  resumeBrowserDownload(workspaceId: string | null, id: string): void {
+    const active = this.requireActiveDownload(workspaceId, id)
+    if (active.item.canResume()) {
+      active.item.resume()
+      this.updateActiveDownloadState(id, 'started')
+    }
+  }
+
+  cancelBrowserDownload(workspaceId: string | null, id: string): void {
+    const active = this.requireActiveDownload(workspaceId, id)
+    active.item.cancel()
+    this.updateActiveDownloadState(id, 'cancelled')
+  }
+
+  retryBrowserDownload(workspaceId: string | null, id: string): void {
+    const entry = this.profileStore.listDownloads(workspaceId, 2_000).find((item) => item.id === id)
+    if (!entry) throw new Error('Download record not found.')
+    const instance = this.instances.get(entry.tabId)
+      ?? Array.from(this.instances.values()).find((item) => item.workspaceId === workspaceId)
+    if (!instance) throw new Error('Open a browser tab before retrying this download.')
+    instance.pageView.webContents.downloadURL(entry.url)
+  }
+
+  listBrowserPermissions(origin?: string): BrowserPermissionEntry[] {
+    return this.profileStore.listPermissions(origin)
+  }
+
+  clearBrowserPermission(origin: string, permission?: string): void {
+    this.profileStore.clearPermission(origin, permission)
+    if (permission) {
+      this.permissionDecisions.delete(`${origin}|${permission}`)
+      return
+    }
+    for (const key of Array.from(this.permissionDecisions.keys())) {
+      if (key.startsWith(`${origin}|`)) this.permissionDecisions.delete(key)
+    }
+  }
+
+  listExtensions(): BrowserExtensionEntry[] {
+    return session.fromPartition(SESSION_PARTITION).extensions.getAllExtensions()
+      .map((extension) => {
+        const preference = this.profileStore.getExtensionPreference(extension.id)
+        return {
+          id: extension.id,
+          name: extension.name,
+          version: extension.version,
+          path: extension.path,
+          enabled: true,
+          hasAction: Boolean(this.getExtensionActionPath(extension.manifest)),
+          pinned: preference.pinned,
+          hidden: preference.hidden,
+          order: preference.order,
+        }
+      })
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+  }
+
+  async installExtension(path: string): Promise<BrowserExtensionEntry> {
+    if (!path || !existsSync(path)) throw new Error('Extension directory does not exist.')
+    const managedRoot = join(app.getPath('userData'), 'browser-profile', 'extensions')
+    mkdirSync(managedRoot, { recursive: true, mode: 0o700 })
+    const installRoot = join(managedRoot, randomUUID())
+    mkdirSync(installRoot, { recursive: true, mode: 0o700 })
+
+    try {
+      if (statSync(path).isDirectory()) {
+        cpSync(path, installRoot, { recursive: true })
+      } else if (path.toLowerCase().endsWith('.zip')) {
+        await extractZip(path, { dir: installRoot })
+      } else {
+        throw new Error('Select an unpacked extension directory or a .zip package. Chrome Web Store .crx packages are not supported yet.')
+      }
+
+      const directManifest = join(installRoot, 'manifest.json')
+      const childDirectories = readdirSync(installRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+      const extensionRoot = existsSync(directManifest)
+        ? installRoot
+        : childDirectories.length === 1 && existsSync(join(installRoot, childDirectories[0]!.name, 'manifest.json'))
+          ? join(installRoot, childDirectories[0]!.name)
+          : null
+      if (!extensionRoot) throw new Error('The selected extension package does not contain manifest.json at its root.')
+
+      const manifest = JSON.parse(readFileSync(join(extensionRoot, 'manifest.json'), 'utf8')) as {
+        name?: string
+        version?: string
+        manifest_version?: number
+        permissions?: string[]
+        host_permissions?: string[]
+      }
+      if (!manifest.name || !manifest.version || ![2, 3].includes(manifest.manifest_version ?? 0)) {
+        throw new Error('The extension manifest is missing a valid name, version, or manifest_version.')
+      }
+
+      const requestedPermissions = [...(manifest.permissions ?? []), ...(manifest.host_permissions ?? [])]
+      const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+      const confirmation = await dialog.showMessageBox({
+        type: 'warning',
+        title: localeIsChinese ? '安装浏览器扩展' : 'Install browser extension',
+        message: localeIsChinese
+          ? `要安装“${manifest.name}”吗？`
+          : `Install “${manifest.name}”?`,
+        detail: requestedPermissions.length > 0
+          ? `${localeIsChinese ? '请求的权限' : 'Requested permissions'}:\n${requestedPermissions.slice(0, 20).join('\n')}`
+          : (localeIsChinese ? '此扩展未声明额外权限。' : 'This extension declares no additional permissions.'),
+        buttons: [localeIsChinese ? '安装' : 'Install', localeIsChinese ? '取消' : 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (confirmation.response !== 0) throw new Error('Extension installation was cancelled.')
+
+      const extension = await session.fromPartition(SESSION_PARTITION).extensions.loadExtension(extensionRoot, {
+        allowFileAccess: true,
+      })
+      this.profileStore.addExtensionPath(extension.path)
+      const order = Math.max(0, this.listExtensions().length - 1)
+      this.profileStore.setExtensionPreference(extension.id, { order })
+      return {
+        id: extension.id,
+        name: extension.name,
+        version: extension.version,
+        path: extension.path,
+        enabled: true,
+        hasAction: Boolean(this.getExtensionActionPath(extension.manifest)),
+        pinned: false,
+        hidden: false,
+        order,
+      }
+    } catch (error) {
+      rmSync(installRoot, { recursive: true, force: true })
+      throw error
+    }
+  }
+
+  async installExtensionFromStore(urlOrId: string): Promise<BrowserExtensionEntry> {
+    const raw = urlOrId.trim()
+    let extensionId = CHROME_EXTENSION_ID_PATTERN.test(raw) ? raw : ''
+    if (!extensionId) {
+      try {
+        const parsed = new URL(raw)
+        if (parsed.hostname !== 'chromewebstore.google.com' && parsed.hostname !== 'chrome.google.com') {
+          throw new Error('Only Chrome Web Store links are supported.')
+        }
+        extensionId = parsed.pathname.split('/').find((part) => CHROME_EXTENSION_ID_PATTERN.test(part)) ?? ''
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Only Chrome Web Store links are supported.') throw error
+      }
+    }
+    if (!CHROME_EXTENSION_ID_PATTERN.test(extensionId)) {
+      throw new Error('Paste a valid Chrome Web Store extension link or 32-character extension ID.')
+    }
+
+    const updateQuery = new URLSearchParams({
+      response: 'redirect',
+      prodversion: process.versions.chrome,
+      acceptformat: 'crx2,crx3',
+      x: `id=${extensionId}&installsource=ondemand&uc`,
+    })
+    const response = await net.fetch(`https://clients2.google.com/service/update2/crx?${updateQuery.toString()}`, {
+      redirect: 'follow',
+    })
+    if (!response.ok) throw new Error(`Chrome Web Store download failed (${response.status}).`)
+    const declaredLength = Number(response.headers.get('content-length') ?? 0)
+    if (declaredLength > MAX_EXTENSION_PACKAGE_BYTES) throw new Error('Extension package is larger than 100 MB.')
+    const packageBuffer = Buffer.from(await response.arrayBuffer())
+    if (packageBuffer.byteLength > MAX_EXTENSION_PACKAGE_BYTES) throw new Error('Extension package is larger than 100 MB.')
+    if (packageBuffer.subarray(0, 4).toString('ascii') !== 'Cr24') throw new Error('Chrome Web Store returned an invalid CRX package.')
+
+    const crxVersion = packageBuffer.readUInt32LE(4)
+    let zipOffset: number
+    if (crxVersion === 3) {
+      zipOffset = 12 + packageBuffer.readUInt32LE(8)
+    } else if (crxVersion === 2) {
+      zipOffset = 16 + packageBuffer.readUInt32LE(8) + packageBuffer.readUInt32LE(12)
+    } else {
+      throw new Error(`Unsupported CRX version: ${crxVersion}.`)
+    }
+    if (zipOffset >= packageBuffer.byteLength || packageBuffer.readUInt32LE(zipOffset) !== 0x04034b50) {
+      throw new Error('The CRX package does not contain a valid ZIP payload.')
+    }
+
+    const temporaryRoot = join(app.getPath('temp'), `craft-browser-extension-${randomUUID()}`)
+    mkdirSync(temporaryRoot, { recursive: true, mode: 0o700 })
+    const zipPath = join(temporaryRoot, `${extensionId}.zip`)
+    try {
+      writeFileSync(zipPath, packageBuffer.subarray(zipOffset), { mode: 0o600 })
+      return await this.installExtension(zipPath)
+    } finally {
+      rmSync(temporaryRoot, { recursive: true, force: true })
+    }
+  }
+
+  removeExtension(id: string): void {
+    const ses = session.fromPartition(SESSION_PARTITION)
+    const extension = ses.extensions.getExtension(id)
+    if (!extension) return
+    ses.extensions.removeExtension(id)
+    this.profileStore.removeExtensionPath(extension.path)
+    this.profileStore.removeExtensionPreference(id)
+    const managedRoot = join(app.getPath('userData'), 'browser-profile', 'extensions')
+    const normalizedPath = extension.path.replaceAll('\\', '/')
+    const normalizedRoot = `${managedRoot.replaceAll('\\', '/')}/`
+    if (normalizedPath.startsWith(normalizedRoot)) {
+      const relativePath = normalizedPath.slice(normalizedRoot.length)
+      const installDirectory = relativePath.split('/')[0]
+      if (installDirectory) rmSync(join(managedRoot, installDirectory), { recursive: true, force: true })
+    }
+  }
+
+  setExtensionPreference(extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }): void {
+    if (!session.fromPartition(SESSION_PARTITION).extensions.getExtension(extensionId)) {
+      throw new Error('Browser extension is not loaded.')
+    }
+    this.profileStore.setExtensionPreference(extensionId, preference)
+  }
+
+  showToolbarMenu(kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null): void {
+    const instance = (tabId ? this.instances.get(tabId) : null)
+      ?? Array.from(this.instances.values()).find((item) => item.isVisible)
+      ?? Array.from(this.instances.values())[0]
+    const host = instance?.embeddedHostWindow ?? instance?.window
+    if (!host || host.isDestroyed()) return
+
+    const isChinese = app.getLocale().toLowerCase().startsWith('zh')
+    let template: MenuItemConstructorOptions[]
+
+    if (kind === 'passwords') {
+      if (!instance || !origin) return
+      void this.showPasswordMenu(instance, origin)
+      return
+    }
+    if (kind === 'extensions') {
+      const extensions = this.listExtensions().filter((extension) => !extension.hidden)
+      template = extensions.length > 0
+        ? extensions.map((extension) => ({
+            label: extension.name,
+            enabled: extension.hasAction,
+            click: () => {
+              void this.openExtensionAction(extension.id, tabId).catch((error) => {
+                mainLog.warn(`[BrowserPaneManager] Failed to open extension ${extension.id}:`, error)
+              })
+            },
+          }))
+        : [{ label: isChinese ? '暂无浏览器扩展' : 'No browser extensions', enabled: false }]
+    } else {
+      if (!origin) return
+      const entries = this.listBrowserPermissions(origin)
+      template = [
+        { label: origin, enabled: false },
+        { type: 'separator' },
+        ...(entries.length > 0
+          ? entries.map((entry) => ({
+              label: `${entry.permission} · ${entry.allowed ? (isChinese ? '允许' : 'Allowed') : (isChinese ? '阻止' : 'Blocked')}`,
+              click: () => this.clearBrowserPermission(entry.origin, entry.permission),
+            }) satisfies MenuItemConstructorOptions)
+          : [{ label: isChinese ? '暂无已保存权限' : 'No saved permissions', enabled: false }]),
+        ...(entries.length > 0
+          ? [
+              { type: 'separator' } as MenuItemConstructorOptions,
+              {
+                label: isChinese ? '重置此网站的权限' : 'Reset permissions for this site',
+                click: () => this.clearBrowserPermission(origin),
+              },
+            ]
+          : []),
+      ]
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: host })
+  }
+
+  async openExtensionAction(extensionId: string, tabId?: string | null): Promise<void> {
+    const ses = session.fromPartition(SESSION_PARTITION)
+    const extension = ses.extensions.getExtension(extensionId)
+    if (!extension) throw new Error('Browser extension is not loaded.')
+    const actionPath = this.getExtensionActionPath(extension.manifest)
+    if (!actionPath) throw new Error('This extension does not expose a popup or options page.')
+
+    const parentInstance = (tabId ? this.instances.get(tabId) : null)
+      ?? Array.from(this.instances.values()).find((instance) => instance.isVisible)
+      ?? Array.from(this.instances.values())[0]
+    const popupWindow = new BrowserWindow({
+      width: 420,
+      height: 600,
+      minWidth: 320,
+      minHeight: 360,
+      show: true,
+      autoHideMenuBar: true,
+      parent: parentInstance?.embeddedHostWindow ?? parentInstance?.window,
+      webPreferences: {
+        partition: SESSION_PARTITION,
+        session: ses,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+    if (parentInstance) {
+      this.registerPopupWindow(parentInstance, popupWindow, `chrome-extension://${extension.id}/${actionPath}`)
+    }
+    await popupWindow.loadURL(`chrome-extension://${extension.id}/${actionPath.replace(/^\/+/, '')}`)
+  }
+
   // validateUploadFilePath removed — uses shared validateFilePath from @craft-agent/server-core/handlers
 
   async uploadFile(id: string, ref: string, filePaths: string[]): Promise<ElementGeometry> {
@@ -1917,12 +2653,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private async loadNativeOverlayPage(instance: BrowserInstance): Promise<void> {
-    const liveFxPlatform: Parameters<typeof getBrowserLiveFxCornerRadii>[0] =
-      process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux'
-        ? process.platform
-        : 'other'
-    const cornerRadii = getBrowserLiveFxCornerRadii(liveFxPlatform)
-
     const html = `<!doctype html>
 <html>
   <head>
@@ -1941,10 +2671,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         position: fixed;
         inset: 0;
         border: 2px solid transparent;
-        border-top-left-radius: ${cornerRadii.topLeft};
-        border-top-right-radius: ${cornerRadii.topRight};
-        border-bottom-left-radius: ${cornerRadii.bottomLeft};
-        border-bottom-right-radius: ${cornerRadii.bottomRight};
+        border-radius: ${EMBEDDED_VIEW_RADIUS}px;
         box-sizing: border-box;
         pointer-events: none;
       }
@@ -1983,7 +2710,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     try {
       await instance.nativeOverlayView.webContents.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`)
       instance.nativeOverlayReady = true
-      mainLog.info(`[browser-pane] native overlay ready id=${instance.id} platform=${liveFxPlatform} corners=${cornerRadii.bottomLeft}/${cornerRadii.bottomRight}`)
+      mainLog.info(`[browser-pane] native overlay ready id=${instance.id} radius=${EMBEDDED_VIEW_RADIUS}`)
       this.updateNativeOverlayState(instance)
     } catch (error) {
       instance.nativeOverlayReady = false
@@ -1992,6 +2719,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private getToolbarEffectiveHeight(instance: BrowserInstance): number {
+    if (instance.embeddedHostWebContentsId !== null) return 0
     if (!instance.toolbarMenuOpen) return TOOLBAR_HEIGHT
 
     const [, contentHeight] = instance.window.getContentSize()
@@ -1999,11 +2727,45 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private layoutToolbarView(instance: BrowserInstance): void {
+    if (instance.embeddedHostWindow) return
     const [width] = instance.window.getContentSize()
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
 
     instance.toolbarView.setBounds({ x: 0, y: 0, width, height: toolbarHeight })
-    instance.toolbarView.setAutoResize({ width: true, height: false })
+  }
+
+  private layoutEmbeddedToolbar(instance: BrowserInstance): void {
+    const host = instance.embeddedHostWindow
+    const bounds = instance.embeddedBounds
+    if (!host || host.isDestroyed() || !bounds || instance.embeddedToolbarMode !== 'floating' || !instance.isVisible || instance.agentControl?.active) {
+      instance.toolbarView.setVisible(false)
+      return
+    }
+
+    const inset = 8
+    const collapsedTriggerHeight = 8
+    const revealed = instance.embeddedToolbarRevealed
+    const toolbarBounds = {
+      x: bounds.x + inset,
+      // Keep the revealed view attached to the collapsed trigger so the pointer
+      // remains inside it during expansion; moving the native view downward
+      // here would immediately fire mouseleave and cause a reveal flicker.
+      y: bounds.y,
+      width: Math.max(1, bounds.width - (inset * 2)),
+      // Keep a native hover target above the page while collapsed. The
+      // full toolbar is another WebContentsView, so it can genuinely sit above
+      // the native page without changing the page viewport.
+      height: revealed ? TOOLBAR_HEIGHT : collapsedTriggerHeight,
+    }
+    instance.toolbarView.setBounds(toolbarBounds)
+    instance.toolbarView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+    instance.toolbarView.setVisible(true)
+    // Re-adding an already attached WebContentsView does not consistently
+    // promote it above sibling views on every Electron/macOS combination.
+    // Remove it first so the floating toolbar and its transparent trigger are
+    // always the top-most native surface after page navigation or resize.
+    host.contentView.removeChildView(instance.toolbarView)
+    host.contentView.addChildView(instance.toolbarView)
   }
 
   private updateNativeOverlayState(instance: BrowserInstance): void {
@@ -2013,18 +2775,28 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const shouldShow = agentActive || menuActive
 
     if (!shouldShow || !instance.nativeOverlayReady || instance.window.isDestroyed()) {
-      instance.nativeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-      if (!instance.window.isDestroyed()) {
-        instance.window.setTopBrowserView(instance.toolbarView)
-      }
+      instance.nativeOverlayView.setVisible(false)
       return
     }
 
-    const [width, height] = instance.window.getContentSize()
-    const overlayHeight = Math.max(100, height - TOOLBAR_HEIGHT)
-    instance.nativeOverlayView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: overlayHeight })
-    instance.nativeOverlayView.setAutoResize({ width: true, height: true })
-    instance.window.setTopBrowserView(instance.toolbarView)
+    if (instance.embeddedHostWindow) {
+      if (!instance.embeddedBounds || !instance.isVisible) {
+        instance.nativeOverlayView.setVisible(false)
+        return
+      }
+      instance.nativeOverlayView.setBounds(instance.embeddedBounds)
+      instance.nativeOverlayView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+      instance.nativeOverlayView.setVisible(true)
+      instance.embeddedHostWindow.contentView.addChildView(instance.nativeOverlayView)
+    } else {
+      const [width, height] = instance.window.getContentSize()
+      const toolbarHeight = this.getToolbarEffectiveHeight(instance)
+      const overlayHeight = Math.max(1, height - toolbarHeight)
+      instance.nativeOverlayView.setBounds({ x: 0, y: toolbarHeight, width, height: overlayHeight })
+      instance.nativeOverlayView.setVisible(true)
+      instance.window.contentView.addChildView(instance.nativeOverlayView)
+      instance.window.contentView.addChildView(instance.toolbarView)
+    }
 
     if (agentActive) {
       const label = this.getAgentControlLabel(control)
@@ -2105,26 +2877,48 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.destroyingIds.delete(instance.id)
     this.closePopupsForParent(instance.id, 'parent_destroy')
     this.applyAgentControlLock(instance, false)
-    this.updateNativeOverlayState(instance)
+    this.detachPageViews(instance)
     instance.cdp.detach()
+    for (const view of [instance.pageView, instance.nativeOverlayView]) {
+      if (!view.webContents.isDestroyed()) view.webContents.close()
+    }
     this.instances.delete(instance.id)
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
 
   private layoutPageView(instance: BrowserInstance): void {
+    if (instance.embeddedHostWindow) {
+      this.updateNativeOverlayState(instance)
+      return
+    }
     const [width, height] = instance.window.getContentSize()
-    instance.pageView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: Math.max(100, height - TOOLBAR_HEIGHT) })
-    instance.pageView.setAutoResize({ width: true, height: true })
+    const toolbarHeight = this.getToolbarEffectiveHeight(instance)
+    instance.pageView.setBounds({ x: 0, y: toolbarHeight, width, height: Math.max(1, height - toolbarHeight) })
     this.updateNativeOverlayState(instance)
   }
 
   private layoutAllViews(instance: BrowserInstance): void {
     this.layoutToolbarView(instance)
     this.layoutPageView(instance)
-    if (!instance.window.isDestroyed()) {
-      instance.window.setTopBrowserView(instance.toolbarView)
+    if (!instance.window.isDestroyed() && !instance.embeddedHostWindow) {
+      instance.window.contentView.addChildView(instance.toolbarView)
     }
+  }
+
+  private detachPageViews(instance: BrowserInstance): void {
+    const host = instance.embeddedHostWindow
+    if (host && !host.isDestroyed()) {
+      host.contentView.removeChildView(instance.pageView)
+      host.contentView.removeChildView(instance.nativeOverlayView)
+      host.contentView.removeChildView(instance.toolbarView)
+    } else if (!instance.window.isDestroyed()) {
+      instance.window.contentView.removeChildView(instance.pageView)
+      instance.window.contentView.removeChildView(instance.nativeOverlayView)
+    }
+    instance.pageView.setVisible(false)
+    instance.nativeOverlayView.setVisible(false)
+    instance.toolbarView.setVisible(false)
   }
 
   private forceCloseToolbarMenu(instance: BrowserInstance, reason: string): void {
@@ -2225,7 +3019,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private async loadToolbarPage(instance: BrowserInstance): Promise<void> {
-    const query = `instanceId=${encodeURIComponent(instance.id)}`
+    const embedded = instance.embeddedHostWebContentsId !== null
+    const query = `instanceId=${encodeURIComponent(instance.id)}&embedded=${embedded ? '1' : '0'}`
     let lastError: unknown = null
 
     for (let attempt = 0; attempt <= TOOLBAR_LOAD_MAX_RETRIES; attempt++) {
@@ -2235,7 +3030,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         } else {
           await instance.toolbarView.webContents.loadFile(
             join(__dirname, 'renderer/browser-toolbar.html'),
-            { query: { instanceId: instance.id } },
+            { query: { instanceId: instance.id, embedded: embedded ? '1' : '0' } },
           )
         }
 
@@ -2309,6 +3104,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       canGoBack: instance.canGoBack,
       canGoForward: instance.canGoForward,
       themeColor: instance.themeColor,
+      bookmarked: /^https?:/i.test(instance.currentUrl)
+        && this.profileStore.listBookmarks(instance.workspaceId).some((entry) => entry.url === instance.currentUrl),
+      embedded: instance.embeddedHostWebContentsId !== null,
     }
     instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
   }
@@ -2342,6 +3140,56 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     ipcMain.handle(TOOLBAR_CHANNELS.STOP, async (_event, instanceId: string) => {
       const inst = findInstance(instanceId)
       if (inst) this.stop(inst.id)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.SET_REVEALED, (_event, instanceId: string, revealed: boolean) => {
+      const inst = findInstance(instanceId)
+      if (!inst || inst.embeddedToolbarMode !== 'floating') return
+      inst.embeddedToolbarRevealed = !!revealed
+      this.layoutEmbeddedToolbar(inst)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.PIN_EMBEDDED, (_event, instanceId: string) => {
+      const inst = findInstance(instanceId)
+      if (!inst || inst.embeddedHostWebContentsId === null) return
+      inst.embeddedToolbarMode = 'fixed'
+      inst.embeddedToolbarRevealed = false
+      this.layoutEmbeddedToolbar(inst)
+      this.emitStateChange(inst)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.SHOW_EMBEDDED_MENU, (_event, instanceId: string, kind: 'extensions' | 'permissions' | 'passwords') => {
+      const inst = findInstance(instanceId)
+      if (!inst) return
+      let origin: string | null = null
+      try {
+        origin = new URL(inst.currentUrl).origin
+      } catch {
+        // Non-web pages do not expose site permissions.
+      }
+      this.showToolbarMenu(kind, inst.id, origin)
+    })
+
+    ipcMain.on('browser-credentials:captured', (event, payload: { origin?: string; username?: string; password?: string }) => {
+      const instance = this.getInstanceByWebContentsId(event.sender.id)
+      if (!instance) return
+      void this.handleCapturedCredential(instance, payload)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.TOGGLE_BOOKMARK, (_event, instanceId: string) => {
+      const inst = findInstance(instanceId)
+      if (!inst || !/^https?:/i.test(inst.currentUrl)) return
+      const existing = this.profileStore.listBookmarks(inst.workspaceId).find((entry) => entry.url === inst.currentUrl)
+      if (existing) {
+        this.profileStore.removeBookmark(inst.workspaceId, existing.id)
+      } else {
+        this.addBookmark(inst.workspaceId, {
+          url: inst.currentUrl,
+          title: inst.title,
+          favicon: inst.favicon,
+        })
+      }
+      this.pushToolbarState(inst)
     })
 
     ipcMain.handle(TOOLBAR_CHANNELS.MENU_GEOMETRY, async (_event, instanceId: string, open: boolean, height?: number) => {
@@ -2464,7 +3312,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Extract a plain {@link BrowserInstanceSnapshot} from a live `BrowserInstance`.
    *
    * `this.getInstance(id)` returns the full instance, which has non-cloneable
-   * Electron native references (`window: BrowserWindow`, `pageView: BrowserView`,
+   * Electron native references (`window: BrowserWindow`, `pageView: WebContentsView`,
    * `toolbarView`, ...). When we ship the result back over the `__browser:invoke`
    * IPC channel, Electron's structured-clone serializer throws
    * "An object could not be cloned" — see the user-reported bug on the remote
@@ -2792,6 +3640,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
         const label = this.getAgentControlLabel(instance.agentControl)
 
+        this.layoutEmbeddedToolbar(instance)
         this.reapplyAgentControlVisual(instance)
         this.emitStateChange(instance)
 
@@ -2811,6 +3660,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.agentControl = null
         this.applyAgentControlLock(instance, false)
         this.updateNativeOverlayState(instance)
+        this.layoutEmbeddedToolbar(instance)
         this.emitStateChange(instance)
         mainLog.info(`[browser-pane] agent control released session=${sessionId}`)
       }
@@ -2840,6 +3690,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.agentControl = null
     this.applyAgentControlLock(instance, false)
     this.updateNativeOverlayState(instance)
+    this.layoutEmbeddedToolbar(instance)
     this.emitStateChange(instance)
     mainLog.info(`[browser-pane] agent control released instance=${instanceId}${sessionId ? ` session=${sessionId}` : ''}`)
 
@@ -3040,6 +3891,29 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       mainLog.info(`[browser-pane] popup did-navigate parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${popupUrl}`)
     })
 
+    popupWindow.webContents.on('will-navigate', (event, popupUrl) => {
+      if (!popupUrl.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) return
+      event.preventDefault()
+      void this.handleDeepLinkUrl(popupUrl)
+      if (!popupWindow.isDestroyed()) popupWindow.close()
+    })
+
+    popupWindow.webContents.setWindowOpenHandler((details) => {
+      if (details.url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
+        void this.handleDeepLinkUrl(details.url)
+        return { action: 'deny' }
+      }
+      try {
+        const parsed = new URL(details.url)
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          return { action: 'allow' }
+        }
+      } catch {
+        // Deny malformed popup URLs below.
+      }
+      return { action: 'deny' }
+    })
+
     popupWindow.webContents.on('did-redirect-navigation', (_event, popupUrl, isInPlace, isMainFrame) => {
       mainLog.info(
         `[browser-pane] popup redirect parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${popupUrl} inPlace=${isInPlace} mainFrame=${isMainFrame}`,
@@ -3109,6 +3983,206 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
+  private recordHistory(instance: BrowserInstance): void {
+    let parsed: URL
+    try {
+      parsed = new URL(instance.currentUrl)
+    } catch {
+      return
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return
+    this.profileStore.recordHistory({
+      id: randomUUID(),
+      workspaceId: instance.workspaceId,
+      tabId: instance.id,
+      url: parsed.toString(),
+      title: instance.title || parsed.hostname,
+      favicon: instance.favicon,
+      visitedAt: Date.now(),
+    })
+  }
+
+  private persistDownload(instance: BrowserInstance, entry: BrowserDownloadEntry): void {
+    this.profileStore.upsertDownload({
+      ...entry,
+      workspaceId: instance.workspaceId,
+      tabId: instance.id,
+    })
+  }
+
+  private requireActiveDownload(workspaceId: string | null, id: string): { item: DownloadItem; instanceId: string } {
+    const active = this.activeDownloads.get(id)
+    if (!active) throw new Error('Download is no longer active.')
+    const instance = this.instances.get(active.instanceId)
+    if (!instance || instance.workspaceId !== workspaceId) throw new Error('Download not found in this workspace.')
+    return active
+  }
+
+  private updateActiveDownloadState(id: string, state: BrowserDownloadEntry['state']): void {
+    const active = this.activeDownloads.get(id)
+    if (!active) return
+    const instance = this.instances.get(active.instanceId)
+    const entry = instance?.downloads.find((download) => download.id === id)
+    if (!instance || !entry) return
+    entry.state = state
+    entry.bytesReceived = active.item.getReceivedBytes()
+    entry.totalBytes = active.item.getTotalBytes()
+    this.persistDownload(instance, entry)
+  }
+
+  private async handleCapturedCredential(
+    instance: BrowserInstance,
+    payload: { origin?: string; username?: string; password?: string },
+  ): Promise<void> {
+    const origin = payload.origin?.trim() ?? ''
+    const username = payload.username?.trim().slice(0, 512) ?? ''
+    const password = payload.password ?? ''
+    if (!origin || !username || !password || password.length > 4096) return
+    try {
+      const parsed = new URL(origin)
+      const pageOrigin = new URL(instance.pageView.webContents.getURL()).origin
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== pageOrigin) return
+    } catch {
+      return
+    }
+    const promptKey = `${origin}\n${username}`
+    if (this.pendingCredentialPrompts.has(promptKey)) return
+    this.pendingCredentialPrompts.add(promptKey)
+    try {
+      const existing = (await this.passwordVault.list(origin)).find((credential) => credential.username === username)
+      const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+      const host = instance.embeddedHostWindow ?? instance.window
+      const result = await dialog.showMessageBox(host, {
+        type: 'question',
+        title: localeIsChinese ? '保存密码' : 'Save password',
+        message: localeIsChinese
+          ? `${existing ? '更新' : '保存'} ${username} 在 ${new URL(origin).hostname} 的密码？`
+          : `${existing ? 'Update' : 'Save'} the password for ${username} on ${new URL(origin).hostname}?`,
+        detail: this.passwordVault.getBackend() === 'icloud-keychain'
+          ? (localeIsChinese ? '密码将安全存入 iCloud 钥匙串，并可在您的设备间同步。' : 'The password will be stored in iCloud Keychain and can sync across your devices.')
+          : (localeIsChinese ? '密码将使用系统密码库加密保存在本机。' : 'The password will be encrypted locally by the operating-system password vault.'),
+        buttons: [localeIsChinese ? (existing ? '更新' : '保存') : (existing ? 'Update' : 'Save'), localeIsChinese ? '暂不' : 'Not now'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (result.response === 0) await this.passwordVault.save({ origin, username, password })
+    } finally {
+      setTimeout(() => this.pendingCredentialPrompts.delete(promptKey), 2_000)
+    }
+  }
+
+  private async offerPasswordFill(instance: BrowserInstance): Promise<void> {
+    let origin: string
+    try {
+      const parsed = new URL(instance.pageView.webContents.getURL())
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return
+      origin = parsed.origin
+    } catch {
+      return
+    }
+    if (instance.credentialOfferUrl === instance.currentUrl) return
+    const hasPasswordField = await instance.pageView.webContents.executeJavaScript(
+      `Boolean(document.querySelector('input[type="password"]'))`,
+      true,
+    ).catch(() => false)
+    if (!hasPasswordField) return
+    const credentials = await this.passwordVault.list(origin)
+    if (credentials.length === 0) return
+    instance.credentialOfferUrl = instance.currentUrl
+    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+    const choices = credentials.slice(0, 8)
+    const cancelLabel = localeIsChinese ? '暂不填充' : 'Not now'
+    const host = instance.embeddedHostWindow ?? instance.window
+    const result = await dialog.showMessageBox(host, {
+      type: 'question',
+      title: localeIsChinese ? '填充已保存的密码' : 'Fill saved password',
+      message: localeIsChinese ? `选择 ${new URL(origin).hostname} 的登录账号` : `Choose an account for ${new URL(origin).hostname}`,
+      buttons: [...choices.map((credential) => credential.username), cancelLabel],
+      defaultId: 0,
+      cancelId: choices.length,
+      noLink: true,
+    })
+    const selected = choices[result.response]
+    if (selected) await this.fillSavedCredential(instance, selected.id)
+  }
+
+  private async fillSavedCredential(instance: BrowserInstance, id: string): Promise<void> {
+    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+    const credential = await this.passwordVault.reveal(
+      id,
+      localeIsChinese ? '使用已保存的网页登录信息' : 'Use your saved website login',
+    )
+    let pageOrigin: string
+    try {
+      pageOrigin = new URL(instance.pageView.webContents.getURL()).origin
+    } catch {
+      return
+    }
+    if (credential.origin !== pageOrigin) throw new Error('Saved password origin does not match the current page.')
+    instance.pageView.webContents.send('browser-credentials:fill', {
+      username: credential.username,
+      password: credential.password,
+    })
+  }
+
+  private async showPasswordMenu(instance: BrowserInstance, origin: string): Promise<void> {
+    const host = instance.embeddedHostWindow ?? instance.window
+    if (host.isDestroyed()) return
+    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+    const credentials = await this.passwordVault.list(origin)
+    const template: MenuItemConstructorOptions[] = credentials.length > 0
+      ? credentials.map((credential) => ({
+          label: credential.username,
+          submenu: [
+            {
+              label: localeIsChinese ? '使用 Touch ID 填充' : 'Fill with Touch ID',
+              click: () => { void this.fillSavedCredential(instance, credential.id) },
+            },
+            {
+              label: localeIsChinese ? '删除' : 'Delete',
+              click: () => { void this.passwordVault.remove(credential.id) },
+            },
+          ],
+        }))
+      : [{ label: localeIsChinese ? '此网站没有已保存的密码' : 'No saved passwords for this site', enabled: false }]
+    template.push(
+      { type: 'separator' },
+      {
+        label: this.passwordVault.getBackend() === 'icloud-keychain'
+          ? (localeIsChinese ? 'iCloud 钥匙串同步已启用' : 'iCloud Keychain sync enabled')
+          : (localeIsChinese ? '系统加密密码库' : 'System-encrypted password vault'),
+        enabled: false,
+      },
+    )
+    Menu.buildFromTemplate(template).popup({ window: host })
+  }
+
+  private getExtensionActionPath(manifest: any): string | null {
+    const popup = manifest?.action?.default_popup
+      ?? manifest?.browser_action?.default_popup
+      ?? manifest?.page_action?.default_popup
+      ?? manifest?.options_ui?.page
+      ?? manifest?.options_page
+    return typeof popup === 'string' && popup.trim() ? popup.trim() : null
+  }
+
+  private async restoreExtensions(): Promise<void> {
+    const ses = session.fromPartition(SESSION_PARTITION)
+    for (const path of this.profileStore.getExtensionPaths()) {
+      if (!existsSync(path)) {
+        this.profileStore.removeExtensionPath(path)
+        continue
+      }
+      try {
+        await ses.extensions.loadExtension(path, { allowFileAccess: true })
+        mainLog.info(`[browser-pane] restored extension path=${path}`)
+      } catch (error) {
+        mainLog.warn(`[browser-pane] failed to restore extension path=${path}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
   private resolveDownloadsDir(instance: BrowserInstance): string {
     const sessionId = instance.boundSessionId ?? instance.ownerSessionId
     if (sessionId && this.sessionPathResolver) {
@@ -3133,9 +4207,71 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return `${name}_${counter}${ext}`
   }
 
+  private isPotentiallyDangerousDownload(filename: string, mimeType: string): boolean {
+    const extension = parsePath(filename).ext.toLowerCase()
+    return DANGEROUS_DOWNLOAD_EXTENSIONS.has(extension)
+      || mimeType === 'application/x-msdownload'
+      || mimeType === 'application/x-apple-diskimage'
+      || mimeType === 'application/vnd.microsoft.portable-executable'
+  }
+
+  private promptExternalProtocol(instance: BrowserInstance, url: string): void {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return
+    }
+    if (INTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol) || parsed.protocol === new URL(CRAFT_DEEPLINK_SCHEME_PREFIX).protocol) return
+    const host = instance.embeddedHostWindow ?? instance.window
+    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+    void dialog.showMessageBox(host, {
+      type: 'question',
+      title: localeIsChinese ? '打开外部应用' : 'Open external application',
+      message: localeIsChinese ? `允许此网站打开“${parsed.protocol.slice(0, -1)}”应用吗？` : `Allow this site to open the “${parsed.protocol.slice(0, -1)}” application?`,
+      detail: url,
+      buttons: [localeIsChinese ? '打开' : 'Open', localeIsChinese ? '取消' : 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    }).then((result) => {
+      if (result.response === 0) void shell.openExternal(url)
+    }).catch((error) => mainLog.warn(`[browser-pane] external protocol prompt failed: ${String(error)}`))
+  }
+
   private setupSessionObservers(ses: ElectronSession): void {
     if (this.partitionObserversInitialized) return
     this.partitionObserversInitialized = true
+
+    ses.on('select-webauthn-account', (_event, details, callback) => {
+      const accounts = details.accounts
+      if (accounts.length <= 1) {
+        callback(accounts[0]?.credentialId ?? null)
+        return
+      }
+
+      void (async () => {
+        let credentialId: string | null = null
+        try {
+          const labels = accounts.map((account) => account.displayName || account.name || details.relyingPartyId)
+          const cancelLabel = app.getLocale().toLowerCase().startsWith('zh') ? '取消' : 'Cancel'
+          const result = await dialog.showMessageBox({
+            type: 'question',
+            title: details.relyingPartyId,
+            message: app.getLocale().toLowerCase().startsWith('zh') ? '选择用于登录的通行密钥' : 'Choose a passkey to sign in',
+            buttons: [...labels, cancelLabel],
+            cancelId: labels.length,
+            defaultId: 0,
+            noLink: true,
+          })
+          credentialId = accounts[result.response]?.credentialId ?? null
+        } catch (error) {
+          mainLog.warn('[BrowserPaneManager] Failed to select a WebAuthn account:', error)
+        } finally {
+          callback(credentialId)
+        }
+      })()
+    })
 
     ses.webRequest.onBeforeRequest((details, callback) => {
       const wcId = details.webContentsId
@@ -3214,13 +4350,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         savePath,
       }
       this.pushDownloadLog(instance, started)
+      this.persistDownload(instance, started)
+      this.activeDownloads.set(downloadId, { item, instanceId: instance.id })
 
       const onUpdated = (_e: Electron.Event, state: string) => {
         const latest = instance.downloads.find((d) => d.id === downloadId)
         if (!latest) return
         latest.bytesReceived = item.getReceivedBytes()
         latest.totalBytes = item.getTotalBytes()
-        if (state === 'interrupted') latest.state = 'interrupted'
+        latest.state = item.isPaused() ? 'paused' : state === 'interrupted' ? 'interrupted' : 'started'
+        this.persistDownload(instance, latest)
       }
 
       item.on('updated', onUpdated)
@@ -3233,7 +4372,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         latest.totalBytes = item.getTotalBytes()
         latest.savePath = item.getSavePath()
         latest.state = state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted'
+        this.persistDownload(instance, latest)
+        this.activeDownloads.delete(downloadId)
       })
+
+      if (this.isPotentiallyDangerousDownload(filename, started.mimeType)) {
+        item.pause()
+        started.state = 'paused'
+        this.persistDownload(instance, started)
+        const host = instance.embeddedHostWindow ?? instance.window
+        const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+        void dialog.showMessageBox(host, {
+          type: 'warning',
+          title: localeIsChinese ? '确认下载' : 'Confirm download',
+          message: localeIsChinese ? `“${filename}”可能会更改您的设备。` : `“${filename}” may make changes to your device.`,
+          detail: item.getURL(),
+          buttons: [localeIsChinese ? '取消下载' : 'Cancel download', localeIsChinese ? '仍然保留' : 'Keep anyway'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        }).then((result) => {
+          if (!this.activeDownloads.has(downloadId)) return
+          if (result.response === 1) item.resume()
+          else item.cancel()
+        }).catch(() => {
+          if (this.activeDownloads.has(downloadId)) item.cancel()
+        })
+      }
     })
   }
 
@@ -3252,22 +4417,29 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (this.partitionPermissionsInitialized) return
     this.partitionPermissionsInitialized = true
 
-    const allow = new Set([
+    for (const entry of this.profileStore.listPermissions()) {
+      this.permissionDecisions.set(`${entry.origin}|${entry.permission}`, entry.allowed)
+    }
+
+    const allowWithoutPrompt = new Set([
       'fullscreen',
       'pointerLock',
+      'clipboard-sanitized-write',
+    ])
+    const promptable = new Set([
       'window-management',
       'notifications',
       'geolocation',
       'media',
       'clipboard-read',
-      'clipboard-sanitized-write',
       'idle-detection',
     ])
+    const decisionKey = (origin: string, permission: string) => `${origin}|${permission}`
 
     if (typeof ses.setPermissionCheckHandler === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ses.setPermissionCheckHandler((_webContents, permission: string, requestingOrigin: string, _details: any) => {
-        const allowed = allow.has(permission)
+        const allowed = allowWithoutPrompt.has(permission)
+          || this.permissionDecisions.get(decisionKey(requestingOrigin, permission)) === true
         if (!allowed) {
           this.logPermissionDecision('check', permission, requestingOrigin)
         }
@@ -3276,13 +4448,50 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     if (typeof ses.setPermissionRequestHandler === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ses.setPermissionRequestHandler((_webContents, permission: string, callback: (allow: boolean) => void, details: any) => {
-        const allowed = allow.has(permission)
-        if (!allowed) {
-          this.logPermissionDecision('request', permission, details?.requestingOrigin ?? 'unknown')
+      ses.setPermissionRequestHandler((webContents, permission: string, callback: (allow: boolean) => void, details: any) => {
+        const origin = details?.requestingOrigin ?? 'unknown'
+        if (allowWithoutPrompt.has(permission)) {
+          callback(true)
+          return
         }
-        callback(allowed)
+
+        const remembered = this.permissionDecisions.get(decisionKey(origin, permission))
+        if (remembered !== undefined) {
+          callback(remembered)
+          return
+        }
+
+        if (!promptable.has(permission)) {
+          this.logPermissionDecision('request', permission, origin)
+          callback(false)
+          return
+        }
+
+        const instance = this.getInstanceByWebContentsId(webContents.id)
+        const options: MessageBoxOptions = {
+          type: 'question',
+          title: 'Website permission',
+          message: `${origin} wants permission to use ${permission}.`,
+          detail: 'This choice is saved in the persistent Craft Agents browser profile. You can reset it from the site-permissions menu.',
+          buttons: ['Allow', 'Block'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        }
+        const prompt = instance
+          ? dialog.showMessageBox(instance.embeddedHostWindow ?? instance.window, options)
+          : dialog.showMessageBox(options)
+        void prompt.then((result) => {
+          const allowed = result.response === 0
+          this.permissionDecisions.set(decisionKey(origin, permission), allowed)
+          this.profileStore.setPermission({
+            origin,
+            permission,
+            allowed,
+            updatedAt: Date.now(),
+          })
+          callback(allowed)
+        }).catch(() => callback(false))
       })
     }
   }
@@ -3321,7 +4530,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     instance.window.on('resize', () => {
-      this.layoutAllViews(instance)
+      if (!instance.embeddedHostWindow) this.layoutAllViews(instance)
     })
 
     toolbarWc.on('did-finish-load', () => {
@@ -3355,25 +4564,128 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.inFlightRequestsByWebContentsId.set(pageWc.id, 0)
       this.lastNetworkActivityByWebContentsId.set(pageWc.id, Date.now())
       this.emitStateChange(instance)
+      this.recordHistory(instance)
       void this.pushToolbarState(instance)
       void this.extractThemeColor(instance)
       this.reapplyAgentControlVisual(instance)
     })
 
+    pageWc.on('render-process-gone', (_event, details) => {
+      if (!this.instances.has(instance.id) || details.reason === 'clean-exit' || details.reason === 'killed') return
+      const now = Date.now()
+      instance.crashRecoveryAttempts = now - instance.lastCrashAt < 60_000
+        ? instance.crashRecoveryAttempts + 1
+        : 1
+      instance.lastCrashAt = now
+      instance.isLoading = false
+      mainLog.error(`[browser-pane] renderer gone id=${instance.id} reason=${details.reason} code=${details.exitCode}`)
+      if (instance.crashRecoveryAttempts <= 2 && /^https?:/i.test(instance.currentUrl)) {
+        void pageWc.reload()
+      } else {
+        instance.title = app.getLocale().toLowerCase().startsWith('zh') ? '页面已崩溃' : 'Page crashed'
+        this.emitStateChange(instance)
+        void this.pushToolbarState(instance)
+      }
+    })
+
     pageWc.on('dom-ready', () => {
       this.installThemeObserver(instance)
       void this.extractThemeColor(instance)
+      void this.offerPasswordFill(instance)
     })
 
     pageWc.on('before-input-event', (_event, _input) => {
       if (instance.lockState.active) {
         _event.preventDefault()
       }
+
+      // Native sibling view ordering can briefly route the first pointer
+      // event to the page while the floating toolbar is collapsed (notably
+      // after navigation and renderer resize on macOS). Treat the top edge of
+      // the page as a second reveal sensor so the toolbar remains reachable.
+      const pointerInput = _input as typeof _input & { y?: number }
+      const inputType = pointerInput.type || ''
+      if (
+        instance.embeddedHostWindow
+        && instance.embeddedToolbarMode === 'floating'
+        && !instance.embeddedToolbarRevealed
+        && instance.isVisible
+        && (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown')
+        && typeof pointerInput.y === 'number'
+        && pointerInput.y <= 12
+      ) {
+        instance.embeddedToolbarRevealed = true
+        this.layoutEmbeddedToolbar(instance)
+      }
     })
 
-    toolbarWc.on('before-input-event', (event) => {
+    pageWc.on('context-menu', (_event, params) => {
+      const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+      const template: MenuItemConstructorOptions[] = []
+      if (params.linkURL) {
+        template.push(
+          {
+            label: localeIsChinese ? '在新标签页中打开链接' : 'Open link in new tab',
+            click: () => {
+              this.createInstance(undefined, {
+                show: false,
+                ownerType: 'manual',
+                workspaceId: instance.workspaceId,
+                embeddedHostWebContentsId: instance.embeddedHostWebContentsId ?? undefined,
+                initialUrl: params.linkURL,
+              })
+            },
+          },
+          {
+            label: localeIsChinese ? '复制链接' : 'Copy link',
+            click: () => clipboard.writeText(params.linkURL),
+          },
+          { type: 'separator' },
+        )
+      }
+      if (params.hasImageContents && params.srcURL) {
+        template.push({
+          label: localeIsChinese ? '下载图片' : 'Download image',
+          click: () => pageWc.downloadURL(params.srcURL),
+        }, { type: 'separator' })
+      }
+      if (params.isEditable) {
+        template.push(
+          { label: localeIsChinese ? '剪切' : 'Cut', enabled: params.editFlags.canCut, click: () => pageWc.cut() },
+          { label: localeIsChinese ? '复制' : 'Copy', enabled: params.editFlags.canCopy, click: () => pageWc.copy() },
+          { label: localeIsChinese ? '粘贴' : 'Paste', enabled: params.editFlags.canPaste, click: () => pageWc.paste() },
+        )
+      } else if (params.selectionText) {
+        template.push({ label: localeIsChinese ? '复制' : 'Copy', click: () => pageWc.copy() })
+      } else {
+        template.push(
+          { label: localeIsChinese ? '返回' : 'Back', enabled: pageWc.canGoBack(), click: () => pageWc.goBack() },
+          { label: localeIsChinese ? '前进' : 'Forward', enabled: pageWc.canGoForward(), click: () => pageWc.goForward() },
+          { label: localeIsChinese ? '重新加载' : 'Reload', click: () => pageWc.reload() },
+        )
+      }
+      if (!app.isPackaged) {
+        template.push(
+          { type: 'separator' },
+          { label: localeIsChinese ? '检查元素' : 'Inspect element', click: () => pageWc.inspectElement(params.x, params.y) },
+        )
+      }
+      Menu.buildFromTemplate(template).popup({ window: instance.embeddedHostWindow ?? instance.window })
+    })
+
+    toolbarWc.on('before-input-event', (event, input) => {
       if (instance.lockState.active) {
         event.preventDefault()
+      }
+
+      const inputType = input.type || ''
+      if (
+        instance.embeddedToolbarMode === 'floating'
+        && !instance.embeddedToolbarRevealed
+        && (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown')
+      ) {
+        instance.embeddedToolbarRevealed = true
+        this.layoutEmbeddedToolbar(instance)
       }
     })
 
@@ -3436,6 +4748,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.themeObserverToken = null
         instance.themeColor = null
         this.emitStateChange(instance)
+        this.recordHistory(instance)
         void this.pushToolbarState(instance)
         this.installThemeObserver(instance)
         instance.inPageThemeTimer = setTimeout(() => { void this.extractThemeColor(instance) }, 300)
@@ -3448,12 +4761,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     pageWc.on('page-title-updated', (_event, title) => {
       const normalized = this.normalizePageState(pageWc.getURL(), title)
       instance.title = normalized.title
+      this.recordHistory(instance)
       this.emitStateChange(instance)
       void this.pushToolbarState(instance)
     })
 
     pageWc.on('page-favicon-updated', (_event, favicons) => {
       instance.favicon = favicons[0] || null
+      this.recordHistory(instance)
       this.emitStateChange(instance)
     })
 
@@ -3502,6 +4817,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
         event.preventDefault()
         void this.handleDeepLinkUrl(url)
+        return
+      }
+      try {
+        const parsed = new URL(url)
+        if (!INTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol)) {
+          event.preventDefault()
+          this.promptExternalProtocol(instance, url)
+        }
+      } catch {
+        event.preventDefault()
       }
     })
 
@@ -3530,6 +4855,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=unsupported_protocol protocol=${parsed.protocol} url=${details.url}`)
+        this.promptExternalProtocol(instance, details.url)
         return { action: 'deny' }
       }
 
@@ -3542,7 +4868,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           minHeight: 520,
           show: true,
           autoHideMenuBar: true,
-          parent: instance.window,
+          parent: instance.embeddedHostWindow ?? instance.window,
           modal: false,
           webPreferences: {
             partition: SESSION_PARTITION,
@@ -3564,6 +4890,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     instance.window.on('show', () => {
+      if (instance.embeddedHostWindow) return
       instance.isVisible = true
       this.emitStateChange(instance)
       this.reapplyAgentControlVisual(instance)
@@ -3575,6 +4902,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     instance.window.on('hide', () => {
+      if (instance.embeddedHostWindow) return
       instance.isVisible = false
       this.emitStateChange(instance)
       this.updateNativeOverlayState(instance)
@@ -3601,6 +4929,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       agentControlActive: !!instance.agentControl?.active,
       themeColor: instance.themeColor,
       workspaceId: instance.workspaceId,
+      toolbarMode: instance.embeddedToolbarMode,
     }
   }
 

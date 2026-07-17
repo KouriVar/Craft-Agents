@@ -419,6 +419,20 @@ let pendingDeepLink: string | null = null
 // Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
 app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
 
+// Electron does not expose a platform authenticator until it is configured.
+// The matching keychain access group is injected by the signed macOS build;
+// unsigned development builds intentionally leave this disabled because macOS
+// rejects WebAuthn credentials whose entitlement does not match the signature.
+const webAuthnKeychainAccessGroup = process.env.CRAFT_WEBAUTHN_KEYCHAIN_ACCESS_GROUP?.trim()
+if (process.platform === 'darwin' && webAuthnKeychainAccessGroup) {
+  app.configureWebAuthn({
+    touchID: {
+      keychainAccessGroup: webAuthnKeychainAccessGroup,
+      promptReason: 'verify your identity on $1',
+    },
+  })
+}
+
 // Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
 if (process.defaultApp) {
@@ -449,28 +463,31 @@ function normalizeOriginForCert(urlStr: string): string {
   return u.origin
 }
 
+let configuredServerOrigin: string | undefined
 if (process.env.CRAFT_SERVER_URL) {
-  let serverOrigin: string | undefined
   try {
-    serverOrigin = normalizeOriginForCert(process.env.CRAFT_SERVER_URL)
+    configuredServerOrigin = normalizeOriginForCert(process.env.CRAFT_SERVER_URL)
   } catch {
     // Invalid URL — will fail later during connection, no need to handle here
   }
-  if (serverOrigin) {
-    app.on('certificate-error', (event, _webContents, url, _error, _certificate, callback) => {
-      try {
-        if (normalizeOriginForCert(url) === serverOrigin) {
-          event.preventDefault()
-          callback(true)
-          return
-        }
-      } catch {
-        // URL parse failure — fall through to default rejection
-      }
-      callback(false)
-    })
-  }
 }
+
+app.on('certificate-error', (event, webContents, url, error, _certificate, callback) => {
+  try {
+    if (configuredServerOrigin && normalizeOriginForCert(url) === configuredServerOrigin) {
+      event.preventDefault()
+      callback(true)
+      return
+    }
+  } catch {
+    // URL parse failure — fall through to browser handling/default rejection.
+  }
+  if (browserPaneManager?.handleCertificateError(webContents.id, url, error, callback)) {
+    event.preventDefault()
+    return
+  }
+  callback(false)
+})
 
 // Register thumbnail:// custom protocol for file preview thumbnails in the sidebar.
 // Must happen before app.whenReady() — Electron requires early scheme registration.
@@ -759,7 +776,7 @@ app.whenReady().then(async () => {
         return { ok: false, error: 'This Cowart canvas is not bound to a local Craft Agent session.' }
       }
 
-      const hostWebContents = event.sender.hostWebContents
+      const hostWebContents = event.sender.hostWebContents ?? event.sender
       const workspaceId = windowManager?.getWorkspaceForWindow(hostWebContents.id)
       const session = await sessionManager.getSession(cowartCanvasSessionId)
       if (!workspaceId || !session || session.workspaceId !== workspaceId) {

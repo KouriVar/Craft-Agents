@@ -40,6 +40,7 @@ export const KEYS = {
   // Tabs (workspace-scoped)
   tabs: 'tabs', // Used as: tabs-${workspaceId}
   rightSidebarWidgetTabs: 'right-sidebar-widget-tabs',
+  browserWorkspace: 'browser-workspace',
 
   // Working directory
   recentWorkingDirs: 'recent-working-dirs',

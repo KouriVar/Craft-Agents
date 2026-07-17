@@ -17,14 +17,19 @@ apps/electron/
 ├── src/
 │   ├── main/              # Electron main process
 │   │   ├── index.ts       # Window creation, app lifecycle
+│   │   ├── browser-pane-manager.ts # Persistent Chromium runtime and shared Agent control
+│   │   ├── browser-profile-store.ts # Tabs, history, bookmarks, downloads, extension preferences
+│   │   ├── browser-password-vault.ts # Keychain / safeStorage credential vault
 │   │   ├── ipc.ts         # IPC handler registration
 │   │   ├── menu.ts        # Application menu (File, Edit, View, Help)
 │   │   ├── sessions.ts    # Session management, CraftAgent integration
 │   │   ├── deep-link.ts   # Deep link URL parsing and handling
 │   │   ├── agent-service.ts # Agent listing, caching, auth checking
 │   │   └── sources-service.ts # Source and authentication service
-│   ├── preload/           # Context bridge (main ↔ renderer)
-│   │   └── index.ts       # Exposes electronAPI to renderer
+│   ├── preload/           # Context bridges (main ↔ renderer / browser pages)
+│   │   ├── index.ts       # Exposes electronAPI to renderer
+│   │   ├── browser-toolbar.ts # Native browser toolbar bridge
+│   │   └── browser-page.ts # Credential capture and autofill bridge
 │   ├── renderer/          # React UI
 │   │   ├── App.tsx        # Main app, event handling
 │   │   ├── components/
@@ -192,7 +197,8 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 
 ## Current Limitations
 
-1. **In development only** - No electron-builder config for distribution
+1. Chromium extensions run through Electron's supported extension API subset; extensions that require Chrome-only APIs may be partially unavailable.
+2. iCloud Keychain synchronization and Touch ID WebAuthn require a correctly signed macOS build with the configured keychain entitlement.
 
 ## Implemented Features
 
@@ -210,6 +216,7 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **Application menu** - Standard macOS/Windows menus with keyboard shortcuts
 - **Component playground** - Development tool for testing UI components in isolation
 - **Type-safe navigation** - Unified routing system for tabs, actions, and deep links
+- **Persistent browser workspace** - Shared tabs, login state, history, bookmarks, downloads, OAuth popups, extensions, password autofill, and Agent control
 
 ## Navigation System
 

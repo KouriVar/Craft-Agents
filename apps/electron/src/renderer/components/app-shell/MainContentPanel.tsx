@@ -31,6 +31,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isPluginsNavigation,
+  isBrowserNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
 } from '@/contexts/NavigationContext'
@@ -44,9 +45,11 @@ import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
 import { PluginInfoPage } from '../plugins/PluginInfoPage'
+import { BrowserWorkspacePage } from '../browser/BrowserWorkspacePage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
+import { pluginListKindAtom } from '@/atoms/plugins'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
 
 export interface MainContentPanelProps {
@@ -95,6 +98,7 @@ export function MainContentPanel({
   const { clearMultiSelect } = useSessionSelection()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const automations = useAtomValue(automationsAtom)
+  const pluginListKind = useAtomValue(pluginListKindAtom)
 
   // Execution history for the selected automation
   const selectedAutomationId = isAutomationsNavigation(navState) ? navState.details?.automationId : undefined
@@ -319,6 +323,15 @@ export function MainContentPanel({
   }
 
   if (isPluginsNavigation(navState)) {
+    if (pluginListKind === 'extensions') {
+      return wrapWithStoplight(
+        <Panel variant="grow" className={className}>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <p className="text-sm">{t('plugins.browserExtensionsEmptyDescription')}</p>
+          </div>
+        </Panel>
+      )
+    }
     if (navState.details?.type === 'plugin' && activeWorkspaceId) {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
@@ -331,6 +344,14 @@ export function MainContentPanel({
         <div className="flex h-full items-center justify-center text-muted-foreground">
           <p className="text-sm">{t('plugins.noSelection', { defaultValue: 'Select a plugin to view its details' })}</p>
         </div>
+      </Panel>
+    )
+  }
+
+  if (isBrowserNavigation(navState)) {
+    return wrapWithStoplight(
+      <Panel variant="grow" className={className}>
+        <BrowserWorkspacePage activeTabId={navState.details?.tabId ?? null} />
       </Panel>
     )
   }

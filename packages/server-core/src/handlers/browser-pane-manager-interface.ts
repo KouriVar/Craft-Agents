@@ -109,7 +109,7 @@ export interface BrowserDownloadEntry {
   timestamp: number
   url: string
   filename: string
-  state: string
+  state: 'started' | 'paused' | 'completed' | 'interrupted' | 'cancelled'
   bytesReceived: number
   totalBytes: number
   mimeType: string
