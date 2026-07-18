@@ -4,6 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ELECTRON_DIR="$(dirname "$SCRIPT_DIR")"
 ROOT_DIR="$(dirname "$(dirname "$ELECTRON_DIR")")"
+source "$SCRIPT_DIR/download-with-retry.sh"
 
 # Helper function to check required file/directory exists
 require_path() {
@@ -97,19 +98,34 @@ fi
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-# Download binary and checksums
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" -o "$TEMP_DIR/SHASUMS256.txt"
+# Download binary into a persistent cache. Interrupted runs resume the partial
+# file instead of restarting the transfer from zero.
+BUN_CACHE_DIR="$(craft_build_cache_dir)/${BUN_VERSION}"
+BUN_ARCHIVE="$BUN_CACHE_DIR/${BUN_DOWNLOAD}.zip"
+BUN_CHECKSUMS="$BUN_CACHE_DIR/SHASUMS256.txt"
+mkdir -p "$BUN_CACHE_DIR"
+rm -f "$BUN_CHECKSUMS" "$BUN_CHECKSUMS.partial"
+download_with_retry \
+    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" \
+    "$BUN_CHECKSUMS" \
+    "Bun checksums"
+
+if [ -s "$BUN_ARCHIVE" ] && ! (cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | sha256sum -c - >/dev/null 2>&1); then
+    echo "Cached Bun archive failed checksum; downloading a clean copy..."
+    rm -f "$BUN_ARCHIVE" "$BUN_ARCHIVE.partial"
+fi
+download_with_retry \
+    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" \
+    "$BUN_ARCHIVE" \
+    "Bun ${BUN_VERSION} for linux-${ARCH}"
 
 # Verify checksum
 echo "Verifying checksum..."
-cd "$TEMP_DIR"
 # Use sha256sum on Linux (not shasum)
-grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | sha256sum -c -
-cd - > /dev/null
+(cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | sha256sum -c -)
 
 # Extract and install
-unzip -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip" -d "$TEMP_DIR"
+unzip -o "$BUN_ARCHIVE" -d "$TEMP_DIR"
 cp "$TEMP_DIR/${BUN_DOWNLOAD}/bun" "$ELECTRON_DIR/vendor/bun/"
 chmod +x "$ELECTRON_DIR/vendor/bun/bun"
 

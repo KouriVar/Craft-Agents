@@ -11,6 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ELECTRON_DIR="$(dirname "$SCRIPT_DIR")"
 ROOT_DIR="$(dirname "$(dirname "$ELECTRON_DIR")")"
+source "$SCRIPT_DIR/download-with-retry.sh"
 
 require_path() {
     local path="$1"
@@ -48,15 +49,29 @@ BUN_DOWNLOAD="bun-windows-${ARCH}"
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
-curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" -o "$TEMP_DIR/SHASUMS256.txt"
+BUN_CACHE_DIR="$(craft_build_cache_dir)/${BUN_VERSION}"
+BUN_ARCHIVE="$BUN_CACHE_DIR/${BUN_DOWNLOAD}.zip"
+BUN_CHECKSUMS="$BUN_CACHE_DIR/SHASUMS256.txt"
+mkdir -p "$BUN_CACHE_DIR"
+rm -f "$BUN_CHECKSUMS" "$BUN_CHECKSUMS.partial"
+download_with_retry \
+    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" \
+    "$BUN_CHECKSUMS" \
+    "Bun checksums"
+
+if [ -s "$BUN_ARCHIVE" ] && ! (cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | shasum -a 256 -c - >/dev/null 2>&1); then
+    echo "Cached Bun archive failed checksum; downloading a clean copy..."
+    rm -f "$BUN_ARCHIVE" "$BUN_ARCHIVE.partial"
+fi
+download_with_retry \
+    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" \
+    "$BUN_ARCHIVE" \
+    "Bun ${BUN_VERSION} for win32-${ARCH}"
 
 echo "Verifying checksum..."
-cd "$TEMP_DIR"
-grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | shasum -a 256 -c -
-cd - > /dev/null
+(cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | shasum -a 256 -c -)
 
-unzip -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip" -d "$TEMP_DIR"
+unzip -o "$BUN_ARCHIVE" -d "$TEMP_DIR"
 # bun-windows-x64.zip extracts to bun-windows-x64/bun.exe
 cp "$TEMP_DIR/${BUN_DOWNLOAD}/bun.exe" "$ELECTRON_DIR/vendor/bun/"
 chmod +x "$ELECTRON_DIR/vendor/bun/bun.exe"
