@@ -136,6 +136,7 @@ export const RPC_CHANNELS = {
     VERSIONS: 'system:versions',
     HOME_DIR: 'system:homeDir',
     IS_DEBUG_MODE: 'system:isDebugMode',
+    EXPORT_DIAGNOSTICS: 'system:exportDiagnostics',
   },
   update: {
     CHECK: 'update:check',
@@ -450,6 +451,7 @@ export const RPC_CHANNELS = {
     STATE_CHANGED: 'browser-pane:state-changed',
     REMOVED: 'browser-pane:removed',
     INTERACTED: 'browser-pane:interacted',
+    PROFILE_CHANGED: 'browser-pane:profile-changed',
   },
   automations: {
     GET: 'automations:get',

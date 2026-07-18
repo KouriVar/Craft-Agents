@@ -271,7 +271,7 @@ function BrowserToolbarApp() {
       */}
       {windowMenuOpen && (
         <div
-          className="fixed inset-0 z-[90] titlebar-no-drag bg-black/[0.0039215686]"
+          className="fixed inset-0 z-dropdown-backdrop titlebar-no-drag bg-black/[0.0039215686]"
           onPointerDown={(event) => {
             event.preventDefault()
             setWindowMenuOpen(false)
@@ -345,7 +345,7 @@ function BrowserToolbarApp() {
                 side="bottom"
                 sideOffset={6}
                 minWidth="min-w-44"
-                className="titlebar-no-drag z-[110] max-h-none overflow-visible"
+                className="titlebar-no-drag max-h-none overflow-visible"
               >
                 <StyledDropdownMenuItem onSelect={handleHideWindow}>
                   <EyeOff className="h-3.5 w-3.5" />

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, ExternalLink, Folder, FolderOpen, FolderPlus, History, Pencil, Pause, Play, RotateCcw, Search, Star, Trash2, Upload, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { BrowserDownloadRecord, BrowserHistoryEntry, BrowserBookmarkEntry, BrowserBookmarkFolder } from '../../../shared/types'
@@ -26,6 +26,7 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
   const [query, setQuery] = useState('')
   const [folders, setFolders] = useState<BrowserBookmarkFolder[]>([])
   const [activeFolderId, setActiveFolderId] = useState<string>('all')
+  const refreshRevisionRef = useRef(0)
   const config = CONFIG[kind]
   const Icon = config.icon
   const visibleEntries = useMemo(() => {
@@ -41,14 +42,17 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
   }, [activeFolderId, entries, kind, query])
 
   const refresh = useCallback(async () => {
+    const revision = ++refreshRevisionRef.current
     const api = window.electronAPI.browserPane
     const next = kind === 'bookmarks'
       ? await api.listBookmarks()
       : kind === 'history'
         ? await api.listHistory(500)
         : await api.listDownloads(500)
+    const nextFolders = kind === 'bookmarks' ? await api.listBookmarkFolders() : null
+    if (revision !== refreshRevisionRef.current) return
     setEntries(next)
-    if (kind === 'bookmarks') setFolders(await api.listBookmarkFolders())
+    if (nextFolders) setFolders(nextFolders)
     setLoading(false)
   }, [kind])
 
@@ -56,12 +60,12 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
     setQuery('')
     setLoading(true)
     void refresh().catch(() => setLoading(false))
-    const onChanged = () => { void refresh() }
-    window.addEventListener('craft-browser-profile-changed', onChanged)
-    const timer = window.setInterval(onChanged, kind === 'downloads' ? 1_000 : 3_000)
+    const unsubscribe = window.electronAPI.browserPane.onProfileChanged((changedKind) => {
+      if (changedKind === kind) void refresh()
+    })
     return () => {
-      window.removeEventListener('craft-browser-profile-changed', onChanged)
-      window.clearInterval(timer)
+      refreshRevisionRef.current += 1
+      unsubscribe()
     }
   }, [kind, refresh])
 

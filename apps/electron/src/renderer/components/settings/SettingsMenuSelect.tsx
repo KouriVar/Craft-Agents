@@ -143,7 +143,7 @@ export function SettingsMenuSelect({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={effectiveSearchPlaceholder}
               className={cn(
-                'w-full h-8 pl-8 pr-3 text-sm rounded-md',
+                'w-full h-control-sm pl-8 pr-3 text-sm rounded-control',
                 'bg-foreground/5 border-0',
                 'placeholder:text-muted-foreground/50',
                 'focus:outline-none focus:ring-1 focus:ring-foreground/20'
@@ -166,7 +166,7 @@ export function SettingsMenuSelect({
                   onClick={() => handleSelect(option.value)}
                   onMouseEnter={() => onHover?.(option.value)}
                   className={cn(
-                    'w-full flex items-center justify-between px-2.5 py-2 rounded-lg',
+                    'w-full flex items-center justify-between px-2.5 py-2 rounded-surface',
                     'hover:bg-foreground/5 transition-colors text-left',
                     isSelected && 'bg-foreground/3'
                   )}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useAtomValue } from 'jotai'
-import { KeyRound, Pin, Puzzle, ShieldCheck, Star } from 'lucide-react'
+import { KeyRound, Pin, Puzzle, RotateCw, ShieldCheck, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { BrowserExtensionEntry } from '../../../shared/types'
 import { BrowserToolbar } from './BrowserToolbar'
+import { Button } from '@/components/ui/button'
 import { BROWSER_NEW_TAB_URL, browserNativeViewsSuspendedAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
 import { cn } from '@/lib/utils'
 import { PANEL_GAP } from '@/components/app-shell/panel-constants'
@@ -42,7 +43,7 @@ function RendererNewTab({ tabId, onNavigate }: RendererNewTabProps) {
   }
 
   return (
-    <main className="absolute inset-0 z-10 flex min-h-[360px] items-center justify-center rounded-[10px] bg-background px-8">
+    <main className="absolute inset-0 z-local flex min-h-[360px] items-center justify-center rounded-[10px] bg-background px-8">
       <form onSubmit={handleSubmit} className="w-full max-w-[720px]">
         <label htmlFor={`browser-new-tab-address-${tabId}`} className="sr-only">
           {t('browser.urlPlaceholder')}
@@ -80,6 +81,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
   )
   const activeId = activeTab?.id ?? null
   const isNewTab = activeTab?.url === BROWSER_NEW_TAB_URL
+  const isCrashed = activeTab?.crashed === true
   const toolbarPinned = activeTab?.toolbarMode !== 'floating'
   const tabIdsKey = useMemo(() => tabs.map((tab) => tab.id).join('|'), [tabs])
   const tabIds = useMemo(() => tabIdsKey ? tabIdsKey.split('|') : [], [tabIdsKey])
@@ -148,7 +150,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     const api = window.electronAPI?.browserPane
     if (!api || !activeId) return
 
-    if (nativeViewsSuspended || isNewTab) {
+    if (nativeViewsSuspended || isNewTab || isCrashed) {
       for (const tabId of tabIds) {
         void api.setEmbeddedVisible(tabId, false).catch(() => {})
       }
@@ -167,11 +169,11 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     return () => {
       void api.setEmbeddedVisible(activeId, false).catch(() => {})
     }
-  }, [activeId, isNewTab, nativeViewsSuspended, syncActiveSurface, tabIds])
+  }, [activeId, isCrashed, isNewTab, nativeViewsSuspended, syncActiveSurface, tabIds])
 
   useEffect(() => {
     const surface = surfaceRef.current
-    if (!surface || !activeId || nativeViewsSuspended || isNewTab) return
+    if (!surface || !activeId || nativeViewsSuspended || isNewTab || isCrashed) return
 
     let frame = 0
     const scheduleSync = () => {
@@ -192,7 +194,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       observer.disconnect()
       window.removeEventListener('resize', scheduleSync)
     }
-  }, [activeId, isNewTab, nativeViewsSuspended, syncActiveSurface])
+  }, [activeId, isCrashed, isNewTab, nativeViewsSuspended, syncActiveSurface])
 
   const navigateActive = useCallback((input: string) => {
     if (!activeId) return
@@ -230,7 +232,6 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       })
       setBookmarked(true)
     }
-    window.dispatchEvent(new Event('craft-browser-profile-changed'))
   }, [activeTab, bookmarked])
 
   return (
@@ -329,6 +330,23 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
         <div ref={surfaceRef} className="h-full min-h-0 w-full rounded-[10px] bg-background" />
         {activeId && isNewTab && (
           <RendererNewTab key={activeId} tabId={activeId} onNavigate={navigateNewTab} />
+        )}
+        {activeId && isCrashed && (
+          <main className="absolute inset-0 z-local flex items-center justify-center rounded-[10px] bg-background px-8">
+            <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+              <h2 className="text-base font-medium text-foreground">{t('crash.somethingWentWrong')}</h2>
+              <p className="text-sm text-muted-foreground">{activeTab.title}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void window.electronAPI.browserPane.reload(activeId)}
+              >
+                <RotateCw className="h-4 w-4" />
+                {t('crash.reload')}
+              </Button>
+            </div>
+          </main>
         )}
       </div>
     </div>

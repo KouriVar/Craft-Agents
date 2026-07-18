@@ -235,6 +235,8 @@ interface BrowserInstance {
   embeddedToolbarRevealed: boolean
   lastCrashAt: number
   crashRecoveryAttempts: number
+  crashed: boolean
+  crashReason: string | null
   credentialOfferUrl: string | null
   /** Tracks Option/Alt while the page requests a new window. */
   altKeyPressed: boolean
@@ -390,6 +392,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
+  private profileChangedCallback: ((kind: import('@craft-agent/shared/protocol').BrowserProfileCollectionKind) => void) | null = null
+  private profileChangeTimers = new Map<import('@craft-agent/shared/protocol').BrowserProfileCollectionKind, ReturnType<typeof setTimeout>>()
   private partitionPermissionsInitialized = false
   private partitionObserversInitialized = false
   private inFlightRequestsByWebContentsId = new Map<number, number>()
@@ -447,6 +451,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   onInteracted(callback: (id: string) => void): void {
     this.interactedCallback = callback
+  }
+
+  onProfileChanged(callback: (kind: import('@craft-agent/shared/protocol').BrowserProfileCollectionKind) => void): void {
+    this.profileChangedCallback = callback
   }
 
   createInstance(id?: string, options?: CreateBrowserInstanceOptions): string {
@@ -592,6 +600,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       embeddedToolbarRevealed: false,
       lastCrashAt: 0,
       crashRecoveryAttempts: 0,
+      crashed: false,
+      crashReason: null,
       credentialOfferUrl: null,
       altKeyPressed: false,
     }
@@ -1880,7 +1890,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('Only HTTP(S) pages can be bookmarked.')
     }
-    return this.profileStore.addBookmark({
+    const bookmark = this.profileStore.addBookmark({
       id: randomUUID(),
       workspaceId,
       url: parsed.toString(),
@@ -1889,6 +1899,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       folderId: input.folderId ?? null,
       createdAt: Date.now(),
     })
+    this.emitProfileChanged('bookmarks')
+    return bookmark
   }
 
   updateBookmark(
@@ -1905,11 +1917,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const exists = this.profileStore.listBookmarkFolders(workspaceId).some((folder) => folder.id === next.folderId)
       if (!exists) throw new Error('Bookmark folder not found.')
     }
-    return this.profileStore.updateBookmark(workspaceId, id, next)
+    const bookmark = this.profileStore.updateBookmark(workspaceId, id, next)
+    this.emitProfileChanged('bookmarks')
+    return bookmark
   }
 
   removeBookmark(workspaceId: string | null, idOrUrl: string): void {
     this.profileStore.removeBookmark(workspaceId, idOrUrl)
+    this.emitProfileChanged('bookmarks')
   }
 
   listBookmarkFolders(workspaceId: string | null): BrowserBookmarkFolder[] {
@@ -1919,22 +1934,27 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   createBookmarkFolder(workspaceId: string | null, name: string): BrowserBookmarkFolder {
     const normalizedName = name.trim().slice(0, 120)
     if (!normalizedName) throw new Error('Folder name cannot be empty.')
-    return this.profileStore.createBookmarkFolder({
+    const folder = this.profileStore.createBookmarkFolder({
       id: randomUUID(),
       workspaceId,
       name: normalizedName,
       createdAt: Date.now(),
     })
+    this.emitProfileChanged('bookmarks')
+    return folder
   }
 
   renameBookmarkFolder(workspaceId: string | null, id: string, name: string): BrowserBookmarkFolder {
     const normalizedName = name.trim().slice(0, 120)
     if (!normalizedName) throw new Error('Folder name cannot be empty.')
-    return this.profileStore.renameBookmarkFolder(workspaceId, id, normalizedName)
+    const folder = this.profileStore.renameBookmarkFolder(workspaceId, id, normalizedName)
+    this.emitProfileChanged('bookmarks')
+    return folder
   }
 
   removeBookmarkFolder(workspaceId: string | null, id: string): void {
     this.profileStore.removeBookmarkFolder(workspaceId, id)
+    this.emitProfileChanged('bookmarks')
   }
 
   async exportBookmarks(workspaceId: string | null): Promise<{ canceled: boolean; path?: string; exported: number }> {
@@ -2027,10 +2047,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   clearHistory(workspaceId: string | null): void {
     this.profileStore.clearHistory(workspaceId)
+    this.emitProfileChanged('history')
   }
 
   removeHistoryEntry(workspaceId: string | null, id: string): void {
     this.profileStore.removeHistoryEntry(workspaceId, id)
+    this.emitProfileChanged('history')
   }
 
   listBrowserDownloads(workspaceId: string | null, limit?: number): BrowserDownloadRecord[] {
@@ -2039,6 +2061,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   clearBrowserDownloads(workspaceId: string | null): void {
     this.profileStore.clearDownloads(workspaceId)
+    this.emitProfileChanged('downloads')
   }
 
   async openBrowserDownload(workspaceId: string | null, id: string): Promise<void> {
@@ -2947,6 +2970,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   destroyAll(): void {
+    for (const timer of this.profileChangeTimers.values()) clearTimeout(timer)
+    this.profileChangeTimers.clear()
     for (const id of [...this.instances.keys()]) {
       this.destroyInstance(id)
     }
@@ -4113,6 +4138,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       favicon: instance.favicon,
       visitedAt: Date.now(),
     })
+    this.emitProfileChanged('history')
   }
 
   private persistDownload(instance: BrowserInstance, entry: BrowserDownloadEntry): void {
@@ -4121,6 +4147,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       workspaceId: instance.workspaceId,
       tabId: instance.id,
     })
+    this.emitProfileChanged('downloads')
   }
 
   private requireActiveDownload(workspaceId: string | null, id: string): { item: DownloadItem; instanceId: string } {
@@ -4665,6 +4692,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     pageWc.on('did-start-loading', () => {
       instance.isLoading = true
+      instance.crashed = false
+      instance.crashReason = null
       this.emitStateChange(instance)
       void this.pushToolbarState(instance)
     })
@@ -4691,10 +4720,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         : 1
       instance.lastCrashAt = now
       instance.isLoading = false
+      instance.crashReason = details.reason
       mainLog.error(`[browser-pane] renderer gone id=${instance.id} reason=${details.reason} code=${details.exitCode}`)
       if (instance.crashRecoveryAttempts <= 2 && /^https?:/i.test(instance.currentUrl)) {
+        instance.crashed = false
         void pageWc.reload()
       } else {
+        instance.crashed = true
         instance.title = app.getLocale().toLowerCase().startsWith('zh') ? '页面已崩溃' : 'Page crashed'
         this.emitStateChange(instance)
         void this.pushToolbarState(instance)
@@ -5070,6 +5102,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       themeColor: instance.themeColor,
       workspaceId: instance.workspaceId,
       toolbarMode: instance.embeddedToolbarMode,
+      crashed: instance.crashed,
+      crashReason: instance.crashReason,
+      crashRecoveryAttempts: instance.crashRecoveryAttempts,
     }
   }
 
@@ -5078,5 +5113,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return
     }
     this.stateChangeCallback?.(this.toInfo(instance))
+  }
+
+  private emitProfileChanged(kind: import('@craft-agent/shared/protocol').BrowserProfileCollectionKind): void {
+    if (this.profileChangeTimers.has(kind)) return
+    const delay = kind === 'downloads' ? 250 : 0
+    const timer = setTimeout(() => {
+      this.profileChangeTimers.delete(kind)
+      this.profileChangedCallback?.(kind)
+    }, delay)
+    timer.unref?.()
+    this.profileChangeTimers.set(kind, timer)
   }
 }

@@ -78,7 +78,7 @@ export function SimpleDropdownItem({
       onMouseEnter={handleMouseEnter}
       onFocus={() => dropdownCtx?.setHighlightedId(itemId)}
       className={cn(
-        'flex items-center gap-2 w-full px-2.5 py-1.5 text-left text-[13px] rounded-[4px]',
+        'flex items-center gap-2 w-full px-2.5 py-1.5 text-left text-control rounded-menu-item',
         'hover:bg-foreground/[0.05] focus:bg-foreground/[0.05] focus:outline-none',
         'transition-colors',
         isHighlighted && 'bg-foreground/[0.05]',
@@ -317,8 +317,8 @@ export function SimpleDropdown({
           <div
             ref={menuRef}
             className={cn(
-              'fixed z-50 min-w-[140px] p-1',
-              'bg-background rounded-[8px] shadow-strong border border-border/50',
+              'fixed z-dropdown min-w-[140px] p-1',
+              'bg-background rounded-surface shadow-strong border border-border/50',
               'animate-in fade-in-0 zoom-in-95 duration-100',
               className
             )}

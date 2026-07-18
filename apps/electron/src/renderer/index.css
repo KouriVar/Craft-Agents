@@ -1,4 +1,6 @@
 @import "tailwindcss" source(none);
+@import "../../../../packages/ui/src/styles/z-index.css";
+@import "../../../../packages/ui/src/styles/control-tokens.css";
 @plugin "@tailwindcss/typography";
 
 /* Tell Tailwind where to scan for utility classes */
@@ -216,46 +218,6 @@
   --spacing: 0.25rem;
   --tracking-normal: 0em;
 
-  /* === Z-INDEX SCALE ===
-     Centralized z-index registry for consistent stacking order.
-     Use semantic names (z-panel, z-modal) instead of magic numbers.
-
-     Layer              Value   Use Case
-     ─────────────────────────────────────────────────────
-     base               0       Default content
-     local              10      Local stacking (sticky headers, icons)
-     sticky             20      Sticky section headers
-     titlebar           40      Window titlebar drag region
-     panel              50      App panels (sidebar, chat, detail)
-     dropdown           100     Dropdowns, popovers, select menus
-     tooltip            150     Tooltips (above dropdowns)
-     modal              200     Dialogs, drawers
-     overlay            300     Full-screen overlays (settings, app chrome)
-     fullscreen         350     Fullscreen content viewers (above app chrome)
-     floating-backdrop  390     Backdrop for floating menus
-     floating-menu      400     Floating menus above modals
-     island-overlay     390     Backdrop for annotation island interactions
-     island             400     Annotation island menu surface
-     island-popover     410     Popovers/dropdowns opened from island content
-     splash             600     Splash screen, workspace creation
-  */
-  --z-base: 0;
-  --z-local: 10;
-  --z-sticky: 20;
-  --z-titlebar: 40;
-  --z-panel: 50;
-  --z-dropdown: 100;
-  --z-tooltip: 150;
-  --z-modal: 200;
-  --z-overlay: 300;
-  --z-fullscreen: 350;
-  --z-floating-backdrop: 390;
-  --z-floating-menu: 400;
-  --z-island-overlay: 390;
-  --z-island: 400;
-  --z-island-popover: 410;
-  --z-splash: 600;
-
 }
 
 /* Dark Mode */
@@ -467,24 +429,6 @@ html[data-platform="windows"][data-font="inter"] {
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
-
-  /* === Z-INDEX SCALE === */
-  --z-index-base: var(--z-base);
-  --z-index-local: var(--z-local);
-  --z-index-sticky: var(--z-sticky);
-  --z-index-titlebar: var(--z-titlebar);
-  --z-index-panel: var(--z-panel);
-  --z-index-dropdown: var(--z-dropdown);
-  --z-index-tooltip: var(--z-tooltip);
-  --z-index-modal: var(--z-modal);
-  --z-index-overlay: var(--z-overlay);
-  --z-index-fullscreen: var(--z-fullscreen);
-  --z-index-floating-backdrop: var(--z-floating-backdrop);
-  --z-index-floating-menu: var(--z-floating-menu);
-  --z-index-island-overlay: var(--z-island-overlay);
-  --z-index-island: var(--z-island);
-  --z-index-island-popover: var(--z-island-popover);
-  --z-index-splash: var(--z-splash);
 
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
@@ -738,7 +682,7 @@ html[data-platform="windows"][data-font="inter"] {
   .popover-styled {
     background: var(--background);
     color: var(--foreground);
-    border-radius: 8px;
+    border-radius: var(--ca-radius-surface);
     border: none;
     box-shadow:
       rgba(0, 0, 0, 0) 0px 0px 0px 0px,
@@ -1147,6 +1091,10 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   width: 356px !important;
 }
 
+[data-sonner-toaster] {
+  z-index: var(--z-notification) !important;
+}
+
 /* Hide icon container to remove leftover padding */
 [data-sonner-toast] [data-icon] {
   display: none !important;
@@ -1325,7 +1273,7 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   [data-slot="dropdown-menu-content"],
   [data-slot="dropdown-menu-sub-content"],
   [data-slot="select-content"] {
-    max-width: calc(100cqw - 24px);
+    max-width: calc(100cqw - (2 * var(--ca-floating-safe-inset)));
   }
 
   [data-slot="dropdown-menu-item"],
@@ -1352,7 +1300,7 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   [data-layout="settings-row"]:not(:has([data-slot="switch"])) {
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
+    gap: var(--ca-layout-gap-stacked);
   }
 
   [data-layout="settings-row"]:not(:has([data-slot="switch"])) > [data-layout="settings-control"] {
@@ -1373,6 +1321,12 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   }
 }
 
+/* Keep modal surfaces inside the draggable window at the narrowest supported
+   widths. The desktop max-width remains owned by each dialog. */
+.dialog-safe-width {
+  max-width: calc(100% - (2 * var(--ca-window-safe-inset)));
+}
+
 /* ==========================================================================
    1.3× touch target scaling on mobile (shell ≤ 768px)
    Formula: round(desktop_value × 1.3)
@@ -1383,9 +1337,9 @@ html.dark[data-scenic] .fullscreen-overlay-background {
      even if internal padding alone wouldn't reach it. */
   .panel-header-btn {
     padding: 10px;
-    border-radius: 10px;
-    min-width: 44px;
-    min-height: 44px;
+    border-radius: var(--ca-radius-touch);
+    min-width: var(--ca-control-height-touch);
+    min-height: var(--ca-control-height-touch);
   }
 
   /* Compact panel header icons: keep desktop icons at their caller-provided
@@ -1403,20 +1357,20 @@ html.dark[data-scenic] .fullscreen-overlay-background {
 
   /* TopBar icon buttons: +, ?, nav arrows (desktop: 28×28 → 36×36) */
   .header-icon-btn {
-    width: 36px;
-    height: 36px;
+    width: var(--ca-control-height-md);
+    height: var(--ca-control-height-md);
   }
 
   /* Input toolbar items: attach, task, workspace pill, model picker (desktop: h-7 = 28px → 36px) */
   .input-toolbar-btn {
-    height: 36px;
-    min-width: 36px;
+    height: var(--ca-control-height-md);
+    min-width: var(--ca-control-height-md);
   }
 
   /* Send button (desktop: 28×28 → 36×36) */
   .send-btn {
-    width: 36px;
-    height: 36px;
+    width: var(--ca-control-height-md);
+    height: var(--ca-control-height-md);
   }
 
   /* Settings form controls: 44px minimum height + 16px font.
@@ -1426,7 +1380,7 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   [data-layout="settings-row"] [data-slot="select-trigger"],
   [data-layout="settings-row"] [data-slot="input"],
   [data-layout="settings-row"] [data-slot="textarea"] {
-    min-height: 44px;
+    min-height: var(--ca-control-height-touch);
     font-size: 16px;
   }
 
@@ -1473,9 +1427,9 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   /* TopBar lives outside the shell container, so mirror the compact 36px
      button target here instead of relying only on @container shell rules. */
   .header-icon-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    width: var(--ca-control-height-md);
+    height: var(--ca-control-height-md);
+    border-radius: var(--ca-radius-surface);
   }
 
   [data-workspace-switcher="topbar"] [data-slot="chevron"] {

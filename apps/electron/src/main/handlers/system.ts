@@ -2,6 +2,8 @@ import { resolve } from 'path'
 import { join } from 'path'
 import { homedir } from 'os'
 import { execSync } from 'child_process'
+import { chmod, writeFile } from 'node:fs/promises'
+import { app, dialog } from 'electron'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { classifyExternalUrl, formatBlockedUrlError } from '@craft-agent/shared/utils/url-safety'
@@ -9,6 +11,8 @@ import { isUsableGitBashPath, validateGitBashPath } from '@craft-agent/server-co
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
+import { createDiagnosticBundle, redactDiagnosticValue } from '../diagnostics'
+import { collectResourceDiagnostic, getStartupDiagnostic } from '../resource-diagnostics'
 import {
   requestClientOpenExternal,
   requestClientOpenPath,
@@ -34,6 +38,7 @@ export const CORE_HANDLED_CHANNELS = [
 ] as const
 
 export const GUI_HANDLED_CHANNELS = [
+  RPC_CHANNELS.system.EXPORT_DIAGNOSTICS,
   RPC_CHANNELS.update.CHECK,
   RPC_CHANNELS.update.GET_INFO,
   RPC_CHANNELS.update.INSTALL,
@@ -267,6 +272,80 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
 export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
   const windowManager = deps.windowManager
+
+  server.handle(RPC_CHANNELS.system.EXPORT_DIAGNOSTICS, async (ctx) => {
+    const workspaceId = ctx.workspaceId
+      ?? (ctx.webContentsId ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
+    const { getNetworkProxySettings } = await import('@craft-agent/shared/config/storage')
+    const proxy = getNetworkProxySettings()
+    const browserInstances = deps.browserPaneManager?.listInstances() ?? []
+
+    let installedCount = 0
+    let mcpCheckedAt = 0
+    let mcpServers: Array<{ state?: string; errorType?: string }> = []
+    if (workspaceId) {
+      try {
+        const [{ getWorkspaceByNameOrId }, { listPluginEntries, loadPluginMcpStatus }] = await Promise.all([
+          import('@craft-agent/shared/config'),
+          import('@craft-agent/shared/plugins'),
+        ])
+        const workspace = getWorkspaceByNameOrId(workspaceId)
+        if (workspace) {
+          installedCount = listPluginEntries(workspace.rootPath).length
+          const status = loadPluginMcpStatus(workspace.rootPath)
+          mcpCheckedAt = status.checkedAt
+          mcpServers = Object.values(status.servers).map(item => ({
+            state: item.state,
+            errorType: item.errorType,
+          }))
+        }
+      } catch (error) {
+        deps.platform.logger.warn('[diagnostics] Failed to aggregate plugin status:', error)
+      }
+    }
+
+    const messagingConfig = workspaceId ? deps.messagingRegistry?.getConfig(workspaceId) : null
+    const messagingRuntime = Object.values(messagingConfig?.runtime ?? {}).filter(Boolean)
+    const bundle = createDiagnosticBundle({
+      application: {
+        version: app.getVersion(),
+        isPackaged: app.isPackaged,
+        locale: app.getLocale(),
+      },
+      runtime: {
+        platform: process.platform,
+        arch: process.arch,
+        node: process.versions.node,
+        electron: process.versions.electron,
+        chromium: process.versions.chrome,
+        uptimeSeconds: process.uptime(),
+      },
+      startup: getStartupDiagnostic(),
+      resources: collectResourceDiagnostic(app),
+      proxy,
+      browserInstances,
+      plugins: { installedCount, mcpCheckedAt, mcpServers },
+      services: {
+        sessionManagerReady: Boolean(deps.sessionManager),
+        browserManagerReady: Boolean(deps.browserPaneManager),
+        messagingBindings: workspaceId ? (deps.messagingRegistry?.getBindings(workspaceId).length ?? 0) : 0,
+        messagingConfiguredPlatforms: messagingRuntime.filter(item => item?.configured).length,
+        messagingConnectedPlatforms: messagingRuntime.filter(item => item?.connected).length,
+      },
+    })
+    const timestamp = bundle.generatedAt.replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const result = await dialog.showSaveDialog({
+      title: 'Export Craft Agents Diagnostics',
+      defaultPath: `craft-agents-diagnostics-${timestamp}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+
+    const safeBundle = redactDiagnosticValue(bundle)
+    await writeFile(result.filePath, `${JSON.stringify(safeBundle, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+    if (process.platform !== 'win32') await chmod(result.filePath, 0o600)
+    return { canceled: false, path: result.filePath }
+  })
 
   // Auto-update handlers
   server.handle(RPC_CHANNELS.update.CHECK, async () => {

@@ -3,7 +3,7 @@
 import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
 import { spawn, type ChildProcess } from 'child_process'
@@ -281,6 +281,7 @@ import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
+import { cleanupApplicationResources } from './shutdown-coordinator'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { initModelRefreshService, getModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
@@ -289,6 +290,9 @@ import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { isTrustedCowartRuntimeUrl, normalizeCowartFollowUpRequest } from '../shared/cowart-bridge'
 import { loadWindowState, saveWindowState } from './window-state'
+import { fitWindowBoundsToWorkAreas, windowBoundsEqual } from './window-restore'
+import { activateWindow, extractDeepLink } from './app-activation'
+import { collectResourceDiagnostic, getStartupDiagnostic, recordStartupMilestone } from './resource-diagnostics'
 import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
@@ -313,6 +317,7 @@ import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server
 
 // Initialize electron-log for renderer process support
 log.initialize()
+recordStartupMilestone('main-module-loaded')
 
 // Diagnostic: report main-process i18n hydration result. We log here (not inline
 // at the hydration site above) because mainLog is only available after this point.
@@ -414,6 +419,19 @@ let messagingHandle: MessagingBootstrapHandle | null = null
 
 // Store pending deep link if app not ready yet (cold start)
 let pendingDeepLink: string | null = null
+let pendingSecondInstanceActivation = false
+let isAppReadyForActivation = false
+
+function activateExistingOrCreateWindow(): boolean {
+  if (!windowManager) return false
+  const existing = windowManager.getLastActiveWindow()
+  if (existing) return activateWindow(existing)
+
+  const firstWorkspace = getWorkspaces()[0]
+  if (!firstWorkspace) return false
+  windowManager.createWindow({ workspaceId: firstWorkspace.id })
+  return true
+}
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
 // Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
@@ -498,7 +516,7 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   mainLog.info('Received deeplink:', url)
 
-  if (windowManager) {
+  if (isAppReadyForActivation && windowManager) {
     handleDeepLink(url, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined).catch(err => {
       mainLog.error('Failed to handle deep link:', err)
     })
@@ -514,22 +532,20 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', (_event, commandLine, _workingDirectory) => {
-    // Someone tried to run a second instance, we should focus our window.
-    // On Windows/Linux, the deeplink is in commandLine
-    const url = commandLine.find(arg => arg.startsWith(`${DEEPLINK_SCHEME}://`))
-    if (url && windowManager) {
+    // On Windows/Linux, the deeplink is in commandLine. Queue all activation
+    // until startup is ready so a fast duplicate launch cannot lose its intent.
+    const url = extractDeepLink(commandLine, DEEPLINK_SCHEME)
+    if (url && isAppReadyForActivation && windowManager) {
       mainLog.info('Received deeplink from second instance:', url)
       handleDeepLink(url, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined).catch(err => {
         mainLog.error('Failed to handle deep link:', err)
       })
-    } else if (windowManager) {
-      // No deep link - just focus the first window
-      const windows = windowManager.getAllWindows()
-      if (windows.length > 0) {
-        const win = windows[0].window
-        if (win.isMinimized()) win.restore()
-        win.focus()
-      }
+    } else if (url) {
+      pendingDeepLink = url
+      mainLog.info('Queued deeplink from second instance until startup is ready')
+    } else if (!isAppReadyForActivation || !activateExistingOrCreateWindow()) {
+      pendingSecondInstanceActivation = true
+      mainLog.info('Queued second-instance activation until startup is ready')
     }
   })
 }
@@ -559,6 +575,13 @@ async function createInitialWindows(): Promise<void> {
   if (savedState?.windows.length) {
     // Restore windows from saved state
     let restoredCount = 0
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const displayWorkAreas = [
+      primaryDisplay.workArea,
+      ...screen.getAllDisplays()
+        .filter(display => display.id !== primaryDisplay.id)
+        .map(display => display.workArea),
+    ]
 
     for (const saved of savedState.windows) {
       // Skip invalid workspaces
@@ -571,7 +594,14 @@ async function createInitialWindows(): Promise<void> {
         focused: saved.focused,
         restoreUrl: saved.url,
       })
-      win.setBounds(saved.bounds)
+      const restoredBounds = fitWindowBoundsToWorkAreas(saved.bounds, displayWorkAreas)
+      win.setBounds(restoredBounds)
+      if (!windowBoundsEqual(saved.bounds, restoredBounds)) {
+        mainLog.info('[window-state] fitted restored bounds to current display topology', {
+          workspaceId: saved.workspaceId,
+          displayCount: displayWorkAreas.length,
+        })
+      }
 
       restoredCount++
     }
@@ -588,6 +618,7 @@ async function createInitialWindows(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  recordStartupMilestone('electron-ready')
   // Export packaged state as env var so logger.ts (and headless Bun) don't need 'electron'
   process.env.CRAFT_IS_PACKAGED = app.isPackaged ? 'true' : 'false'
 
@@ -668,6 +699,7 @@ app.whenReady().then(async () => {
   try {
     // Initialize window manager
     windowManager = new WindowManager()
+    recordStartupMilestone('window-manager-ready')
 
     // Create the application menu (needs windowManager for New Window action)
     createApplicationMenu(windowManager)
@@ -1286,6 +1318,7 @@ app.whenReady().then(async () => {
     // In headless mode the server runs without any UI — skip window creation.
     if (!isHeadless) {
       await createInitialWindows()
+      recordStartupMilestone('initial-windows-created')
     }
 
     // Run credential health check at startup to detect issues early
@@ -1347,13 +1380,6 @@ app.whenReady().then(async () => {
       mainLog.info('[auto-update] Skipping auto-update in dev mode')
     }
 
-    // Process pending deep link from cold start
-    if (pendingDeepLink) {
-      mainLog.info('Processing pending deep link:', pendingDeepLink)
-      await handleDeepLink(pendingDeepLink, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined)
-      pendingDeepLink = null
-    }
-
     mainLog.info('App initialized successfully')
     if (isDebugMode) {
       mainLog.info('Debug mode enabled - logs at:', getLogFilePath())
@@ -1363,6 +1389,29 @@ app.whenReady().then(async () => {
     mainLog.error('Failed to initialize app:', error instanceof Error ? error.message : error, (error as any)?.stack)
     // Continue anyway - the app will show errors in the UI
   }
+
+  // Mark activation ready even after partial bootstrap failure: a later launch
+  // must still be able to reveal an existing error/recovery window.
+  isAppReadyForActivation = true
+  if (pendingDeepLink && windowManager) {
+    const deepLink = pendingDeepLink
+    pendingDeepLink = null
+    mainLog.info('Processing pending deep link:', deepLink)
+    try {
+      await handleDeepLink(deepLink, windowManager, moduleSink ?? undefined, moduleClientResolver ?? undefined)
+    } catch (error) {
+      mainLog.error('Failed to process pending deep link:', error)
+    }
+  }
+  if (pendingSecondInstanceActivation) {
+    pendingSecondInstanceActivation = false
+    activateExistingOrCreateWindow()
+  }
+  recordStartupMilestone('app-initialized')
+  mainLog.info('[startup] baseline', {
+    startup: getStartupDiagnostic(),
+    resources: collectResourceDiagnostic(app),
+  })
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {
@@ -1457,60 +1506,37 @@ app.on('before-quit', async (event) => {
     }
   }
 
-  // Flush all pending session writes before quitting
-  if (sessionManager) {
-    // Prevent quit until sessions are flushed
-    event.preventDefault()
-    try {
-      await sessionManager.flushAllSessions()
-      mainLog.info('Flushed all pending session writes')
-    } catch (error) {
-      mainLog.error('Failed to flush sessions:', error)
-    }
-    // Clean up SessionManager resources (file watchers, timers, etc.)
-    await sessionManager.cleanup()
+  // Cleanup can be asynchronous even when bootstrap failed before SessionManager
+  // existed, so always hold Electron's first quit attempt until every independent
+  // resource gets its cleanup opportunity.
+  event.preventDefault()
+  const shutdownResults = await cleanupApplicationResources({
+    sessionManager,
+    browserPaneManager,
+    oauthFlowStore,
+    stopModelRefresh: () => getModelRefreshService().stopAll(),
+    messagingHandle,
+    cleanupPowerManager: async () => {
+      const { cleanup } = await import('./power-manager')
+      cleanup()
+    },
+    releaseServerLock,
+    logger: mainLog,
+  })
+  mainLog.info('[shutdown] complete', {
+    phases: shutdownResults.length,
+    failed: shutdownResults.filter((result) => !result.ok).map((result) => result.phase),
+  })
 
-    // Clean up browser pane instances
-    if (browserPaneManager) {
-      browserPaneManager.destroyAll()
-    }
-
-    // Clean up OAuth flow store (stop periodic cleanup timer)
-    if (oauthFlowStore) {
-      oauthFlowStore.dispose()
-    }
-
-    // Stop all model refresh timers
-    getModelRefreshService().stopAll()
-
-    // Stop messaging gateways so the WhatsApp worker subprocess exits cleanly.
-    if (messagingHandle) {
-      try {
-        await messagingHandle.dispose()
-      } catch (err) {
-        mainLog.error('[messaging] dispose failed:', err)
-      }
-    }
-
-    // Clean up power manager (release power blocker)
-    const { cleanup: cleanupPowerManager } = await import('./power-manager')
-    cleanupPowerManager()
-
-    // Release the server lock file so the next launch doesn't see a stale PID.
-    // This must happen regardless of the exit path (normal quit or update quit).
-    releaseServerLock()
-
-    // If update is in progress, let electron-updater handle the quit flow
-    // Force exit breaks the NSIS installer on Windows
-    if (isUpdating()) {
-      mainLog.info('Update in progress, letting electron-updater handle quit')
-      app.quit()
-      return
-    }
-
-    // Now actually quit
-    app.exit(0)
+  // If update is in progress, let electron-updater handle the quit flow.
+  // Force exit breaks the NSIS installer on Windows.
+  if (isUpdating()) {
+    mainLog.info('Update in progress, letting electron-updater handle quit')
+    app.quit()
+    return
   }
+
+  app.exit(0)
 })
 
 // Handle uncaught exceptions — forward to Sentry explicitly since registering

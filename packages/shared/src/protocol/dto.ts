@@ -826,6 +826,12 @@ export interface BrowserInstanceInfo {
   workspaceId?: string | null
   /** Integrated browser toolbar layout. Floating mode is rendered as a native overlay. */
   toolbarMode?: 'fixed' | 'floating'
+  /** True after automatic renderer recovery is exhausted and user action is required. */
+  crashed?: boolean
+  /** Last Chromium renderer termination reason, safe for diagnostics/UI. */
+  crashReason?: string | null
+  /** Consecutive recovery attempts within the current crash window. */
+  crashRecoveryAttempts?: number
 }
 
 export interface BrowserBookmarkEntry {
@@ -893,6 +899,8 @@ export interface BrowserPermissionEntry {
   updatedAt: number
 }
 
+export type BrowserProfileCollectionKind = 'bookmarks' | 'history' | 'downloads'
+
 export interface BrowserWorkspaceSnapshot {
   version: 1
   activeTabId: string | null
@@ -950,3 +958,85 @@ export interface CallMcpWidgetToolRequest {
 export type CallMcpWidgetToolResult =
   | { ok: true; result: import('../mcp/mcp-pool.ts').McpToolResult }
   | { ok: false; error: string; code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'permission-required' | 'permission-denied' | 'tool-failed'; requiresApproval?: boolean; destructive?: boolean }
+
+// ---------------------------------------------------------------------------
+// Privacy-safe diagnostics
+// ---------------------------------------------------------------------------
+
+export interface DiagnosticBundle {
+  version: 1
+  generatedAt: string
+  application: {
+    version: string
+    isPackaged: boolean
+    locale: string
+  }
+  runtime: {
+    platform: NodeJS.Platform
+    arch: string
+    node: string
+    electron: string
+    chromium: string
+    uptimeSeconds: number
+  }
+  startup: {
+    /** Monotonic milliseconds since process start; contains only fixed milestone names. */
+    milestonesMs: Record<string, number>
+  }
+  resources: {
+    electronProcesses: {
+      total: number
+      byType: Record<string, number>
+      totalWorkingSetMb: number
+      largestPeakWorkingSetMb: number
+    }
+    mainProcessMemory: {
+      rssMb: number
+      heapUsedMb: number
+      heapTotalMb: number
+      externalMb: number
+    }
+    /** Aggregate Node resource classes such as timeout/pipe-wrap; never values or paths. */
+    activeResources: Record<string, number>
+    appEventListeners: Record<string, number>
+  }
+  proxy: {
+    mode: 'system' | 'custom'
+    configuredProtocols: string[]
+    hasBypassRules: boolean
+  }
+  browser: {
+    totalTabs: number
+    visibleTabs: number
+    crashedTabs: Array<{ reason: string | null; attempts: number }>
+  }
+  plugins: {
+    installedCount: number
+    mcp: {
+      checkedAt: string | null
+      total: number
+      states: Record<string, number>
+      errorTypes: Record<string, number>
+    }
+  }
+  services: {
+    sessionManagerReady: boolean
+    browserManagerReady: boolean
+    messagingBindings: number
+    messagingConfiguredPlatforms: number
+    messagingConnectedPlatforms: number
+  }
+  privacy: {
+    rawLogsIncluded: false
+    urlsIncluded: false
+    workspacePathsIncluded: false
+    processIdsIncluded: false
+    commandLinesIncluded: false
+    redactionVersion: 1
+  }
+}
+
+export interface DiagnosticExportResult {
+  canceled: boolean
+  path?: string
+}

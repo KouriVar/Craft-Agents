@@ -6,7 +6,7 @@
 <p>
   <a href="./CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-查看更新-7c3aed?style=flat-square"></a>
   <a href="../../releases"><img alt="Releases" src="https://img.shields.io/badge/releases-下载构建-2563eb?style=flat-square"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.11.5-111827?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.11.6-111827?style=flat-square">
   <img alt="Branch" src="https://img.shields.io/badge/branch-my--changes-64748b?style=flat-square">
 </p>
 
@@ -16,6 +16,13 @@
 - 📝 [查看更新日志](./CHANGELOG.md)
 - 🌱 [原始上游项目](https://github.com/craft-ai-agents/craft-agents-oss)
 - 🧭 当前开发分支：`my-changes`
+
+## v0.11.6 稳定性优化
+
+- 内置浏览器补强标签创建、恢复、切换、关闭与崩溃恢复的状态边界，避免重复新标签、迟到事件回插和工作区异步串线。
+- 原生网页与 React 菜单、弹窗、通知、最新动态统一使用语义层级和暂停原因协议，减少网页遮挡浮层或关闭浮层后无法恢复。
+- 历史、收藏和下载改为事件驱动刷新；窗口恢复、重复启动、退出清理和隐私安全诊断导出覆盖 macOS、Windows x64 与 Linux 的关键差异。
+- Button、输入框、菜单、Tooltip、Dialog 等开始复用全局控件、圆角、间距与 z-index token，小窗口和系统缩放下保留安全边距。
 
 ## 能力概览
 

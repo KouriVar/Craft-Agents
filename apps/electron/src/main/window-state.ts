@@ -3,6 +3,7 @@ import { readJsonFileSync } from '@craft-agent/shared/utils/files'
 import { mainLog } from './logger'
 import { join } from 'path'
 import { homedir } from 'os'
+import { sanitizeWindowState } from './window-restore'
 
 export interface WindowBounds {
   x: number
@@ -60,9 +61,8 @@ export function loadWindowState(): WindowState | null {
 
     const raw = readJsonFileSync(WINDOW_STATE_FILE)
 
-    // Validate format
-    const state = raw as WindowState
-    if (!Array.isArray(state.windows)) {
+    const state = sanitizeWindowState(raw)
+    if (!state) {
       mainLog.warn('[WindowState] Invalid window state file, ignoring')
       return null
     }

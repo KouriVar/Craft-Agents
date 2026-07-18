@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
 import { Spinner } from '@craft-agent/ui'
+import { toast } from 'sonner'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { NetworkProxySettings } from '../../../shared/types'
 
@@ -114,6 +115,7 @@ export default function AppSettingsPage() {
   const isElectron = window.electronAPI.getRuntimeEnvironment() === 'electron'
   const updateChecker = useUpdateChecker()
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false)
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false)
 
   const handleCheckForUpdates = useCallback(async () => {
     setIsCheckingForUpdates(true)
@@ -123,6 +125,19 @@ export default function AppSettingsPage() {
       setIsCheckingForUpdates(false)
     }
   }, [updateChecker])
+
+  const handleExportDiagnostics = useCallback(async () => {
+    setIsExportingDiagnostics(true)
+    try {
+      const result = await window.electronAPI.exportDiagnostics()
+      if (!result.canceled) toast.success(t('settings.diagnostics.exported'))
+    } catch (error) {
+      console.error('Failed to export diagnostics:', error)
+      toast.error(t('settings.diagnostics.failed'))
+    } finally {
+      setIsExportingDiagnostics(false)
+    }
+  }, [t])
 
   // Load settings on mount
   const loadSettings = useCallback(async () => {
@@ -307,6 +322,32 @@ export default function AppSettingsPage() {
                   )}
                 </SettingsCard>
               </SettingsSection>
+
+              {/* Diagnostics */}
+              {isElectron && (
+                <SettingsSection title={t('settings.diagnostics.title')}>
+                  <SettingsCard>
+                    <SettingsRow
+                      label={t('settings.diagnostics.export')}
+                      description={t('settings.diagnostics.description')}
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportDiagnostics}
+                        disabled={isExportingDiagnostics}
+                      >
+                        {isExportingDiagnostics ? (
+                          <>
+                            <Spinner className="mr-1.5" />
+                            {t('settings.diagnostics.exporting')}
+                          </>
+                        ) : t('settings.diagnostics.exportButton')}
+                      </Button>
+                    </SettingsRow>
+                  </SettingsCard>
+                </SettingsSection>
+              )}
 
               {/* About */}
               <SettingsSection title={t("settings.about.title")}>

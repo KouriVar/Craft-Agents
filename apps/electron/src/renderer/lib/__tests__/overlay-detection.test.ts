@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { setDismissibleLayerBridge } from '../dismissible-layer-bridge'
-import { hasOpenOverlay } from '../overlay-detection'
+import { detectNativeViewPauseReasons, hasOpenOverlay } from '../overlay-detection'
 
 const originalDocument = globalThis.document
 
@@ -46,5 +46,24 @@ describe('hasOpenOverlay', () => {
     }
 
     expect(hasOpenOverlay()).toBe(false)
+  })
+})
+
+describe('detectNativeViewPauseReasons', () => {
+  it('reports each active semantic owner and excludes tooltips', () => {
+    const root = {
+      querySelector: (selector: string) => {
+        if (selector.includes('dialog-content')) return {}
+        if (selector.includes('dropdown-menu-content')) return {}
+        if (selector.includes('role="tooltip"')) return null
+        return null
+      },
+    }
+
+    expect(detectNativeViewPauseReasons(root as unknown as Document)).toEqual(['dialog', 'menu'])
+  })
+
+  it('returns no owners when only non-blocking content is visible', () => {
+    expect(detectNativeViewPauseReasons({ querySelector: () => null } as unknown as Document)).toEqual([])
   })
 })

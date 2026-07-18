@@ -68,6 +68,7 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.system.VERSIONS,
   RPC_CHANNELS.system.HOME_DIR,
   RPC_CHANNELS.system.IS_DEBUG_MODE,
+  RPC_CHANNELS.system.EXPORT_DIAGNOSTICS,
 
   // theme — app/OS-level preferences, not workspace content
   RPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE,

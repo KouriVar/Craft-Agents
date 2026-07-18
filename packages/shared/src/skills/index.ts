@@ -5,6 +5,7 @@
  */
 
 export * from './types.ts';
+export * from './router.ts';
 export {
   GLOBAL_AGENT_SKILLS_DIR,
   PROJECT_AGENT_SKILLS_DIR,

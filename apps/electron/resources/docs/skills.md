@@ -11,9 +11,10 @@ This guide explains how to create and configure skills in Craft Agent.
 Skills are specialized instructions that extend Claude's capabilities for specific tasks. They use **the exact same SKILL.md format as the Claude Code SDK** - making skills fully compatible between systems.
 
 **Key points:**
-- Skills are invoked via slash commands (e.g., `/commit`, `/review-pr`)
-- Skills can be automatically triggered by file patterns (globs)
-- Skills can pre-approve specific tools to run without prompting
+- Skills can be selected explicitly from the composer or discovered from a natural-language request
+- Skills may opt out of implicit routing with `policy.allow_implicit_invocation: false`
+- File patterns (`globs`) are strong routing hints when named or attached files match
+- Skills can declare required tools and sources without bypassing workspace permissions
 - The SKILL.md format is identical to what Claude Code uses internally
 
 ## Same Format as Claude Code SDK
@@ -31,10 +32,13 @@ Craft Agent uses **the identical SKILL.md format** as the Claude Code SDK. This 
 
 ## Skill Precedence
 
-When a skill is invoked (e.g., `/commit`):
+When a skill is selected, matching slugs resolve from highest to lowest priority:
 
-1. **Workspace skill checked first** - If `~/.craft-agent/workspaces/{id}/skills/commit/SKILL.md` exists, it's used
-2. **SDK skill as fallback** - If no workspace skill exists, the built-in SDK skill is used
+1. **Project skill** — the nearest `.agents/skills/{slug}/SKILL.md`
+2. **Workspace skill** — `{workspace}/skills/{slug}/SKILL.md`
+3. **Enabled plugin skill** — an installed or project plugin package
+4. **Global skill** — `~/.agents/skills/{slug}/SKILL.md`
+5. **Bundled skill** — the read-only app-provided fallback
 
 This allows you to:
 - **Override SDK skills** - Create a workspace skill with the same slug to replace built-in behavior
@@ -43,9 +47,9 @@ This allows you to:
 
 ## Skill Storage
 
-Skills are stored as folders:
+Workspace skills are stored as folders:
 ```
-~/.craft-agent/workspaces/{workspaceId}/skills/{slug}/
+{workspace}/skills/{slug}/
 ├── SKILL.md          # Required: Skill definition (same format as Claude Code SDK)
 ├── icon.svg          # Recommended: Skill icon for UI display
 ├── icon.png          # Alternative: PNG icon
@@ -78,7 +82,7 @@ The format is identical to Claude Code SDK skills:
 name: "Skill Display Name"
 description: "Brief description shown in skill list"
 globs: ["*.ts", "*.tsx"]     # Optional: file patterns that trigger skill
-alwaysAllow: ["Bash"]        # Optional: tools to always allow
+alwaysAllow: ["Bash"]        # Legacy compatibility metadata; does not bypass permissions
 requiredSources:             # Optional: sources to auto-enable on invocation
   - linear
 ---
@@ -107,9 +111,13 @@ Display name for the skill. Shown in the UI and skill list.
 ### description (required)
 Brief description (1-2 sentences) explaining what the skill does.
 
+The router sees this description before it reads the full `SKILL.md`. Include
+both positive triggers and important exclusions. A vague description makes
+natural-language routing unreliable.
+
 ### globs (optional)
-Array of glob patterns. When a file matching these patterns is being worked on,
-the skill may be automatically suggested or activated.
+Array of glob patterns. Matching file mentions and attachments receive a strong
+routing boost, but the agent still checks whether the workflow fits the request.
 
 ```yaml
 globs:
@@ -119,8 +127,10 @@ globs:
 ```
 
 ### alwaysAllow (optional)
-Array of tool names that are automatically allowed when this skill is active.
-Useful for skills that require specific tools without prompting.
+Legacy compatibility metadata. Craft Agent parses and displays this field but
+does not use it to bypass workspace permissions. Use `dependencies.tools` in
+`agents/openai.yaml` to describe tool requirements; normal permission checks
+still apply.
 
 ```yaml
 alwaysAllow:
@@ -171,6 +181,32 @@ Supported mappings:
 - `policy.allow_implicit_invocation` -> implicit invocation policy flag
 - `dependencies.tools` -> declared tool dependencies
 - `dependencies.sources` -> merged into `requiredSources`
+
+Implicit invocation is enabled by default. Set
+`policy.allow_implicit_invocation: false` for destructive, expensive,
+compliance-sensitive, or manual-only workflows. Explicit selection continues
+to work when implicit invocation is disabled.
+
+## How Routing Works
+
+For ordinary natural-language messages, Craft Agent injects a compact catalog
+containing each implicitly invocable skill's name, description, routing hint,
+globs, required tools, and exact `SKILL.md` path. The model chooses the smallest
+relevant set, reads the selected instruction file, then follows the workflow.
+
+Routing priority is:
+
+1. Explicitly selected skill
+2. Explicitly selected plugin and its internal skill catalog
+3. Strong file-glob and semantic matches
+4. Normal agent behavior when no skill clearly applies
+
+The catalog is bounded by the active model's context size. When it must be
+truncated, lexical and CJK relevance plus glob matches determine the initial
+candidates, and the configured mini model performs a cross-lingual semantic
+pre-route. If that secondary call is unavailable, routing falls back safely to
+the deterministic candidates. Debug logs include candidates, scores, and mini
+model selections under `skill-router`.
 
 ## Creating a Skill
 

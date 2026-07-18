@@ -183,7 +183,32 @@ describe('BaseAgent', () => {
     it('should track chat calls', async () => {
       await collectEvents(agent.chat('test message'));
       expect(agent.chatCalls).toHaveLength(1);
-      expect(agent.chatCalls[0]?.message).toBe('test message');
+      // Implicit skill metadata may be prepended, but the raw user request must
+      // remain intact at the end of the effective message.
+      expect(agent.chatCalls[0]?.message.endsWith('test message')).toBe(true);
+    });
+
+    it('should expose implicitly invocable skill metadata for natural-language routing', async () => {
+      await collectEvents(agent.chat('Build an adjustable interactive comparison'));
+      const effectiveMessage = agent.chatCalls[0]?.message ?? '';
+
+      expect(effectiveMessage).toContain('<available_skills>');
+      expect(effectiveMessage).toContain('slug="visualize"');
+      expect(effectiveMessage).toContain('SKILL.md');
+      expect(effectiveMessage.endsWith('Build an adjustable interactive comparison')).toBe(true);
+    });
+
+    it('should keep slash commands untouched for backend parsing', async () => {
+      await collectEvents(agent.chat('/compact keep decisions'));
+      expect(agent.chatCalls[0]?.message).toBe('/compact keep decisions');
+    });
+
+    it('should not duplicate an explicitly selected skill in the implicit catalog', async () => {
+      await collectEvents(agent.chat('[skill:visualize] Build an interactive comparison'));
+      const effectiveMessage = agent.chatCalls[0]?.message ?? '';
+
+      expect(effectiveMessage).toContain('MUST read the following skill instruction files');
+      expect(effectiveMessage).not.toContain('<skill slug="visualize"');
     });
 
     it('should track abort calls', async () => {

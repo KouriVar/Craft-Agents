@@ -510,6 +510,7 @@ async function createAuthenticatedRuntime(): Promise<{
     });
   }
   const modelRuntime = piModelRuntime;
+  if (!modelRuntime) throw new Error('Failed to initialize Pi model runtime');
 
   // Register custom endpoint models dynamically via Pi SDK's registerProvider API.
   // This makes arbitrary OpenAI/Anthropic-compatible endpoints work through the Pi SDK
@@ -1219,7 +1220,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
           (c) => c.type === 'toolCall' && c.name && isPrefetchableTool(c.name),
         );
         if (prefetchableToolCalls.length >= 2) {
-          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0].name} calls`);
+          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0]!.name} calls`);
           for (const tc of prefetchableToolCalls) {
             const requestId = `prefetch-${tc.id}`;
             const promise = new Promise<ProxyToolResult>((resolve) => {

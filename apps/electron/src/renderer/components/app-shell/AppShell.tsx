@@ -94,7 +94,7 @@ import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/ato
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { pluginListKindAtom, pluginsAtom } from "@/atoms/plugins"
-import { browserNativeViewsSuspendedAtom, browserNavigatorKindAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
+import { browserNavigatorKindAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom, updateBrowserNativeViewPauseReasonAtom, type BrowserNativeViewPauseReason, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
 import { filterInstancesForWorkspace } from "@/atoms/browser-pane"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -110,6 +110,7 @@ import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { loadBrowserWorkspace } from "@/lib/browser-workspace-storage"
+import { BrowserWorkspaceRequestGate, BrowserWorkspaceTabCloseGuard, getBrowserTabRemovalTransition, getBrowserWorkspaceScopeKey, isBrowserWorkspaceScopeCurrent } from "@/lib/browser-workspace-lifecycle"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
 import {
@@ -159,7 +160,7 @@ import {
   RADIUS_EDGE,
   RADIUS_INNER,
 } from "./panel-constants"
-import { hasOpenOverlay } from "@/lib/overlay-detection"
+import { detectNativeViewPauseReasons, hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import type { WorkspacePluginEntry } from "@craft-agent/shared/plugins"
@@ -598,25 +599,20 @@ function AppShellContent({
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
-  const [rendererOverlayOpen, setRendererOverlayOpen] = React.useState(false)
-  const setBrowserNativeViewsSuspended = useSetAtom(browserNativeViewsSuspendedAtom)
+  const [rendererOverlayReasons, setRendererOverlayReasons] = React.useState<BrowserNativeViewPauseReason[]>([])
+  const updateBrowserNativeViewPauseReason = useSetAtom(updateBrowserNativeViewPauseReasonAtom)
+  const heldNativeViewPauseReasonsRef = React.useRef(new Set<BrowserNativeViewPauseReason>())
   const setBrowserNotificationBottom = useSetAtom(browserNotificationBottomAtom)
 
   // Native WebContentsViews always render above React DOM regardless of z-index.
   // Observe renderer-owned overlays globally so every dropdown, context menu,
   // popover and dialog can appear above the embedded browser surface.
   useEffect(() => {
-    const overlaySelector = [
-      '[role="menu"][data-state="open"]',
-      '[role="dialog"][data-state="open"]',
-      '[data-radix-popper-content-wrapper] > [data-state="open"]:not([role="tooltip"])',
-      '[data-vaul-drawer][data-state="open"]',
-    ].join(',')
     let frame = 0
     const update = () => {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
-        setRendererOverlayOpen(Boolean(document.querySelector(overlaySelector)))
+        setRendererOverlayReasons(detectNativeViewPauseReasons())
       })
     }
     const observer = new MutationObserver(update)
@@ -634,10 +630,24 @@ function AppShellContent({
   }, [])
 
   useEffect(() => {
-    setBrowserNativeViewsSuspended(showWhatsNew || rendererOverlayOpen)
-  }, [rendererOverlayOpen, setBrowserNativeViewsSuspended, showWhatsNew])
+    const next = new Set(rendererOverlayReasons)
+    if (showWhatsNew) next.add('whats-new')
+    const held = heldNativeViewPauseReasonsRef.current
+    for (const reason of held) {
+      if (!next.has(reason)) updateBrowserNativeViewPauseReason({ reason, active: false })
+    }
+    for (const reason of next) {
+      if (!held.has(reason)) updateBrowserNativeViewPauseReason({ reason, active: true })
+    }
+    heldNativeViewPauseReasonsRef.current = next
+  }, [rendererOverlayReasons, showWhatsNew, updateBrowserNativeViewPauseReason])
 
-  useEffect(() => () => setBrowserNativeViewsSuspended(false), [setBrowserNativeViewsSuspended])
+  useEffect(() => () => {
+    for (const reason of heldNativeViewPauseReasonsRef.current) {
+      updateBrowserNativeViewPauseReason({ reason, active: false })
+    }
+    heldNativeViewPauseReasonsRef.current.clear()
+  }, [updateBrowserNativeViewPauseReason])
 
   // WebContentsView is composited above the renderer, so a toast cannot win via
   // CSS z-index alone. Reserve only the vertical strip occupied by notifications
@@ -1095,7 +1105,13 @@ function AppShellContent({
   const [browserNavigatorKind, setBrowserNavigatorKind] = useAtom(browserNavigatorKindAtom)
   const [browserHydratedWorkspaceId, setBrowserHydratedWorkspaceId] = React.useState<string | null>(null)
   const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
-  const pendingBlankBrowserTabRef = React.useRef<Promise<string | null> | null>(null)
+  const blankBrowserTabCreationGateRef = React.useRef(new BrowserWorkspaceRequestGate<string | null>())
+  const browserTabCloseGuardRef = React.useRef(new BrowserWorkspaceTabCloseGuard())
+  const browserTabsRef = React.useRef(browserTabs)
+  const lastActiveBrowserTabIdRef = React.useRef(lastActiveBrowserTabId)
+  const needsBrowserReplacementRef = React.useRef(false)
+  browserTabsRef.current = browserTabs
+  lastActiveBrowserTabIdRef.current = lastActiveBrowserTabId
   // Native page focus emits `browser-pane:interacted`. Keep the current route
   // in a ref so that event can select a different tab without navigating to the
   // exact same browser route again. Repeating the route unmounts/remounts the
@@ -1109,6 +1125,11 @@ function AppShellContent({
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
   const remoteBrowserWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId ?? null
+  const browserWorkspaceScopeKey = getBrowserWorkspaceScopeKey(activeWorkspaceId, remoteBrowserWorkspaceId)
+  const activeBrowserWorkspaceScopeKeyRef = React.useRef(browserWorkspaceScopeKey)
+  // Assign during render so completions queued between commit and effects see
+  // the new scope immediately.
+  activeBrowserWorkspaceScopeKeyRef.current = browserWorkspaceScopeKey
 
   React.useEffect(() => {
     const api = window.electronAPI?.browserPane
@@ -1207,6 +1228,7 @@ function AppShellContent({
 
     const cleanupState = api.onStateChanged((info) => {
       if (disposed) return
+      if (!browserTabCloseGuardRef.current.shouldAcceptState(info.id)) return
       setBrowserTabs((current) => {
         const index = current.findIndex((tab) => tab.id === info.id)
         if (!belongsHere(info)) {
@@ -1220,7 +1242,22 @@ function AppShellContent({
     })
     const cleanupRemoved = api.onRemoved((id) => {
       if (disposed) return
-      setBrowserTabs((current) => current.filter((tab) => tab.id !== id))
+      const transition = getBrowserTabRemovalTransition(
+        browserTabsRef.current,
+        id,
+        lastActiveBrowserTabIdRef.current,
+      )
+      setBrowserTabs(transition.tabs)
+      if (!transition.removedActiveTab) return
+
+      setLastActiveBrowserTabId(transition.activeTabId)
+      if (activeBrowserRouteTabIdRef.current !== id) return
+      if (transition.activeTabId) {
+        activeBrowserRouteTabIdRef.current = transition.activeTabId
+        navigate(routes.view.browser(transition.activeTabId))
+      } else {
+        needsBrowserReplacementRef.current = true
+      }
     })
     const cleanupInteracted = api.onInteracted((id) => {
       if (disposed) return
@@ -2273,34 +2310,43 @@ function AppShellContent({
 
   const createRuntimeBrowserTab = useCallback((initialUrl?: string): Promise<string | null> => {
     const isBlankTab = !initialUrl?.trim()
-    if (isBlankTab && pendingBlankBrowserTabRef.current) {
-      return pendingBlankBrowserTabRef.current
-    }
-
-    const creation = (async () => {
+    const requestScopeKey = getBrowserWorkspaceScopeKey(activeWorkspaceId, remoteBrowserWorkspaceId)
+    const create = async () => {
       const api = window.electronAPI?.browserPane
       if (!api) return null
       try {
         const id = await api.create({ embedded: true, show: false, initialUrl })
+        if (!isBrowserWorkspaceScopeCurrent(requestScopeKey, activeBrowserWorkspaceScopeKeyRef.current)) {
+          return null
+        }
         const instances = await api.list()
+        if (!isBrowserWorkspaceScopeCurrent(requestScopeKey, activeBrowserWorkspaceScopeKeyRef.current)) {
+          return null
+        }
         setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
         return id
       } catch (error) {
         console.warn('[AppShell] Failed to create embedded browser tab:', error)
         return null
       }
-    })()
+    }
 
     if (isBlankTab) {
-      pendingBlankBrowserTabRef.current = creation
-      void creation.finally(() => {
-        if (pendingBlankBrowserTabRef.current === creation) {
-          pendingBlankBrowserTabRef.current = null
-        }
-      })
+      return blankBrowserTabCreationGateRef.current.run(requestScopeKey, create)
     }
-    return creation
+    return create()
   }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
+
+  React.useEffect(() => {
+    if (!needsBrowserReplacementRef.current || browserHydratedWorkspaceId !== activeWorkspaceId) return
+    needsBrowserReplacementRef.current = false
+    void createRuntimeBrowserTab().then((id) => {
+      if (!id) return
+      setLastActiveBrowserTabId(id)
+      activeBrowserRouteTabIdRef.current = id
+      navigate(routes.view.browser(id))
+    })
+  }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, createRuntimeBrowserTab])
 
   const handleBrowserClick = useCallback(() => {
     const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
@@ -2339,29 +2385,37 @@ function AppShellContent({
   }, [createRuntimeBrowserTab, setBrowserNavigatorKind])
 
   const handleCloseBrowserTab = useCallback((tabId: string) => {
-    const index = browserTabs.findIndex((tab) => tab.id === tabId)
-    if (index < 0) return
+    const activeTabId = isBrowserNavigation(navState) ? (navState.details?.tabId ?? lastActiveBrowserTabId) : lastActiveBrowserTabId
+    const transition = getBrowserTabRemovalTransition(browserTabs, tabId, activeTabId)
+    if (transition.tabs === browserTabs) return
 
-    const next = browserTabs.filter((tab) => tab.id !== tabId)
+    browserTabCloseGuardRef.current.markClosing(tabId)
+    setBrowserTabs(transition.tabs)
     void window.electronAPI.browserPane.destroy(tabId).catch((error) => {
       console.warn(`[AppShell] Failed to close browser runtime tab ${tabId}:`, error)
+      browserTabCloseGuardRef.current.cancelClosing(tabId)
+      void window.electronAPI.browserPane.list().then((instances) => {
+        setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
+      }).catch(() => {})
+      toast.error(t('common.failed'))
     })
-    setBrowserTabs(next)
 
+    if (!transition.removedActiveTab) return
+    setLastActiveBrowserTabId(transition.activeTabId)
     if (!isBrowserNavigation(navState) || navState.details?.tabId !== tabId) return
-    const fallback = next[Math.max(0, index - 1)] ?? next[0]
-    if (fallback) {
-      setLastActiveBrowserTabId(fallback.id)
-      navigate(routes.view.browser(fallback.id))
+    if (transition.activeTabId) {
+      activeBrowserRouteTabIdRef.current = transition.activeTabId
+      navigate(routes.view.browser(transition.activeTabId))
       return
     }
     void createRuntimeBrowserTab().then((id) => {
       if (id) {
         setLastActiveBrowserTabId(id)
+        activeBrowserRouteTabIdRef.current = id
         navigate(routes.view.browser(id))
       }
     })
-  }, [browserTabs, createRuntimeBrowserTab, navState, setBrowserTabs])
+  }, [activeWorkspaceId, browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId, navState, remoteBrowserWorkspaceId, setBrowserTabs, t])
 
   const handleCopyBrowserTabLink = useCallback(async (tab: BrowserWorkspaceTab) => {
     if (!tab.url || tab.url === 'about:blank') return
@@ -2389,7 +2443,6 @@ function AppShellContent({
         })
         toast.success(t('browser.bookmarkAdded', { defaultValue: '已添加收藏' }))
       }
-      window.dispatchEvent(new Event('craft-browser-profile-changed'))
     } catch {
       toast.error(t('browser.bookmarkUpdateFailed', { defaultValue: '更新收藏失败' }))
     }

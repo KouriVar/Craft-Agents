@@ -1,0 +1,52 @@
+/**
+ * Craft Agents global stacking contract.
+ *
+ * This file is the single source of truth for cross-component layers. Local
+ * stacking inside one component may use z-local/sticky or small numeric values;
+ * portaled and viewport-level surfaces must use one of these semantic tokens.
+ * Native WebContentsView surfaces are not part of the CSS stack and must be
+ * paused or have their bounds adjusted by the native-view coordination layer.
+ */
+:root {
+  --z-base: 0;
+  --z-local: 10;
+  --z-sticky: 20;
+  --z-titlebar: 40;
+  --z-panel: 50;
+  --z-dropdown-backdrop: 90;
+  --z-dropdown: 100;
+  --z-tooltip: 150;
+  --z-modal-backdrop: 190;
+  --z-modal: 200;
+  --z-notification: 250;
+  --z-overlay: 300;
+  --z-fullscreen: 350;
+  --z-floating-backdrop: 390;
+  --z-floating-menu: 400;
+  --z-island-overlay: 390;
+  --z-island: 400;
+  --z-island-popover: 410;
+  --z-splash: 600;
+}
+
+@theme inline {
+  --z-index-base: var(--z-base);
+  --z-index-local: var(--z-local);
+  --z-index-sticky: var(--z-sticky);
+  --z-index-titlebar: var(--z-titlebar);
+  --z-index-panel: var(--z-panel);
+  --z-index-dropdown-backdrop: var(--z-dropdown-backdrop);
+  --z-index-dropdown: var(--z-dropdown);
+  --z-index-tooltip: var(--z-tooltip);
+  --z-index-modal-backdrop: var(--z-modal-backdrop);
+  --z-index-modal: var(--z-modal);
+  --z-index-notification: var(--z-notification);
+  --z-index-overlay: var(--z-overlay);
+  --z-index-fullscreen: var(--z-fullscreen);
+  --z-index-floating-backdrop: var(--z-floating-backdrop);
+  --z-index-floating-menu: var(--z-floating-menu);
+  --z-index-island-overlay: var(--z-island-overlay);
+  --z-index-island: var(--z-island);
+  --z-index-island-popover: var(--z-island-popover);
+  --z-index-splash: var(--z-splash);
+}

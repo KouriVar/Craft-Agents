@@ -1,0 +1,51 @@
+/**
+ * Craft Agents shared control geometry and responsive spacing contract.
+ * Values intentionally preserve the established CA visual rhythm.
+ */
+:root {
+  /* Component geometry */
+  --ca-control-height-compact: 28px;
+  --ca-control-height-sm: 32px;
+  --ca-control-height-md: 36px;
+  --ca-control-height-lg: 40px;
+  --ca-control-height-touch: 44px;
+
+  /* Radius hierarchy */
+  --ca-radius-menu-item: 4px;
+  --ca-radius-control: 6px;
+  --ca-radius-surface: 8px;
+  --ca-radius-touch: 10px;
+  --ca-radius-card: 12px;
+  --ca-radius-modal: 16px;
+
+  /* Viewport/container safety */
+  --ca-floating-safe-inset: 12px;
+  --ca-window-safe-inset: 16px;
+  --ca-layout-gap-stacked: 10px;
+
+  /* Typography and motion */
+  --ca-font-size-control: 13px;
+  --ca-line-height-control: 20px;
+  --ca-motion-exit: 75ms;
+  --ca-motion-fast: 100ms;
+  --ca-motion-standard: 150ms;
+  --ca-motion-deliberate: 200ms;
+}
+
+@theme inline {
+  --spacing-control-compact: var(--ca-control-height-compact);
+  --spacing-control-sm: var(--ca-control-height-sm);
+  --spacing-control-md: var(--ca-control-height-md);
+  --spacing-control-lg: var(--ca-control-height-lg);
+  --spacing-control-touch: var(--ca-control-height-touch);
+
+  --radius-menu-item: var(--ca-radius-menu-item);
+  --radius-control: var(--ca-radius-control);
+  --radius-surface: var(--ca-radius-surface);
+  --radius-touch: var(--ca-radius-touch);
+  --radius-card: var(--ca-radius-card);
+  --radius-modal: var(--ca-radius-modal);
+
+  --text-control: var(--ca-font-size-control);
+  --text-control--line-height: var(--ca-line-height-control);
+}

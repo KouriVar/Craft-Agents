@@ -1180,6 +1180,20 @@ describe('BrowserPaneManager', () => {
     expect(instance.inPageThemeTimer).toBeNull()
   })
 
+  it('coalesces synchronous browser profile changes into one semantic event', async () => {
+    const changed: string[] = []
+    manager.onProfileChanged((kind) => changed.push(kind))
+    const bookmark = manager.addBookmark(null, {
+      url: `https://profile-event-${Date.now()}.example.com`,
+      title: 'Profile event',
+    })
+    manager.updateBookmark(null, bookmark.id, { title: 'Updated profile event' })
+
+    await Bun.sleep(10)
+
+    expect(changed).toEqual(['bookmarks'])
+  })
+
   it('throws when screenshot capture returns empty NativeImage', async () => {
     manager.createInstance('screenshot-empty-image')
     const instance = (manager as any).instances.get('screenshot-empty-image')
@@ -1543,6 +1557,34 @@ describe('BrowserPaneManager', () => {
         tool: 'browser_select',
         ref: '@e3',
         status: 'failed',
+      })
+    })
+  })
+
+  describe('renderer crash recovery state', () => {
+    it('surfaces a recoverable crash after automatic reload attempts are exhausted', () => {
+      manager.createInstance('crash-state', { initialUrl: 'https://example.com' })
+      const instance = (manager as any).instances.get('crash-state')
+      instance.currentUrl = 'https://example.com'
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        instance.pageView.webContents._emit('render-process-gone', {
+          reason: 'crashed',
+          exitCode: 139,
+        })
+      }
+
+      expect(instance.pageView.webContents.reload).toHaveBeenCalledTimes(2)
+      expect(manager.listInstances().find((item) => item.id === 'crash-state')).toMatchObject({
+        crashed: true,
+        crashReason: 'crashed',
+        crashRecoveryAttempts: 3,
+      })
+
+      instance.pageView.webContents._emit('did-start-loading')
+      expect(manager.listInstances().find((item) => item.id === 'crash-state')).toMatchObject({
+        crashed: false,
+        crashReason: null,
       })
     })
   })

@@ -370,4 +370,8 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   browserPaneManager.onInteracted((id) => {
     pushTyped(server, RPC_CHANNELS.browserPane.INTERACTED, { to: 'all' }, id)
   })
+
+  browserPaneManager.onProfileChanged((kind) => {
+    pushTyped(server, RPC_CHANNELS.browserPane.PROFILE_CHANGED, { to: 'all' }, kind)
+  })
 }

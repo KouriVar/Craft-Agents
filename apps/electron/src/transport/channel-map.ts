@@ -103,6 +103,7 @@ export const CHANNEL_MAP = {
   getVersions: invoke(RPC_CHANNELS.system.VERSIONS),
   getHomeDir: invoke(RPC_CHANNELS.system.HOME_DIR),
   isDebugMode: invoke(RPC_CHANNELS.system.IS_DEBUG_MODE),
+  exportDiagnostics: invoke(RPC_CHANNELS.system.EXPORT_DIAGNOSTICS),
 
   // Auto-update
   checkForUpdates: invoke(RPC_CHANNELS.update.CHECK),
@@ -442,6 +443,7 @@ export const CHANNEL_MAP = {
   'browserPane.onStateChanged': listener(RPC_CHANNELS.browserPane.STATE_CHANGED),
   'browserPane.onRemoved': listener(RPC_CHANNELS.browserPane.REMOVED),
   'browserPane.onInteracted': listener(RPC_CHANNELS.browserPane.INTERACTED),
+  'browserPane.onProfileChanged': listener(RPC_CHANNELS.browserPane.PROFILE_CHANGED),
 
   // LLM Connections
   listLlmConnections: invoke(RPC_CHANNELS.llmConnections.LIST),

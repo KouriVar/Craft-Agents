@@ -14,6 +14,7 @@ import type {
   UnreadSummary,
   UpdateInfo,
   BrowserInstanceInfo,
+  BrowserProfileCollectionKind,
   DeepLinkNavigation,
   TaskGenerateResult,
 } from './dto'
@@ -58,6 +59,7 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.browserPane.STATE_CHANGED]: [info: BrowserInstanceInfo]
   [RPC_CHANNELS.browserPane.REMOVED]: [id: string]
   [RPC_CHANNELS.browserPane.INTERACTED]: [id: string]
+  [RPC_CHANNELS.browserPane.PROFILE_CHANGED]: [kind: BrowserProfileCollectionKind]
 
   // Navigation events (per-window)
   [RPC_CHANNELS.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]

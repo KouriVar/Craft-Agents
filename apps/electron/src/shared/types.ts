@@ -386,6 +386,7 @@ export interface ElectronAPI {
   getRuntimeEnvironment(): 'electron' | 'web'
   getHomeDir(): Promise<string>
   isDebugMode(): Promise<boolean>
+  exportDiagnostics(): Promise<import('@craft-agent/shared/protocol').DiagnosticExportResult>
 
   // Transport connection status (preload-local, not RPC channels)
   getTransportConnectionState(): Promise<TransportConnectionState>
@@ -749,6 +750,7 @@ export interface ElectronAPI {
     onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
     onRemoved(callback: (id: string) => void): () => void
     onInteracted(callback: (id: string) => void): () => void
+    onProfileChanged(callback: (kind: import('@craft-agent/shared/protocol').BrowserProfileCollectionKind) => void): () => void
   }
 
   // LLM Connections (provider configurations)

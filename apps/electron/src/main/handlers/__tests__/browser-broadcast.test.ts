@@ -73,6 +73,7 @@ function makeDeps(opts: {
   captureStateCb?: (cb: (info: BrowserInstanceInfo) => void) => void
   captureRemovedCb?: (cb: (id: string) => void) => void
   captureInteractedCb?: (cb: (id: string) => void) => void
+  captureProfileChangedCb?: (cb: (kind: 'bookmarks' | 'history' | 'downloads') => void) => void
 }): HandlerDeps {
   return {
     sessionManager: {} as HandlerDeps['sessionManager'],
@@ -94,6 +95,7 @@ function makeDeps(opts: {
       onStateChange: (cb: (info: BrowserInstanceInfo) => void) => opts.captureStateCb?.(cb),
       onRemoved: (cb: (id: string) => void) => opts.captureRemovedCb?.(cb),
       onInteracted: (cb: (id: string) => void) => opts.captureInteractedCb?.(cb),
+      onProfileChanged: (cb: (kind: 'bookmarks' | 'history' | 'downloads') => void) => opts.captureProfileChangedCb?.(cb),
     } as unknown as NonNullable<HandlerDeps['browserPaneManager']>,
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
   }
@@ -166,6 +168,29 @@ describe('browser handler — workspace filtering', () => {
 
       expect(recorder.pushes).toHaveLength(1)
       expect(recorder.pushes[0].target).toEqual({ to: 'all' })
+    })
+  })
+
+  describe('PROFILE_CHANGED broadcast', () => {
+    it('broadcasts only the collection kind without profile contents', async () => {
+      let captured: ((kind: 'bookmarks' | 'history' | 'downloads') => void) | null = null
+      const { registerBrowserHandlers } = await import('../browser')
+      registerBrowserHandlers(
+        recorder.server,
+        makeDeps({
+          instances: [],
+          captureProfileChangedCb: (cb) => { captured = cb },
+        }),
+      )
+
+      captured!('downloads')
+
+      expect(recorder.pushes).toHaveLength(1)
+      expect(recorder.pushes[0]).toMatchObject({
+        channel: 'browser-pane:profile-changed',
+        target: { to: 'all' },
+        args: ['downloads'],
+      })
     })
   })
 

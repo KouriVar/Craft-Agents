@@ -93,7 +93,7 @@ export function SettingsInput({
       )}
       <div className="flex gap-2">
         <div className={cn(
-          'relative flex-1 rounded-md shadow-minimal has-[:focus-visible]:bg-background',
+          'relative flex-1 rounded-control shadow-minimal has-[:focus-visible]:bg-background',
           error && 'ring-1 ring-destructive'
         )}>
           <Input
