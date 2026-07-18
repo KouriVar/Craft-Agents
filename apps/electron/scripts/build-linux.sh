@@ -241,11 +241,21 @@ fi
 
 APPIMAGE_PATH="$OUTPUT_DIR/$APPIMAGE_NAME"
 cp -f "$BUILT_APPIMAGE_PATH" "$APPIMAGE_PATH"
-for artifact in "${APPIMAGE_NAME}.blockmap" "latest-linux.yml"; do
-    if [ -f "$ELECTRON_DIR/release/$artifact" ]; then
-        cp -f "$ELECTRON_DIR/release/$artifact" "$OUTPUT_DIR/$artifact"
-    fi
-done
+
+# electron-builder names Linux x64 artifacts with x86_64, while Craft Pack
+# intentionally exposes the same x64 spelling as the Windows installer. Keep
+# the updater manifest in sync with the public filename after copying it.
+BUILT_APPIMAGE_NAME="$(basename "$BUILT_APPIMAGE_PATH")"
+BUILT_BLOCKMAP_PATH="${BUILT_APPIMAGE_PATH}.blockmap"
+if [ -f "$BUILT_BLOCKMAP_PATH" ]; then
+    cp -f "$BUILT_BLOCKMAP_PATH" "${APPIMAGE_PATH}.blockmap"
+fi
+if [ -f "$ELECTRON_DIR/release/latest-linux.yml" ]; then
+    sed "s/${BUILT_APPIMAGE_NAME}/${APPIMAGE_NAME}/g" \
+        "$ELECTRON_DIR/release/latest-linux.yml" \
+        > "$OUTPUT_DIR/latest-linux.yml.tmp"
+    mv "$OUTPUT_DIR/latest-linux.yml.tmp" "$OUTPUT_DIR/latest-linux.yml"
+fi
 
 echo ""
 echo "=== Build Complete ==="
