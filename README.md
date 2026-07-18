@@ -51,7 +51,7 @@
 
 浏览器支持 OAuth 弹窗、下载管理、书签导入导出，以及从 Google / Microsoft 扩展商店、CRX / ZIP 包或解压目录安装兼容的 Chromium 扩展。商店详情页可直接「添加至 Craft Agents」，扩展管理页展示图标、版本、权限和来源。
 
-新标签页只保留居中的输入框：网址直接访问，普通文字使用 Google 搜索。导航、刷新、复制链接、收藏、密码、站点权限和扩展入口跟随当前标签显示；「更多」在标签卡内展开，固定扩展在折叠状态下仍可直接打开。
+新标签页只保留居中的输入框：网址直接访问，普通文字使用 Google 搜索。空白页输入由 Craft Agents 主界面托管，提交导航后再切换到原生 Chromium 页面，避免 Windows 与 macOS 嵌入式网页层争夺输入焦点。导航、刷新、复制链接、收藏、密码、站点权限和扩展入口跟随当前标签显示；「更多」在标签卡内展开，固定扩展在折叠状态下仍可直接打开。
 
 macOS 密码保存接入系统钥匙串，读取和自动填充前可使用 Touch ID。正式签名构建会优先使用 Data Protection Keychain / iCloud Keychain；开发或无对应 entitlement 的构建回退到本机安全存储。Electron 只实现 Chromium 扩展 API 的兼容子集，依赖 Chrome 专有 API 的扩展可能无法完整运行。
 
@@ -81,6 +81,7 @@ Pi 运行时升级至 `0.80.10`，主会话、临时查询、自定义兼容端�
 
 - macOS（Apple Silicon）：`Craft-Agents-arm64.dmg`
 - Windows（Intel/AMD x64）：`Craft-Agents-x64.exe`
+- Linux（Intel/AMD x64）：`Craft-Agents-x64.AppImage`
 
 ## 开发
 

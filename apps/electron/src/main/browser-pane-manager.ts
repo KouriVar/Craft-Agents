@@ -63,7 +63,6 @@ const THEME_COLOR_NULL_SENTINEL = '__NULL__'
 const THEME_OBSERVER_MIN_INTERVAL_MS = 120
 const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
-const EMPTY_STATE_FOCUS_CHANNEL = 'browser-empty-state:request-focus'
 const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
 const DANGEROUS_DOWNLOAD_EXTENSIONS = new Set([
   '.app', '.bat', '.cmd', '.com', '.command', '.dmg', '.exe', '.jar', '.msi', '.pkg', '.ps1', '.scr', '.sh',
@@ -1045,10 +1044,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       instance.pageView.setVisible(true)
       instance.embeddedHostWindow?.contentView.addChildView(instance.pageView)
       instance.isVisible = true
-      if (process.platform === 'win32' && this.isBrowserEmptyStateUrl(instance.pageView.webContents.getURL())) {
-        instance.embeddedHostWindow?.focus()
-        instance.pageView.webContents.focus()
-      }
     } else {
       instance.pageView.setVisible(false)
       instance.nativeOverlayView.setVisible(false)
@@ -4744,13 +4739,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.embeddedToolbarRevealed = true
         this.layoutEmbeddedToolbar(instance)
       }
-    })
-
-    pageWc.on('ipc-message', (_event, channel) => {
-      if (channel !== EMPTY_STATE_FOCUS_CHANNEL) return
-      if (process.platform !== 'win32' || !this.isBrowserEmptyStateUrl(pageWc.getURL())) return
-      instance.embeddedHostWindow?.focus()
-      pageWc.focus()
     })
 
     pageWc.on('context-menu', (_event, params) => {

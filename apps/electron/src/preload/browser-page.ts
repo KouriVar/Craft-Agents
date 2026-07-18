@@ -3,30 +3,9 @@ import { ipcRenderer } from 'electron'
 const CAPTURE_CHANNEL = 'browser-credentials:captured'
 const FILL_CHANNEL = 'browser-credentials:fill'
 const INSTALL_STORE_EXTENSION_CHANNEL = 'browser-extension:install-from-store-page'
-const EMPTY_STATE_FOCUS_CHANNEL = 'browser-empty-state:request-focus'
 const STORE_INSTALL_BUTTON_ID = 'craft-agents-store-install-button'
 const STORE_INSTALL_Z_INDEX = 'var(--z-floating-menu, 400)'
 const REPLACED_STORE_BUTTON_ATTRIBUTE = 'data-craft-agents-replaced-store-button'
-
-function isBrowserEmptyStatePage(): boolean {
-  return location.pathname.endsWith('/browser-empty-state.html')
-    || location.pathname.endsWith('\\browser-empty-state.html')
-}
-
-// A WebContentsView embedded in a different BrowserWindow can retain DOM focus
-// without owning the native Windows keyboard/IME focus. Reassert it from the
-// trusted internal new-tab page whenever its address field is interacted with.
-document.addEventListener('pointerdown', (event) => {
-  if (!isBrowserEmptyStatePage()) return
-  if (!(event.target instanceof HTMLInputElement)) return
-  ipcRenderer.send(EMPTY_STATE_FOCUS_CHANNEL)
-}, true)
-
-document.addEventListener('focusin', (event) => {
-  if (!isBrowserEmptyStatePage()) return
-  if (!(event.target instanceof HTMLInputElement)) return
-  ipcRenderer.send(EMPTY_STATE_FOCUS_CHANNEL)
-}, true)
 
 const CHROME_INSTALL_LABELS = [
   'add to chrome',

@@ -1095,6 +1095,17 @@ function AppShellContent({
   const [browserNavigatorKind, setBrowserNavigatorKind] = useAtom(browserNavigatorKindAtom)
   const [browserHydratedWorkspaceId, setBrowserHydratedWorkspaceId] = React.useState<string | null>(null)
   const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
+  const pendingBlankBrowserTabRef = React.useRef<Promise<string | null> | null>(null)
+  // Native page focus emits `browser-pane:interacted`. Keep the current route
+  // in a ref so that event can select a different tab without navigating to the
+  // exact same browser route again. Repeating the route unmounts/remounts the
+  // workspace surface and steals focus from embedded inputs on macOS.
+  const activeBrowserRouteTabIdRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    activeBrowserRouteTabIdRef.current = isBrowserNavigation(navState)
+      ? (navState.details?.tabId ?? null)
+      : null
+  }, [navState])
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
   const remoteBrowserWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId ?? null
@@ -1213,12 +1224,19 @@ function AppShellContent({
     })
     const cleanupInteracted = api.onInteracted((id) => {
       if (disposed) return
+      if (activeBrowserRouteTabIdRef.current === id) {
+        setLastActiveBrowserTabId(id)
+        setBrowserNavigatorKind('tabs')
+        return
+      }
       void api.list().then((instances) => {
         if (disposed) return
         const info = instances.find((instance) => instance.id === id)
         if (!info || !belongsHere(info)) return
         setLastActiveBrowserTabId(id)
         setBrowserNavigatorKind('tabs')
+        if (activeBrowserRouteTabIdRef.current === id) return
+        activeBrowserRouteTabIdRef.current = id
         navigate(routes.view.browser(id))
       }).catch((error) => {
         console.warn(`[AppShell] Failed to activate browser tab ${id}:`, error)
@@ -2253,18 +2271,35 @@ function AppShellContent({
     navigate(routes.view.plugins())
   }, [])
 
-  const createRuntimeBrowserTab = useCallback(async (initialUrl?: string) => {
-    const api = window.electronAPI?.browserPane
-    if (!api) return null
-    try {
-      const id = await api.create({ embedded: true, show: false, initialUrl })
-      const instances = await api.list()
-      setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
-      return id
-    } catch (error) {
-      console.warn('[AppShell] Failed to create embedded browser tab:', error)
-      return null
+  const createRuntimeBrowserTab = useCallback((initialUrl?: string): Promise<string | null> => {
+    const isBlankTab = !initialUrl?.trim()
+    if (isBlankTab && pendingBlankBrowserTabRef.current) {
+      return pendingBlankBrowserTabRef.current
     }
+
+    const creation = (async () => {
+      const api = window.electronAPI?.browserPane
+      if (!api) return null
+      try {
+        const id = await api.create({ embedded: true, show: false, initialUrl })
+        const instances = await api.list()
+        setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
+        return id
+      } catch (error) {
+        console.warn('[AppShell] Failed to create embedded browser tab:', error)
+        return null
+      }
+    })()
+
+    if (isBlankTab) {
+      pendingBlankBrowserTabRef.current = creation
+      void creation.finally(() => {
+        if (pendingBlankBrowserTabRef.current === creation) {
+          pendingBlankBrowserTabRef.current = null
+        }
+      })
+    }
+    return creation
   }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
 
   const handleBrowserClick = useCallback(() => {

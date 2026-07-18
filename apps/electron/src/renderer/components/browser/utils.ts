@@ -25,6 +25,16 @@ export function getHostname(url: string): string {
   }
 }
 
+/** Resolve new-tab input consistently across the renderer-owned and legacy pages. */
+export function resolveBrowserAddress(value: string): string {
+  const trimmed = value.trim()
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+  const looksLikeHost = /^(localhost|\d{1,3}(?:\.\d{1,3}){3}|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:\/|$)/i.test(trimmed)
+
+  if (hasScheme || looksLikeHost) return trimmed
+  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
+}
+
 /**
  * Compute relative luminance of a CSS color string.
  * Uses a hidden probe element to resolve any CSS color format to RGB,

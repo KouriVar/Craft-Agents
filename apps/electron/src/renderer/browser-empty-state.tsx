@@ -6,6 +6,7 @@ import { BrowserEmptyStateCard } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { routes } from '../shared/routes'
 import { getEmptyStatePromptSamples } from './components/browser/empty-state-prompts'
+import { resolveBrowserAddress } from './components/browser/utils'
 import { applyPlatformAttribute } from '@/lib/platform'
 import './index.css'
 
@@ -18,15 +19,6 @@ setupI18n([LanguageDetector, initReactI18next])
 // Kept for an easy rollback to the original prompt-oriented new-tab page.
 // The current browser workspace intentionally uses the address-only surface.
 const SHOW_LEGACY_BROWSER_EMPTY_STATE = false
-
-function resolveNewTabInput(value: string): string {
-  const trimmed = value.trim()
-  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-  const looksLikeHost = /^(localhost|\d{1,3}(?:\.\d{1,3}){3}|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:\/|$)/i.test(trimmed)
-
-  if (hasScheme || looksLikeHost) return trimmed
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
-}
 
 function BrowserEmptyStateApp() {
   const { t, i18n } = useTranslation()
@@ -52,7 +44,7 @@ function BrowserEmptyStateApp() {
     event.preventDefault()
     const value = address.trim()
     if (!value) return
-    const params = new URLSearchParams({ value: resolveNewTabInput(value), ts: String(Date.now()) })
+    const params = new URLSearchParams({ value: resolveBrowserAddress(value), ts: String(Date.now()) })
     window.location.hash = `navigate=${params.toString()}`
   }, [address])
 
