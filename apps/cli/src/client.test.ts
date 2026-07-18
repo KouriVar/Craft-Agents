@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { CliRpcClient } from './client.ts'
 import {
   serializeEnvelope,
@@ -388,22 +391,25 @@ describe('CliRpcClient', () => {
 // ---------------------------------------------------------------------------
 
 function generateSelfSignedCert(): { cert: string; key: string } | null {
+  const tempDir = mkdtempSync(join(tmpdir(), 'craft-cli-tls-'))
+  const certPath = join(tempDir, 'cert.pem')
+  const keyPath = join(tempDir, 'key.pem')
   try {
     const keyResult = Bun.spawnSync({
-      cmd: ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
-        '-keyout', '/dev/stdout', '-out', '/dev/stdout',
+      cmd: ['openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+        '-keyout', keyPath, '-out', certPath,
         '-days', '1', '-nodes', '-subj', '/CN=localhost', '-batch'],
       stderr: 'pipe',
     })
     if (keyResult.exitCode !== 0) return null
 
-    const pem = keyResult.stdout.toString()
-    const certMatch = pem.match(/(-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----)/)
-    const keyMatch = pem.match(/(-----BEGIN (?:EC )?PRIVATE KEY-----[\s\S]+?-----END (?:EC )?PRIVATE KEY-----)/)
-    if (!certMatch || !keyMatch) return null
-
-    return { cert: certMatch[1], key: keyMatch[1] }
+    return {
+      cert: readFileSync(certPath, 'utf8'),
+      key: readFileSync(keyPath, 'utf8'),
+    }
   } catch {
     return null
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true })
   }
 }

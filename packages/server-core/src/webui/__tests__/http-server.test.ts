@@ -72,7 +72,7 @@ describe('startWebuiHttpServer', () => {
   it('allows plain-http login even when the RPC transport is wss', async () => {
     const { baseUrl } = await createServer({ wsProtocol: 'wss', wsPort: 9100 })
 
-    const authRes = await fetch(`${baseUrl}/api/auth`, {
+    const authRes = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: PASSWORD }),
@@ -83,7 +83,7 @@ describe('startWebuiHttpServer', () => {
     expect(setCookie).toContain('craft_session=')
     expect(setCookie).not.toContain('Secure')
 
-    const configRes = await fetch(`${baseUrl}/api/config`, {
+    const configRes = await Bun.fetch(`${baseUrl}/api/config`, {
       headers: {
         cookie: extractSessionCookie(authRes),
       },
@@ -98,7 +98,7 @@ describe('startWebuiHttpServer', () => {
   it('rejects invalid credentials', async () => {
     const { baseUrl } = await createServer()
 
-    const res = await fetch(`${baseUrl}/api/auth`, {
+    const res = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'wrong-password' }),
@@ -111,7 +111,7 @@ describe('startWebuiHttpServer', () => {
   it('honors an explicit secure-cookie override', async () => {
     const { baseUrl } = await createServer({ secureCookies: true, wsProtocol: 'ws', wsPort: 9100 })
 
-    const res = await fetch(`${baseUrl}/api/auth`, {
+    const res = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: PASSWORD }),
@@ -124,7 +124,7 @@ describe('startWebuiHttpServer', () => {
   it('infers secure cookies from proxy https headers when no override is set', async () => {
     const { baseUrl } = await createServer({ wsProtocol: 'wss', wsPort: 9100 })
 
-    const res = await fetch(`${baseUrl}/api/auth`, {
+    const res = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -140,7 +140,7 @@ describe('startWebuiHttpServer', () => {
   it('derives a browser-facing websocket URL from forwarded public host headers', async () => {
     const { baseUrl } = await createServer({ wsProtocol: 'wss', wsPort: 9100 })
 
-    const authRes = await fetch(`${baseUrl}/api/auth`, {
+    const authRes = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -150,7 +150,7 @@ describe('startWebuiHttpServer', () => {
       body: JSON.stringify({ password: PASSWORD }),
     })
 
-    const configRes = await fetch(`${baseUrl}/api/config`, {
+    const configRes = await Bun.fetch(`${baseUrl}/api/config`, {
       headers: {
         cookie: extractSessionCookie(authRes),
         'X-Forwarded-Proto': 'https',
@@ -171,13 +171,13 @@ describe('startWebuiHttpServer', () => {
       wsPort: 9100,
     })
 
-    const authRes = await fetch(`${baseUrl}/api/auth`, {
+    const authRes = await Bun.fetch(`${baseUrl}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: PASSWORD }),
     })
 
-    const configRes = await fetch(`${baseUrl}/api/config`, {
+    const configRes = await Bun.fetch(`${baseUrl}/api/config`, {
       headers: {
         cookie: extractSessionCookie(authRes),
       },

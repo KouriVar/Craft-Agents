@@ -15,7 +15,7 @@
 import { homedir } from 'os';
 import { existsSync, realpathSync } from 'fs';
 import { debug } from '../utils/debug.ts';
-import { dirname, isAbsolute, relative, resolve } from 'path';
+import { dirname, isAbsolute, relative, resolve, win32 } from 'path';
 import { getSessionSafeAllowedToolNames } from '@craft-agent/session-tools-core';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { isBrowserToolNameOrAlias } from './browser-tool-names.ts';
@@ -169,13 +169,25 @@ function matchesAllowedWritePath(filePath: string, allowedPaths: string[]): bool
  * - Lowercase on Windows for case-insensitive comparison
  */
 function normalizeForComparison(path: string): string {
-  const normalized = resolve(path).replace(/\\/g, '/');
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  const windowsStyle = /^[a-z]:[\\/]/i.test(path);
+  const normalized = (windowsStyle ? win32.resolve(path) : resolve(path)).replace(/\\/g, '/');
+  return windowsStyle || process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function isWithin(base: string, target: string): boolean {
-  const normalizedBase = normalizeForComparison(base);
-  const normalizedTarget = normalizeForComparison(target);
+  const baseIsWindows = /^[a-z]:[\\/]/i.test(base);
+  const targetIsWindows = /^[a-z]:[\\/]/i.test(target);
+  if (baseIsWindows !== targetIsWindows) return false;
+
+  if (baseIsWindows) {
+    const normalizedBase = win32.resolve(base).toLowerCase();
+    const normalizedTarget = win32.resolve(target).toLowerCase();
+    const rel = win32.relative(normalizedBase, normalizedTarget);
+    return rel === '' || (!rel.startsWith('..') && !win32.isAbsolute(rel));
+  }
+
+  const normalizedBase = resolve(base);
+  const normalizedTarget = resolve(target);
   const rel = relative(normalizedBase, normalizedTarget);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
@@ -190,11 +202,19 @@ function isPathWithinDirectory(targetPath: string, baseDir: string): boolean {
   const expandedTarget = expandHome(targetPath);
   const expandedBase = expandHome(baseDir);
 
-  const resolvedTarget = resolve(expandedTarget);
-  const resolvedBase = resolve(expandedBase);
+  const targetIsWindows = /^[a-z]:[\\/]/i.test(expandedTarget);
+  const baseIsWindows = /^[a-z]:[\\/]/i.test(expandedBase);
+  if (targetIsWindows !== baseIsWindows) return false;
+
+  const resolvedTarget = targetIsWindows ? win32.resolve(expandedTarget) : resolve(expandedTarget);
+  const resolvedBase = baseIsWindows ? win32.resolve(expandedBase) : resolve(expandedBase);
   if (!isWithin(resolvedBase, resolvedTarget)) {
     return false;
   }
+
+  // A non-Windows host cannot resolve or inspect Windows filesystem symlinks.
+  // Lexical win32.relative containment above is the strongest meaningful check.
+  if (targetIsWindows && process.platform !== 'win32') return true;
 
   const realBase = existsSync(resolvedBase) ? realpathSync.native(resolvedBase) : resolvedBase;
 

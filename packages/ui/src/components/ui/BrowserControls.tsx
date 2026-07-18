@@ -271,11 +271,11 @@ export function BrowserControls({
             compact ? 'h-[28px]' : 'h-[30px]',
             !safeThemeColor && (borderlessAddressBar
               ? (isFocused
-                ? 'border border-border/70 bg-background shadow-minimal'
+                ? 'border border-foreground/10 bg-background shadow-minimal ring-1 ring-foreground/5'
                 : 'border border-transparent shadow-none')
               : (isFocused
-                ? 'bg-background border border-transparent shadow-minimal'
-                : 'border border-foreground/5')),
+                ? 'border border-foreground/10 bg-background shadow-minimal ring-1 ring-foreground/5'
+                : 'border border-border bg-foreground/[0.025] hover:bg-foreground/[0.035]')),
             safeThemeColor && 'border border-transparent',
           )}
           style={safeThemeColor ? {
@@ -289,7 +289,7 @@ export function BrowserControls({
           autoCapitalize="off"
         />
         {showAddressIcon && (
-          <span className="absolute inset-y-0 left-3 flex items-center justify-center">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center justify-center">
             {loading ? (
               <span className="flex items-center justify-center h-3.5 w-3.5" style={safeThemeColor ? { color: isFocused ? 'var(--tb-fg)' : 'var(--tb-fg-muted)' } : undefined}>
                 <Spinner className="text-[11px] text-foreground/40" />

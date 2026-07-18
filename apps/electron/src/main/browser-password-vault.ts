@@ -1,8 +1,34 @@
 import { spawn } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { app, safeStorage, systemPreferences } from 'electron'
 import { randomUUID } from 'crypto'
+
+export interface BrowserPasswordVaultDependencies {
+  app: {
+    getPath(name: 'userData'): string
+    isPackaged: boolean
+  }
+  safeStorage: {
+    isEncryptionAvailable(): boolean
+    encryptString(value: string): Buffer
+    decryptString(value: Buffer): string
+  }
+  systemPreferences: {
+    canPromptTouchID(): boolean
+    promptTouchID(reason: string): Promise<void>
+  }
+}
+
+function loadElectronDependencies(): BrowserPasswordVaultDependencies {
+  // Keep Electron loading behind the constructor so unit tests can inject the
+  // three narrow capabilities they need without globally mocking `electron`.
+  const electron = require('electron') as BrowserPasswordVaultDependencies
+  return {
+    app: electron.app,
+    safeStorage: electron.safeStorage,
+    systemPreferences: electron.systemPreferences,
+  }
+}
 
 export interface BrowserCredential {
   id: string
@@ -22,7 +48,17 @@ interface KeychainResponse {
 }
 
 export class BrowserPasswordVault {
-  private readonly localPath = join(app.getPath('userData'), 'browser-profile', 'password-vault.bin')
+  private readonly app: BrowserPasswordVaultDependencies['app']
+  private readonly safeStorage: BrowserPasswordVaultDependencies['safeStorage']
+  private readonly systemPreferences: BrowserPasswordVaultDependencies['systemPreferences']
+  private readonly localPath: string
+
+  constructor(dependencies: BrowserPasswordVaultDependencies = loadElectronDependencies()) {
+    this.app = dependencies.app
+    this.safeStorage = dependencies.safeStorage
+    this.systemPreferences = dependencies.systemPreferences
+    this.localPath = join(this.app.getPath('userData'), 'browser-profile', 'password-vault.bin')
+  }
 
   async list(origin?: string): Promise<BrowserCredentialSummary[]> {
     return (await this.readAll())
@@ -57,8 +93,8 @@ export class BrowserPasswordVault {
   }
 
   async reveal(id: string, reason: string): Promise<BrowserCredential> {
-    if (process.platform === 'darwin' && systemPreferences.canPromptTouchID()) {
-      await systemPreferences.promptTouchID(reason)
+    if (process.platform === 'darwin' && this.systemPreferences.canPromptTouchID()) {
+      await this.systemPreferences.promptTouchID(reason)
     }
     const credential = (await this.readAll()).find((item) => item.id === id)
     if (!credential) throw new Error('Saved password not found.')
@@ -66,12 +102,12 @@ export class BrowserPasswordVault {
   }
 
   getBackend(): 'icloud-keychain' | 'system-encrypted-local' {
-    return this.keychainHelperPath() && app.isPackaged ? 'icloud-keychain' : 'system-encrypted-local'
+    return this.keychainHelperPath() && this.app.isPackaged ? 'icloud-keychain' : 'system-encrypted-local'
   }
 
   private keychainHelperPath(): string | null {
     if (process.platform !== 'darwin') return null
-    const path = app.isPackaged
+    const path = this.app.isPackaged
       ? join(process.resourcesPath, 'browser-keychain-helper')
       : join(__dirname, 'browser-keychain-helper')
     return existsSync(path) ? path : null
@@ -82,15 +118,15 @@ export class BrowserPasswordVault {
       return (await this.runKeychain({ action: 'list' })).credentials ?? []
     }
     if (!existsSync(this.localPath)) return []
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('The operating-system password vault is unavailable.')
+    if (!this.safeStorage.isEncryptionAvailable()) throw new Error('The operating-system password vault is unavailable.')
     const encrypted = Buffer.from(readFileSync(this.localPath, 'utf8'), 'base64')
-    return JSON.parse(safeStorage.decryptString(encrypted)) as BrowserCredential[]
+    return JSON.parse(this.safeStorage.decryptString(encrypted)) as BrowserCredential[]
   }
 
   private async writeLocal(credentials: BrowserCredential[]): Promise<void> {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('The operating-system password vault is unavailable.')
+    if (!this.safeStorage.isEncryptionAvailable()) throw new Error('The operating-system password vault is unavailable.')
     mkdirSync(dirname(this.localPath), { recursive: true, mode: 0o700 })
-    const encrypted = safeStorage.encryptString(JSON.stringify(credentials))
+    const encrypted = this.safeStorage.encryptString(JSON.stringify(credentials))
     const temporaryPath = `${this.localPath}.tmp`
     writeFileSync(temporaryPath, encrypted.toString('base64'), { encoding: 'utf8', mode: 0o600 })
     renameSync(temporaryPath, this.localPath)

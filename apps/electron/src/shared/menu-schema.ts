@@ -193,6 +193,16 @@ export const VIEW_MENU: MenuSection = {
       ipcChannel: RPC_CHANNELS.menu.TOGGLE_SIDEBAR,
       icon: 'PanelLeft',
     },
+    {
+      type: 'action',
+      id: 'toggleSessionList',
+      labelKey: 'menu.toggleSessionList',
+      shortcut: '',
+      shortcutDisplayMac: '',
+      shortcutDisplayOther: '',
+      ipcChannel: RPC_CHANNELS.menu.TOGGLE_SESSION_LIST,
+      icon: 'List',
+    },
   ],
 }
 

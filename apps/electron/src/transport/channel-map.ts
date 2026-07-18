@@ -129,6 +129,7 @@ export const CHANNEL_MAP = {
   onMenuKeyboardShortcuts: listener(RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS),
   onMenuToggleFocusMode: listener(RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE),
   onMenuToggleSidebar: listener(RPC_CHANNELS.menu.TOGGLE_SIDEBAR),
+  onMenuToggleSessionList: listener(RPC_CHANNELS.menu.TOGGLE_SESSION_LIST),
 
   // Deep link
   onDeepLinkNavigate: listener(RPC_CHANNELS.deeplink.NAVIGATE),

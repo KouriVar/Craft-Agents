@@ -27,9 +27,9 @@ apps/electron/
 │   │   ├── agent-service.ts # Agent listing, caching, auth checking
 │   │   └── sources-service.ts # Source and authentication service
 │   ├── preload/           # Context bridges (main ↔ renderer / browser pages)
-│   │   ├── index.ts       # Exposes electronAPI to renderer
+│   │   ├── bootstrap.ts   # Exposes electronAPI to renderer
 │   │   ├── browser-toolbar.ts # Native browser toolbar bridge
-│   │   └── browser-page.ts # Credential capture and autofill bridge
+│   │   └── browser-page.ts # Credential capture, autofill, and store-extension install bridge
 │   ├── renderer/          # React UI
 │   │   ├── App.tsx        # Main app, event handling
 │   │   ├── components/
@@ -214,9 +214,14 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **Theme system** - Cascading themes (app → workspace → agent)
 - **Agent state machine** - useAgentState hook manages activation flow
 - **Application menu** - Standard macOS/Windows menus with keyboard shortcuts
+- **Focus mode** - Hides sidebars, top chrome, and macOS traffic lights with top-edge mouse reveal, a platform-specific shortcut hint, and automatic layout restoration after restart
+- **Platform typography** - Keeps native system/PingFang typography on macOS and bundles Source Han Sans CN for sharper Simplified Chinese text on Windows
 - **Component playground** - Development tool for testing UI components in isolation
 - **Type-safe navigation** - Unified routing system for tabs, actions, and deep links
 - **Persistent browser workspace** - Shared tabs, login state, history, bookmarks, downloads, OAuth popups, extensions, password autofill, and Agent control
+- **Chromium extension management** - Google/Microsoft store install, CRX/ZIP/unpacked import, metadata, permissions, pinning, and action launch
+- **Session usage details** - Context-window progress, input/output/cache tokens, provider pricing mode, and estimated API cost
+- **Pi ModelRuntime** - Pi 0.80.10 with in-process credentials, model switching, and shared runtime behavior
 
 ## Navigation System
 
@@ -265,7 +270,9 @@ See `CLAUDE.md` for complete route reference.
 | `main/menu.ts` | Application menu (File, Edit, View, Help) |
 | `main/deep-link.ts` | Deep link URL parsing and handling |
 | `main/sources-service.ts` | Source loading and authentication service |
-| `preload/index.ts` | Context bridge API |
+| `preload/bootstrap.ts` | Context bridge API |
+| `preload/browser-page.ts` | Browser-page credentials and extension-store injection |
+| `main/browser-pane-manager.ts` | Persistent browser tabs, profile, extensions, passwords, and Agent control |
 | `renderer/App.tsx` | React root, state management |
 | `renderer/contexts/NavigationContext.tsx` | Type-safe routing and navigation handler |
 | `renderer/lib/navigate.ts` | Global navigate() function |

@@ -9,6 +9,7 @@ import {
   createLsToolDefinition,
   type ToolDefinition,
   type CreateAgentSessionOptions,
+  type ModelRuntime,
 } from '@earendil-works/pi-coding-agent';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
@@ -28,7 +29,7 @@ import type { WebSearchProvider } from './tools/search/types.ts';
  *   hides tools without a snippet from the system prompt's "Available tools"
  *   section, making them invisible to the LLM even when registered).
  * - The `tools` allowlist is a `string[]` of tool names.
- * - Active custom tools have their names in the allowlist. Pi 0.80.7 also permits
+ * - Active custom tools have their names in the allowlist. Pi 0.80.10 also permits
  *   registered-but-inactive custom tools for later `setActiveToolsByName()` calls.
  */
 
@@ -86,7 +87,13 @@ describe('Pi subprocess tool shape contract', () => {
   });
 });
 
-describe('Pi SDK 0.80.7 CreateAgentSessionOptions contract', () => {
+describe('Pi SDK 0.80.10 CreateAgentSessionOptions contract', () => {
+  it('accepts the canonical ModelRuntime option', () => {
+    const modelRuntime = {} as ModelRuntime;
+    const options: CreateAgentSessionOptions = { modelRuntime };
+    expect(options.modelRuntime).toBe(modelRuntime);
+  });
+
   it('`tools` field is typed as string[] (name allowlist, not objects)', () => {
     // Compile-time proof. If Pi SDK ever changes this back to accept tool
     // objects, the line below will become a type error and this test will

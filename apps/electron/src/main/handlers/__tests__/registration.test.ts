@@ -103,10 +103,12 @@ async function getExpectedChannels(): Promise<Set<string>> {
     coreSystem,
     coreWorkspace,
     onboarding,
+    plugins,
     resources,
     transfer,
     tasks,
     projects,
+    widgets,
   ] = await Promise.all([
     import('@craft-agent/server-core/handlers/rpc/auth'),
     import('@craft-agent/server-core/handlers/rpc/automations'),
@@ -122,10 +124,12 @@ async function getExpectedChannels(): Promise<Set<string>> {
     import('@craft-agent/server-core/handlers/rpc/system'),
     import('@craft-agent/server-core/handlers/rpc/workspace'),
     import('@craft-agent/server-core/handlers/rpc/onboarding'),
+    import('@craft-agent/server-core/handlers/rpc/plugins'),
     import('@craft-agent/server-core/handlers/rpc/resources'),
     import('@craft-agent/server-core/handlers/rpc/transfer'),
     import('@craft-agent/server-core/handlers/rpc/tasks'),
     import('@craft-agent/server-core/handlers/rpc/projects'),
+    import('@craft-agent/server-core/handlers/rpc/widgets'),
   ])
 
   // GUI handler channels (remain in electron)
@@ -151,10 +155,12 @@ async function getExpectedChannels(): Promise<Set<string>> {
     ...coreSystem.CORE_HANDLED_CHANNELS,
     ...coreWorkspace.CORE_HANDLED_CHANNELS,
     ...onboarding.HANDLED_CHANNELS,
+    ...plugins.HANDLED_CHANNELS,
     ...resources.HANDLED_CHANNELS,
     ...transfer.HANDLED_CHANNELS,
     ...tasks.HANDLED_CHANNELS,
     ...projects.HANDLED_CHANNELS,
+    ...widgets.HANDLED_CHANNELS,
     ...browser.HANDLED_CHANNELS,
     ...guiSystem.GUI_HANDLED_CHANNELS,
     ...guiWorkspace.GUI_HANDLED_CHANNELS,

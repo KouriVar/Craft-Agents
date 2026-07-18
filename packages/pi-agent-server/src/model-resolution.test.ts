@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
 
 /**
- * Minimal mock of PiModelRegistry.
+ * Minimal mock of Pi ModelRuntime.
  * Maps provider → modelId → model object.
  */
-function createMockRegistry(
+function createMockRuntime(
   providers: Record<string, Array<{ id: string; name: string; provider?: string }>>,
 ) {
   const allModels = Object.entries(providers).flatMap(([provider, models]) =>
@@ -13,12 +13,12 @@ function createMockRegistry(
   );
 
   return {
-    find(provider: string, modelId: string) {
+    getModel(provider: string, modelId: string) {
       const models = providers[provider];
       if (!models) return undefined;
       return models.find(m => m.id === modelId || m.name === modelId) ?? undefined;
     },
-    getAll() {
+    getModels() {
       return allModels;
     },
   } as any;
@@ -27,7 +27,7 @@ function createMockRegistry(
 describe('resolvePiModel', () => {
   describe('preferCustomEndpoint', () => {
     it('returns custom-endpoint model when preferCustomEndpoint=true and model exists in both providers', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'custom-endpoint': [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'custom-endpoint' }],
         anthropic: [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'anthropic' }],
       });
@@ -38,7 +38,7 @@ describe('resolvePiModel', () => {
     });
 
     it('returns anthropic model when preferCustomEndpoint=false', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'custom-endpoint': [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'custom-endpoint' }],
         anthropic: [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'anthropic' }],
       });
@@ -49,7 +49,7 @@ describe('resolvePiModel', () => {
     });
 
     it('falls through to piAuthProvider when preferCustomEndpoint=true but model not in custom-endpoint', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'custom-endpoint': [],
         anthropic: [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'anthropic' }],
       });
@@ -62,7 +62,7 @@ describe('resolvePiModel', () => {
 
   describe('exact provider lookup', () => {
     it('returns exact match for piAuthProvider', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         openai: [{ id: 'gpt-5.2', name: 'GPT 5.2', provider: 'openai' }],
         'azure-openai-responses': [{ id: 'gpt-5.2', name: 'GPT 5.2', provider: 'azure-openai-responses' }],
       });
@@ -73,7 +73,7 @@ describe('resolvePiModel', () => {
     });
 
     it('strips MiniMax- prefix for minimax-cn provider', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'minimax-cn': [{ id: 'MiniMax-M2.5-highspeed', name: 'MiniMax-M2.5-highspeed', provider: 'minimax-cn' }],
       });
 
@@ -85,7 +85,7 @@ describe('resolvePiModel', () => {
 
   describe('pi/ prefix stripping', () => {
     it('strips pi/ prefix from model ID', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         anthropic: [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6', provider: 'anthropic' }],
       });
 
@@ -97,7 +97,7 @@ describe('resolvePiModel', () => {
 
   describe('fallback chain', () => {
     it('falls through getAll scan when no exact match', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         google: [{ id: 'gemini-pro', name: 'Gemini Pro', provider: 'google' }],
       });
 
@@ -109,13 +109,13 @@ describe('resolvePiModel', () => {
     it('tries common providers in fallback list (custom-endpoint first)', () => {
       // Model not in getAll by id/name match, but findable via provider lookup
       const registry = {
-        find(provider: string, modelId: string) {
+        getModel(provider: string, modelId: string) {
           if (provider === 'custom-endpoint' && modelId === 'my-model') {
             return { id: 'my-model', name: 'My Model', provider: 'custom-endpoint' };
           }
           return undefined;
         },
-        getAll() {
+        getModels() {
           return [];
         },
       } as any;
@@ -126,7 +126,7 @@ describe('resolvePiModel', () => {
     });
 
     it('returns undefined when model not found anywhere', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         anthropic: [{ id: 'claude-sonnet-4-6', name: 'claude-sonnet-4-6' }],
       });
 
@@ -139,7 +139,7 @@ describe('resolvePiModel', () => {
     it('does not return a model from an incompatible provider via getAll fallback', () => {
       // gpt-5.4 exists under azure-openai-responses but NOT github-copilot.
       // With github-copilot auth, the fallback must not return the azure model.
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'github-copilot': [{ id: 'gpt-5.3-codex', name: 'GPT-5.3-Codex', provider: 'github-copilot' }],
         'azure-openai-responses': [{ id: 'gpt-5.4', name: 'GPT-5.4', provider: 'azure-openai-responses' }],
       });
@@ -150,10 +150,10 @@ describe('resolvePiModel', () => {
 
     it('returns same-provider model from getAll fallback when exact lookup misses', () => {
       const registry = {
-        find() {
+        getModel() {
           return undefined;
         },
-        getAll() {
+        getModels() {
           return [{ id: 'gpt-5.4', name: 'GPT-5.4', provider: 'github-copilot' }];
         },
       } as any;
@@ -164,7 +164,7 @@ describe('resolvePiModel', () => {
     });
 
     it('allows custom-endpoint models regardless of piAuthProvider', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'custom-endpoint': [{ id: 'my-model', name: 'My Model', provider: 'custom-endpoint' }],
         'github-copilot': [],
       });
@@ -175,7 +175,7 @@ describe('resolvePiModel', () => {
     });
 
     it('does not filter by provider when piAuthProvider is not set', () => {
-      const registry = createMockRegistry({
+      const registry = createMockRuntime({
         'azure-openai-responses': [{ id: 'gpt-5.4', name: 'GPT-5.4', provider: 'azure-openai-responses' }],
       });
 
@@ -187,13 +187,13 @@ describe('resolvePiModel', () => {
     it('skips incompatible providers in the common-provider fallback loop', () => {
       // Model findable via the 'openai' common provider, but piAuthProvider is 'github-copilot'
       const registry = {
-        find(provider: string, modelId: string) {
+        getModel(provider: string, modelId: string) {
           if (provider === 'openai' && modelId === 'gpt-5.4') {
             return { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai' };
           }
           return undefined;
         },
-        getAll() { return []; },
+        getModels() { return []; },
       } as any;
 
       const result = resolvePiModel(registry, 'gpt-5.4', 'github-copilot');

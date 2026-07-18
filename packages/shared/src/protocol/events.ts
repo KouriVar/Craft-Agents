@@ -72,6 +72,7 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS]: []
   [RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE]: []
   [RPC_CHANNELS.menu.TOGGLE_SIDEBAR]: []
+  [RPC_CHANNELS.menu.TOGGLE_SESSION_LIST]: []
 
   // Messaging gateway broadcasts
   [RPC_CHANNELS.messaging.BINDING_CHANGED]: [workspaceId: string]

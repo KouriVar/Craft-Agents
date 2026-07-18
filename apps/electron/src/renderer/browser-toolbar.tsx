@@ -14,6 +14,8 @@ import { setupI18n } from '@craft-agent/shared/i18n'
 import { EyeOff, KeyRound, Pin, Puzzle, ShieldCheck, Star, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
+import { getEmbeddedToolbarModeTransition, type EmbeddedToolbarMode } from '@/lib/embedded-toolbar-state'
+import { applyPlatformAttribute } from '@/lib/platform'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -21,6 +23,8 @@ import {
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
 import './index.css'
+
+applyPlatformAttribute()
 
 // This is a standalone entry (browser-toolbar.html) — i18n must be initialized
 // here or BrowserControls and the menu below render raw translation keys.
@@ -39,6 +43,7 @@ interface ToolbarState {
   themeColor?: string | null
   bookmarked?: boolean
   embedded?: boolean
+  toolbarMode?: EmbeddedToolbarMode
 }
 
 declare global {
@@ -52,7 +57,7 @@ declare global {
       reload: () => Promise<void>
       stop: () => Promise<void>
       setRevealed: (revealed: boolean) => Promise<void>
-      pinEmbedded: () => Promise<void>
+      pinEmbedded: () => Promise<boolean>
       showEmbeddedMenu: (kind: 'extensions' | 'permissions' | 'passwords') => Promise<void>
       toggleBookmark: () => Promise<void>
       setMenuGeometry: (open: boolean, height?: number) => Promise<void>
@@ -81,8 +86,12 @@ function BrowserToolbarApp() {
   const [themeColor, setThemeColor] = useState<string | null>(null)
   const [windowMenuOpen, setWindowMenuOpen] = useState(false)
   const [embeddedRevealed, setEmbeddedRevealed] = useState(false)
-  const [embeddedFocused, setEmbeddedFocused] = useState(false)
+  const [embeddedPinPending, setEmbeddedPinPending] = useState(false)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
+  const toolbarRootRef = useRef<HTMLDivElement | null>(null)
+  const embeddedFocusedRef = useRef(false)
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastToolbarModeRef = useRef<EmbeddedToolbarMode | null>(null)
 
   const api = window.browserToolbar
 
@@ -90,6 +99,13 @@ function BrowserToolbarApp() {
     if (!api) return
     return api.onStateUpdate((s) => {
       setState(s)
+      const transition = getEmbeddedToolbarModeTransition(lastToolbarModeRef.current, s.toolbarMode)
+      if (s.toolbarMode) lastToolbarModeRef.current = s.toolbarMode
+      if (transition) {
+        setEmbeddedPinPending(transition.pinPending)
+        setEmbeddedRevealed(transition.revealed)
+        embeddedFocusedRef.current = false
+      }
       // Sync theme color from full state push (initial load / reconnection)
       if ('themeColor' in s) {
         setThemeColor((s as ToolbarState).themeColor ?? null)
@@ -171,34 +187,81 @@ function BrowserToolbarApp() {
     void api?.closeWindowEntirely()
   }, [api])
 
+  const handlePinEmbedded = useCallback(async () => {
+    if (!api || embeddedPinPending) return
+    setEmbeddedPinPending(true)
+    try {
+      const pinned = await api.pinEmbedded()
+      if (!pinned) {
+        setEmbeddedPinPending(false)
+        return
+      }
+      // The main-process broadcast replaces this floating toolbar with the
+      // pinned renderer. Keep the pressed treatment visible until unmount.
+    } catch {
+      setEmbeddedPinPending(false)
+    }
+  }, [api, embeddedPinPending])
+
   const embedded = Boolean(api?.embedded)
+  const toolbarVisible = !embedded || embeddedRevealed
+
+  const cancelScheduledCollapse = useCallback(() => {
+    if (collapseTimerRef.current === null) return
+    clearTimeout(collapseTimerRef.current)
+    collapseTimerRef.current = null
+  }, [])
+
+  const revealEmbeddedToolbar = useCallback(() => {
+    cancelScheduledCollapse()
+    setEmbeddedRevealed(true)
+    void api?.setRevealed(true)
+  }, [api, cancelScheduledCollapse])
+
+  const scheduleEmbeddedToolbarCollapse = useCallback(() => {
+    if (embeddedFocusedRef.current) return
+    cancelScheduledCollapse()
+    // Resizing the native WebContentsView from the 8px sensor to the complete
+    // toolbar can produce a transient mouseleave on Electron/macOS. Keep the
+    // expanded 48px surface as the active hover zone: pointer movement inside
+    // it cancels this task, while a genuine exit into the page lets it finish.
+    collapseTimerRef.current = setTimeout(() => {
+      collapseTimerRef.current = null
+      if (embeddedFocusedRef.current || toolbarRootRef.current?.matches(':hover')) return
+      setEmbeddedRevealed(false)
+      void api?.setRevealed(false)
+    }, 180)
+  }, [api, cancelScheduledCollapse])
+
+  useEffect(() => () => {
+    cancelScheduledCollapse()
+  }, [cancelScheduledCollapse])
 
   return (
     <div
+      ref={toolbarRootRef}
       className={embedded
         ? (embeddedRevealed
-            ? 'h-full overflow-hidden rounded-[10px] border border-foreground/20 bg-background shadow-modal-small'
-            : 'h-full overflow-hidden border border-transparent bg-transparent shadow-none')
+            ? 'flex h-full items-center overflow-hidden rounded-[10px] border border-border bg-background p-[3px] shadow-minimal'
+            // The collapsed WebContentsView is the native hover target. Give
+            // it the exact CA surface token: transparent native sibling views
+            // can otherwise expose Electron's near-white window background as
+            // a visible strip in light mode (and a mismatched seam in dark).
+            : 'h-full overflow-hidden bg-transparent shadow-none')
         : 'h-full'}
-      onMouseEnter={embedded ? () => {
-        setEmbeddedRevealed(true)
-        void api?.setRevealed(true)
-      } : undefined}
-      onMouseLeave={embedded ? () => {
-        if (embeddedFocused) return
-        setEmbeddedRevealed(false)
-        void api?.setRevealed(false)
-      } : undefined}
+      onMouseEnter={embedded ? revealEmbeddedToolbar : undefined}
+      onMouseMove={embedded ? cancelScheduledCollapse : undefined}
+      onMouseLeave={embedded ? scheduleEmbeddedToolbarCollapse : undefined}
       onFocusCapture={embedded ? () => {
-        setEmbeddedFocused(true)
+        cancelScheduledCollapse()
+        embeddedFocusedRef.current = true
         setEmbeddedRevealed(true)
         void api?.setRevealed(true)
       } : undefined}
       onBlurCapture={embedded ? (event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
-        setEmbeddedFocused(false)
-        setEmbeddedRevealed(false)
-        void api?.setRevealed(false)
+        embeddedFocusedRef.current = false
+        scheduleEmbeddedToolbarCollapse()
       } : undefined}
     >
       {/*
@@ -216,7 +279,7 @@ function BrowserToolbarApp() {
         />
       )}
 
-      <BrowserControls
+      {toolbarVisible && <BrowserControls
         url={state.url}
         loading={state.isLoading}
         canGoBack={state.canGoBack}
@@ -232,19 +295,19 @@ function BrowserToolbarApp() {
               icon={<ShieldCheck className="h-4 w-4" />}
               aria-label={t('browser.sitePermissions', { defaultValue: 'Site permissions' })}
               onClick={() => { void api?.showEmbeddedMenu('permissions') }}
-              className="bg-background hover:bg-foreground/5"
+              className="rounded-[6px] hover:bg-foreground/5"
             />
             <HeaderIconButton
               icon={<KeyRound className="h-4 w-4" />}
               aria-label={t('browser.passwords', { defaultValue: 'Passwords' })}
               onClick={() => { void api?.showEmbeddedMenu('passwords') }}
-              className="bg-background hover:bg-foreground/5"
+              className="rounded-[6px] hover:bg-foreground/5"
             />
             <HeaderIconButton
               icon={<Puzzle className="h-4 w-4" />}
               aria-label={t('plugins.browserExtensions', { defaultValue: 'Extensions' })}
               onClick={() => { void api?.showEmbeddedMenu('extensions') }}
-              className="bg-background hover:bg-foreground/5"
+              className="rounded-[6px] hover:bg-foreground/5"
             />
             <HeaderIconButton
               icon={<Star className={state.bookmarked ? 'h-4 w-4 fill-current' : 'h-4 w-4'} />}
@@ -252,13 +315,16 @@ function BrowserToolbarApp() {
                 ? t('browser.removeBookmark', { defaultValue: 'Remove bookmark' })
                 : t('browser.addBookmark', { defaultValue: 'Add bookmark' })}
               onClick={() => { void api?.toggleBookmark() }}
-              className={state.bookmarked ? 'bg-foreground/[0.08] text-foreground' : 'bg-background hover:bg-foreground/5'}
+              className={state.bookmarked ? 'rounded-[6px] bg-foreground/[0.08] text-foreground' : 'rounded-[6px] hover:bg-foreground/5'}
             />
             <HeaderIconButton
               icon={<Pin className="h-4 w-4 rotate-45" />}
               aria-label={t('rightSidebar.pinToolbar', { defaultValue: '固定工具栏' })}
-              onClick={() => { void api?.pinEmbedded() }}
-              className="bg-background hover:bg-foreground/5"
+              aria-pressed={embeddedPinPending}
+              onClick={() => { void handlePinEmbedded() }}
+              className={embeddedPinPending
+                ? 'rounded-[6px] bg-foreground/[0.08] text-foreground hover:bg-foreground/[0.12]'
+                : 'rounded-[6px] hover:bg-foreground/5'}
             />
           </div>
         ) : (
@@ -293,10 +359,17 @@ function BrowserToolbarApp() {
             </DropdownMenu>
           </div>
         )}
-        themeColor={themeColor}
-        urlBarClassName="max-w-[600px]"
-        className="titlebar-drag-region bg-background"
-      />
+        compact={embedded}
+        showProgressBar={!embedded}
+        themeColor={embedded ? null : themeColor}
+        urlBarClassName={embedded ? 'max-w-none' : 'max-w-[600px]'}
+        className={embedded
+          // An embedded WebContentsView is not a draggable window titlebar.
+          // Keeping app-region: drag here causes Chromium to route pointer
+          // input to native window dragging before buttons/forms receive it.
+          ? 'titlebar-no-drag min-w-0 flex-1 bg-transparent'
+          : 'titlebar-drag-region bg-background'}
+      />}
     </div>
   )
 }

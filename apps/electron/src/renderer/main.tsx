@@ -11,7 +11,13 @@ import { Toaster } from '@/components/ui/sonner'
 import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
+import { applyPlatformAttribute } from '@/lib/platform'
 import './index.css'
+
+// Expose the host platform to CSS before React renders. Windows uses the
+// bundled Source Han Sans CN variable font for sharper CJK text, while macOS
+// keeps its native system stack (including PingFang SC).
+applyPlatformAttribute()
 
 // Initialize i18n before any React rendering
 setupI18n([LanguageDetector, initReactI18next])

@@ -433,6 +433,7 @@ export interface ElectronAPI {
   onMenuKeyboardShortcuts(callback: () => void): () => void
   onMenuToggleFocusMode(callback: () => void): () => void
   onMenuToggleSidebar(callback: () => void): () => void
+  onMenuToggleSessionList(callback: () => void): () => void
 
   // Deep link navigation listener (for external craftagents:// URLs)
   onDeepLinkNavigate(callback: (nav: DeepLinkNavigation) => void): () => void

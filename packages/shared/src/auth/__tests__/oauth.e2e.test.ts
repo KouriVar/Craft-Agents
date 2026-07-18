@@ -9,6 +9,8 @@
 import { describe, it, expect } from 'bun:test';
 import { discoverOAuthMetadata, getMcpBaseUrl } from '../oauth';
 
+const runNetworkE2E = process.env.RUN_NETWORK_E2E === '1';
+
 // Helper to check if a URL is reachable
 async function isReachable(url: string, timeoutMs = 5000): Promise<boolean> {
   try {
@@ -49,7 +51,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(getMcpBaseUrl(MCP_URL)).toBe('https://api.githubcopilot.com');
     });
 
-    it('discovers OAuth metadata', async () => {
+    it.skipIf(!runNetworkE2E)('discovers OAuth metadata', async () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
@@ -73,7 +75,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(getMcpBaseUrl(MCP_URL)).toBe('https://mcp.linear.app');
     });
 
-    it('discovers OAuth metadata', async () => {
+    it.skipIf(!runNetworkE2E)('discovers OAuth metadata', async () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
@@ -97,7 +99,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       expect(getMcpBaseUrl(MCP_URL)).toBe('https://api.ahrefs.com');
     });
 
-    it('discovers OAuth metadata', async () => {
+    it.skipIf(!runNetworkE2E)('discovers OAuth metadata', async () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 

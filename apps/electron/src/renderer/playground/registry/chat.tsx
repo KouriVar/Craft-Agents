@@ -2,6 +2,7 @@ import * as React from 'react'
 import type { ComponentEntry } from './types'
 import { AttachmentPreview } from '@/components/app-shell/AttachmentPreview'
 import { SetupAuthBanner } from '@/components/app-shell/SetupAuthBanner'
+import { UsageSection } from '@/components/app-shell/SessionResourcesPopover'
 import { TurnCard, type ActivityItem } from '@craft-agent/ui'
 import type { BackgroundTask } from '@/components/app-shell/ActiveTasksBar'
 import { ActiveOptionBadges } from '@/components/app-shell/ActiveOptionBadges'
@@ -14,7 +15,7 @@ import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { FileAttachment, PermissionRequest, PermissionMode } from '../../../shared/types'
+import type { FileAttachment, PermissionRequest, PermissionMode, Session } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
 import { ModalProvider } from '@/context/ModalContext'
@@ -216,6 +217,61 @@ const playgroundAppShellContext = {
   onReset: () => {},
   onSessionOptionsChange: () => {},
   onInputChange: () => {},
+}
+
+const usagePreviewSession: Session = {
+  id: 'usage-preview',
+  workspaceId: 'playground-workspace',
+  workspaceName: 'Playground',
+  lastMessageAt: Date.now(),
+  messages: [],
+  isProcessing: false,
+  model: 'pi/deepseek-v4-pro',
+  llmConnection: 'deepseek-api',
+  tokenUsage: {
+    inputTokens: 47_000,
+    outputTokens: 12_640,
+    totalTokens: 59_640,
+    contextTokens: 47_000,
+    contextWindow: 258_000,
+    cacheReadTokens: 31_200,
+    cacheCreationTokens: 4_800,
+    costUsd: 0.01842,
+  },
+}
+
+function UsageSectionPreview() {
+  return (
+    <div className="w-[360px] rounded-[14px] border border-border/70 bg-background p-3 shadow-modal-small">
+      <UsageSection session={usagePreviewSession} />
+    </div>
+  )
+}
+
+function UsageSectionPreviewWrapper({ children }: { children: React.ReactNode }) {
+  const value = {
+    ...playgroundAppShellContext,
+    workspaceDefaultLlmConnection: 'deepseek-api',
+    llmConnections: [{
+      slug: 'deepseek-api',
+      name: 'DeepSeek API',
+      providerType: 'pi',
+      authType: 'api_key',
+      piAuthProvider: 'deepseek',
+      models: [{
+        id: 'pi/deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        shortName: 'V4 Pro',
+        description: 'DeepSeek reasoning model',
+        provider: 'pi',
+        contextWindow: 1_000_000,
+      }],
+      defaultModel: 'pi/deepseek-v4-pro',
+      createdAt: Date.now(),
+      isAuthenticated: true,
+    }],
+  }
+  return <AppShellProvider value={value as any}>{children}</AppShellProvider>
 }
 
 // ============================================================================
@@ -970,6 +1026,16 @@ const emptyStateHintVariants = Array.from({ length: getHintCount() }, (_, i) => 
 }))
 
 export const chatComponents: ComponentEntry[] = [
+  {
+    id: 'session-usage-info',
+    name: 'Session Usage Information',
+    category: 'Chat',
+    description: 'Context window, token breakdown, model connection, and estimated API cost',
+    component: UsageSectionPreview,
+    wrapper: UsageSectionPreviewWrapper,
+    props: [],
+    layout: 'centered',
+  },
   {
     id: 'empty-state-hint',
     name: 'EmptyStateHint',

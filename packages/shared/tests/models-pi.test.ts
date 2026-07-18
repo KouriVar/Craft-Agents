@@ -36,4 +36,15 @@ describe('models-pi filtering', () => {
     expect(ids).toContain('pi/deepseek-v4-flash');
     expect(ids).toContain('pi/deepseek-v4-pro');
   });
+
+  it('exposes Kimi K3 from the Pi 0.80.10 catalogs', () => {
+    expect(getPiModelsForAuthProvider('kimi-coding').map(m => m.id)).toContain('pi/k3');
+    expect(getPiModelsForAuthProvider('moonshotai').map(m => m.id)).toContain('pi/kimi-k3');
+    expect(getPiModelsForAuthProvider('openrouter').map(m => m.id)).toContain('pi/moonshotai/kimi-k3');
+  });
+
+  it('exposes the Kimi Coding high-speed model', () => {
+    expect(getPiModelsForAuthProvider('kimi-coding').map(m => m.id))
+      .toContain('pi/kimi-for-coding-highspeed');
+  });
 });

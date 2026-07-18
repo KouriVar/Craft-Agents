@@ -1,14 +1,23 @@
-import { Globe, Loader2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Ellipsis, Globe, KeyRound, Loader2, Pin, Puzzle, RotateCw, ShieldCheck, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { EntityList } from '@/components/ui/entity-list'
 import { cn } from '@/lib/utils'
 import type { BrowserWorkspaceTab } from '@/atoms/browser-workspace'
+import type { BrowserExtensionEntry } from '../../../shared/types'
 
 interface BrowserTabsListPanelProps {
   tabs: BrowserWorkspaceTab[]
   selectedTabId?: string | null
   onTabClick: (tabId: string) => void
   onTabClose: (tabId: string) => void
+  onTabGoBack: (tabId: string) => void
+  onTabGoForward: (tabId: string) => void
+  onTabReload: (tabId: string) => void
+  onTabStop: (tabId: string) => void
+  onCopyLink: (tab: BrowserWorkspaceTab) => void
+  onToggleBookmark: (tab: BrowserWorkspaceTab) => void
+  onShowTabMenu: (kind: 'permissions' | 'passwords', tab: BrowserWorkspaceTab) => void
 }
 
 function getTabSubtitle(tab: BrowserWorkspaceTab, newTabLabel: string): string {
@@ -25,9 +34,49 @@ export function BrowserTabsListPanel({
   selectedTabId,
   onTabClick,
   onTabClose,
+  onTabGoBack,
+  onTabGoForward,
+  onTabReload,
+  onTabStop,
+  onCopyLink,
+  onToggleBookmark,
+  onShowTabMenu,
 }: BrowserTabsListPanelProps) {
   const { t } = useTranslation()
   const newTabLabel = t('browser.newTab', { defaultValue: 'New Tab' })
+  const [openActionsTabId, setOpenActionsTabId] = useState<string | null>(null)
+  const [extensionsExpanded, setExtensionsExpanded] = useState(false)
+  const [extensions, setExtensions] = useState<BrowserExtensionEntry[]>([])
+
+  const refreshExtensions = useCallback(async () => {
+    const next = await window.electronAPI.browserPane.listExtensions()
+    setExtensions(next.filter((extension) => !extension.hidden && extension.hasAction))
+  }, [])
+
+  useEffect(() => {
+    void refreshExtensions()
+    const refresh = () => { void refreshExtensions() }
+    window.addEventListener('craft-browser-extensions-changed', refresh)
+    return () => window.removeEventListener('craft-browser-extensions-changed', refresh)
+  }, [refreshExtensions])
+
+  useEffect(() => {
+    if (openActionsTabId && openActionsTabId !== selectedTabId) setOpenActionsTabId(null)
+  }, [openActionsTabId, selectedTabId])
+
+  const sortedExtensions = useMemo(
+    () => [...extensions].sort((left, right) => left.order - right.order || left.name.localeCompare(right.name)),
+    [extensions],
+  )
+
+  const toggleExtensionPin = useCallback(async (extension: BrowserExtensionEntry) => {
+    await window.electronAPI.browserPane.setExtensionPreference(extension.id, {
+      pinned: !extension.pinned,
+      hidden: false,
+    })
+    await refreshExtensions()
+    window.dispatchEvent(new Event('craft-browser-extensions-changed'))
+  }, [refreshExtensions])
 
   return (
     <EntityList
@@ -36,6 +85,10 @@ export function BrowserTabsListPanel({
       containerProps={{ 'data-list-role': 'browser-tabs' }}
       renderItem={(tab, _index, isFirst) => {
         const isSelected = tab.id === selectedTabId
+        const actionsOpen = isSelected && openActionsTabId === tab.id
+        const visibleExtensions = extensionsExpanded
+          ? sortedExtensions
+          : sortedExtensions.filter((extension) => extension.pinned)
         const title = tab.url === 'about:blank'
           ? newTabLabel
           : (tab.title.trim() || getTabSubtitle(tab, newTabLabel))
@@ -70,6 +123,121 @@ export function BrowserTabsListPanel({
                 </span>
               </span>
             </button>
+            {isSelected && (
+              <div className="flex items-center gap-0.5 px-2.5 pb-2">
+                <button
+                  type="button"
+                  disabled={!tab.canGoBack}
+                  onClick={() => onTabGoBack(tab.id)}
+                  className="flex h-7 w-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:pointer-events-none disabled:opacity-25"
+                  aria-label={t('browser.back', { defaultValue: 'Back' })}
+                  title={t('browser.back', { defaultValue: 'Back' })}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  disabled={!tab.canGoForward}
+                  onClick={() => onTabGoForward(tab.id)}
+                  className="flex h-7 w-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:pointer-events-none disabled:opacity-25"
+                  aria-label={t('browser.forward', { defaultValue: 'Forward' })}
+                  title={t('browser.forward', { defaultValue: 'Forward' })}
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => tab.isLoading ? onTabStop(tab.id) : onTabReload(tab.id)}
+                  className="flex h-7 w-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                  aria-label={tab.isLoading ? t('browser.stopLoading') : t('common.reload')}
+                  title={tab.isLoading ? t('browser.stopLoading') : t('common.reload')}
+                >
+                  {tab.isLoading ? <X className="h-3.5 w-3.5" /> : <RotateCw className="h-3.5 w-3.5" />}
+                </button>
+                <div className="mx-1 h-4 w-px bg-border/60" />
+                <button
+                  type="button"
+                  disabled={!tab.url || tab.url === 'about:blank'}
+                  onClick={() => onCopyLink(tab)}
+                  className="flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] px-2 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:pointer-events-none disabled:opacity-25"
+                  aria-label={t('browser.copyLink', { defaultValue: 'Copy link' })}
+                  title={t('browser.copyLink', { defaultValue: 'Copy link' })}
+                >
+                  <Copy className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{t('browser.copyLink', { defaultValue: '复制链接' })}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!tab.url || tab.url === 'about:blank'}
+                  onClick={() => {
+                    setOpenActionsTabId((current) => current === tab.id ? null : tab.id)
+                    setExtensionsExpanded(false)
+                  }}
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:pointer-events-none disabled:opacity-25',
+                    actionsOpen && 'bg-foreground/[0.07] text-foreground',
+                  )}
+                  aria-expanded={actionsOpen}
+                  aria-label={t('browser.pageActions', { defaultValue: '页面功能' })}
+                  title={t('browser.pageActions', { defaultValue: '页面功能' })}
+                >
+                  <Ellipsis className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            {actionsOpen && (
+              <div className="mx-2 mb-2 overflow-hidden rounded-[8px] border border-border/55 bg-background/55 p-1">
+                <InlineActionRow icon={<Star />} label={t('browser.toggleBookmark', { defaultValue: '切换收藏' })} onClick={() => onToggleBookmark(tab)} />
+                <InlineActionRow icon={<KeyRound />} label={t('browser.passwords', { defaultValue: '密码' })} onClick={() => onShowTabMenu('passwords', tab)} />
+                <InlineActionRow icon={<ShieldCheck />} label={t('browser.sitePermissions')} onClick={() => onShowTabMenu('permissions', tab)} />
+
+                <button
+                  type="button"
+                  onClick={() => setExtensionsExpanded((expanded) => !expanded)}
+                  className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-xs text-foreground/85 transition-colors hover:bg-foreground/[0.05]"
+                  aria-expanded={extensionsExpanded}
+                >
+                  {extensionsExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  <Puzzle className="h-3.5 w-3.5" />
+                  <span className="min-w-0 flex-1 truncate">{t('plugins.browserExtensions', { defaultValue: '扩展' })}</span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground">{sortedExtensions.length}</span>
+                </button>
+
+                {visibleExtensions.length > 0 ? (
+                  <div className="ml-3 border-l border-border/60 pl-1">
+                    {visibleExtensions.map((extension) => (
+                      <div key={extension.id} className="group/extension flex min-w-0 items-center rounded-[6px] hover:bg-foreground/[0.05]">
+                        <button
+                          type="button"
+                          onClick={() => void window.electronAPI.browserPane.openExtensionAction(extension.id, tab.id)}
+                          className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs text-foreground/80"
+                          title={extension.name}
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-[4px] bg-foreground/[0.04]">
+                            {extension.icon ? <img src={extension.icon} alt="" className="h-4 w-4 object-contain" /> : <Puzzle className="h-3.5 w-3.5" />}
+                          </span>
+                          <span className="truncate">{extension.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void toggleExtensionPin(extension) }}
+                          className={cn(
+                            'mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground',
+                            extension.pinned && 'bg-foreground/[0.07] text-foreground',
+                          )}
+                          aria-label={extension.pinned ? '取消固定扩展' : '固定扩展'}
+                          title={extension.pinned ? '取消固定' : '固定'}
+                        >
+                          <Pin className={cn('h-3.5 w-3.5', extension.pinned && 'fill-current')} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : extensionsExpanded ? (
+                  <div className="ml-8 px-2 py-1.5 text-[11px] text-muted-foreground">暂无可用扩展</div>
+                ) : null}
+              </div>
+            )}
             <button
               type="button"
               onClick={(event) => {
@@ -77,7 +245,7 @@ export function BrowserTabsListPanel({
                 onTabClose(tab.id)
               }}
               className={cn(
-                'absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-[5px]',
+                'absolute right-2 top-[15px] flex h-6 w-6 items-center justify-center rounded-[5px]',
                 'text-muted-foreground opacity-0 transition-[opacity,color,background-color]',
                 'hover:bg-foreground/[0.06] hover:text-destructive group-hover:opacity-100',
                 isSelected && 'opacity-60 hover:opacity-100',
@@ -91,5 +259,19 @@ export function BrowserTabsListPanel({
         )
       }}
     />
+  )
+}
+
+function InlineActionRow({ icon, label, onClick }: { icon: React.ReactElement; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-xs text-foreground/85 transition-colors hover:bg-foreground/[0.05] [&_svg]:h-3.5 [&_svg]:w-3.5"
+    >
+      <span className="w-3.5 shrink-0" />
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
   )
 }

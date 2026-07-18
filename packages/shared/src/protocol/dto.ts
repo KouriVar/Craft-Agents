@@ -874,6 +874,11 @@ export interface BrowserExtensionEntry {
   name: string
   version: string
   path: string
+  description?: string
+  icon?: string | null
+  permissions?: string[]
+  homepageUrl?: string | null
+  manifestVersion?: number | null
   enabled: boolean
   hasAction: boolean
   pinned: boolean

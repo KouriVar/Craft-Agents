@@ -6,7 +6,7 @@ import { join } from 'path'
 let root = ''
 const promptTouchID = mock(async () => {})
 
-mock.module('electron', () => ({
+const dependencies = {
   app: {
     getPath: () => root,
     isPackaged: false,
@@ -20,7 +20,7 @@ mock.module('electron', () => ({
     canPromptTouchID: () => false,
     promptTouchID,
   },
-}))
+}
 
 const { BrowserPasswordVault } = await import('../browser-password-vault')
 
@@ -33,7 +33,7 @@ describe('BrowserPasswordVault', () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
   it('encrypts credentials at rest and only exposes summaries from list', async () => {
-    const vault = new BrowserPasswordVault()
+    const vault = new BrowserPasswordVault(dependencies)
     const saved = await vault.save({ origin: 'https://example.com', username: 'person@example.com', password: 'secret-value' })
     expect(saved.username).toBe('person@example.com')
     expect(await vault.list('https://example.com')).toEqual([saved])
@@ -43,7 +43,7 @@ describe('BrowserPasswordVault', () => {
   })
 
   it('updates an existing origin and username instead of duplicating it', async () => {
-    const vault = new BrowserPasswordVault()
+    const vault = new BrowserPasswordVault(dependencies)
     const first = await vault.save({ origin: 'https://example.com', username: 'person', password: 'one' })
     const updated = await vault.save({ origin: 'https://example.com', username: 'person', password: 'two' })
     expect(updated.id).toBe(first.id)

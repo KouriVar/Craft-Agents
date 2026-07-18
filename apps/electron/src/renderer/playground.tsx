@@ -16,6 +16,9 @@ import { PlaygroundApp } from './playground/PlaygroundApp'
 import { EscapeInterruptProvider } from './context/EscapeInterruptContext'
 import { PlaygroundAppShellProvider } from './playground/PlaygroundAppShellProvider'
 import './index.css'
+import { applyPlatformAttribute } from '@/lib/platform'
+
+applyPlatformAttribute()
 
 // Initialize i18n before any React rendering. `useTranslation()` reads from
 // the shared global instance, so we don't need an <I18nextProvider>.

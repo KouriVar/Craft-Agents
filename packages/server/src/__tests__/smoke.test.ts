@@ -10,12 +10,21 @@
 
 import { describe, it, expect, afterEach } from 'bun:test'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import type { Subprocess } from 'bun'
 import WebSocket from 'ws'
 
 const SERVER_ENTRY = join(import.meta.dir, '..', 'index.ts')
 const STARTUP_TIMEOUT = 15_000
 const TEST_TIMEOUT = 30_000
+const testConfigDirs = new Set<string>()
+
+function createTestConfigDir(): string {
+  const path = join(tmpdir(), `craft-agent-server-smoke-${crypto.randomUUID()}`)
+  testConfigDirs.add(path)
+  return path
+}
 
 interface SpawnedServer {
   url: string
@@ -37,6 +46,7 @@ async function spawnTestServer(extraEnv?: Record<string, string>): Promise<Spawn
       CRAFT_RPC_PORT: '0',
       CRAFT_RPC_HOST: '127.0.0.1',
       CRAFT_HEALTH_PORT: '0', // random port
+      CRAFT_CONFIG_DIR: createTestConfigDir(),
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -132,6 +142,10 @@ describe('headless server smoke test', () => {
       await server.stop().catch(() => {})
       server = null
     }
+    for (const path of testConfigDirs) {
+      rmSync(path, { recursive: true, force: true })
+      testConfigDirs.delete(path)
+    }
   })
 
   it('accepts valid token handshake', async () => {
@@ -157,6 +171,7 @@ describe('headless server smoke test', () => {
         CRAFT_SERVER_TOKEN: token,
         CRAFT_RPC_PORT: '0',
         CRAFT_RPC_HOST: '127.0.0.1',
+        CRAFT_CONFIG_DIR: createTestConfigDir(),
       },
       stdout: 'pipe',
       stderr: 'pipe',

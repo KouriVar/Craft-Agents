@@ -4,7 +4,7 @@ import { KeyRound, Pin, Puzzle, ShieldCheck, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { BrowserExtensionEntry } from '../../../shared/types'
 import { BrowserToolbar } from './BrowserToolbar'
-import { browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
+import { browserNativeViewsSuspendedAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
 import { cn } from '@/lib/utils'
 import { PANEL_GAP } from '@/components/app-shell/panel-constants'
 
@@ -12,9 +12,16 @@ interface BrowserWorkspacePageProps {
   activeTabId?: string | null
 }
 
+// The former embedded address/extension toolbar is intentionally retained
+// below for rollback, but the workspace now keeps navigation controls with the
+// selected tab and uses an address field only on the new-tab page.
+const SHOW_LEGACY_EMBEDDED_TOOLBAR = false
+
 export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps) {
   const { t } = useTranslation()
   const tabs = useAtomValue(browserWorkspaceTabsAtom)
+  const nativeViewsSuspended = useAtomValue(browserNativeViewsSuspendedAtom)
+  const notificationBottom = useAtomValue(browserNotificationBottomAtom)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const [bookmarked, setBookmarked] = useState(false)
   const [extensions, setExtensions] = useState<BrowserExtensionEntry[]>([])
@@ -34,6 +41,13 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     }
   }, [activeTab?.url])
   const pinnedExtensions = extensions.filter((extension) => extension.pinned && !extension.hidden && extension.hasAction).slice(0, 3)
+
+  useEffect(() => {
+    if (!activeId || SHOW_LEGACY_EMBEDDED_TOOLBAR) return
+    // Fixed mode hides the separate native floating toolbar. The React toolbar
+    // remains in this file behind the feature constant above; no code is deleted.
+    void window.electronAPI.browserPane.setEmbeddedToolbarMode(activeId, 'fixed').catch(() => {})
+  }, [activeId])
 
   const refreshExtensions = useCallback(async () => {
     setExtensions(await window.electronAPI.browserPane.listExtensions())
@@ -65,18 +79,26 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     const rect = surface.getBoundingClientRect()
     if (rect.width < 1 || rect.height < 1) return
 
+    const notificationInset = Math.max(0, Math.min(rect.height, notificationBottom + 8 - rect.top))
     await api.setEmbeddedBounds(activeId, {
       x: rect.left,
-      y: rect.top,
+      y: rect.top + notificationInset,
       width: rect.width,
-      height: rect.height,
+      height: Math.max(1, rect.height - notificationInset),
     })
     await api.setEmbeddedVisible(activeId, true)
-  }, [activeId])
+  }, [activeId, notificationBottom])
 
   useEffect(() => {
     const api = window.electronAPI?.browserPane
     if (!api || !activeId) return
+
+    if (nativeViewsSuspended) {
+      for (const tabId of tabIds) {
+        void api.setEmbeddedVisible(tabId, false).catch(() => {})
+      }
+      return
+    }
 
     for (const tabId of tabIds) {
       if (tabId !== activeId) {
@@ -90,11 +112,11 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     return () => {
       void api.setEmbeddedVisible(activeId, false).catch(() => {})
     }
-  }, [activeId, syncActiveSurface, tabIds])
+  }, [activeId, nativeViewsSuspended, syncActiveSurface, tabIds])
 
   useEffect(() => {
     const surface = surfaceRef.current
-    if (!surface || !activeId) return
+    if (!surface || !activeId || nativeViewsSuspended) return
 
     let frame = 0
     const scheduleSync = () => {
@@ -115,7 +137,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       observer.disconnect()
       window.removeEventListener('resize', scheduleSync)
     }
-  }, [activeId, syncActiveSurface])
+  }, [activeId, nativeViewsSuspended, syncActiveSurface])
 
   const navigateActive = useCallback((input: string) => {
     if (!activeId) return
@@ -158,9 +180,9 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-foreground-2">
-      {toolbarPinned && (
+      {SHOW_LEGACY_EMBEDDED_TOOLBAR && toolbarPinned && (
         <div
-          className="mx-2 shrink-0 rounded-[10px] border border-foreground/20 bg-background px-2 py-2 shadow-minimal"
+          className="mx-2 mt-2 shrink-0 rounded-[10px] border border-border bg-background/95 p-1 shadow-minimal"
           style={{ marginBottom: PANEL_GAP }}
         >
         <BrowserToolbar
@@ -203,7 +225,11 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
                   className="flex h-7 w-7 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
                   title={extension.name}
                 >
-                  <Puzzle className="h-4 w-4" />
+                  {extension.icon ? (
+                    <img src={extension.icon} alt="" className="h-4 w-4 rounded-[3px] object-contain" />
+                  ) : (
+                    <Puzzle className="h-4 w-4" />
+                  )}
                 </button>
               ))}
               <button

@@ -15,6 +15,17 @@
 @source "../../../../packages/ui/src/components/**/*.{ts,tsx,jsx}";
 @source "../../../../packages/ui/src/lib/**/*.{ts,tsx,jsx}";
 
+/* Source Han Sans CN 2.005R (SIL Open Font License 1.1).
+   The variable WOFF2 is bundled so Windows does not depend on a separately
+   installed CJK font. macOS continues to use its native system font stack. */
+@font-face {
+  font-family: "CA Source Han Sans CN";
+  src: url("./assets/fonts/source-han-sans/SourceHanSansCN-VF.otf.woff2") format("woff2-variations");
+  font-style: normal;
+  font-weight: 250 900;
+  font-display: swap;
+}
+
 /* CSS Custom Highlight API styles are injected at runtime via ChatDisplay.tsx
    to avoid LightningCSS warnings (::highlight is not yet recognized by the optimizer) */
 
@@ -390,6 +401,19 @@ html[data-font="inter"] {
   --font-default: var(--font-sans);
   font-optical-sizing: auto;
   font-feature-settings: "cv01", "cv02", "cv03", "cv04", "case";
+}
+
+/* Keep native PingFang on macOS, but give Windows a bundled, consistently
+   rendered Simplified Chinese UI font. The Inter preference still controls
+   Latin text and falls back to Source Han Sans for CJK glyphs. */
+html[data-platform="windows"] {
+  --font-sans: "CA Source Han Sans CN", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-default: var(--font-sans);
+}
+
+html[data-platform="windows"][data-font="inter"] {
+  --font-sans: "Inter", "CA Source Han Sans CN", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-default: var(--font-sans);
 }
 
 /* Theme integration for Tailwind v4 */
@@ -1467,6 +1491,7 @@ html.dark[data-scenic] .fullscreen-overlay-background {
    ========================================================================== */
 :root {
   --topbar-height: 48px;
+  --app-topbar-inset: var(--topbar-height);
 }
 @media (max-width: 768px) {
   :root {

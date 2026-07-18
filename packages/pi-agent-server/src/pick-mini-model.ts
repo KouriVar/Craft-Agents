@@ -1,4 +1,4 @@
-import type { ModelRegistry as PiModelRegistry } from '@earendil-works/pi-coding-agent';
+import type { ModelRuntime as PiModelRuntime } from '@earendil-works/pi-coding-agent';
 import { resolvePiModel, isDeniedMiniModelId } from './model-resolution.ts';
 import { PI_PREFERRED_DEFAULTS } from '../../shared/src/config/llm-connections.ts';
 
@@ -21,14 +21,14 @@ import { PI_PREFERRED_DEFAULTS } from '../../shared/src/config/llm-connections.t
  */
 export function pickProviderAppropriateMiniModel(
   authProvider: string,
-  modelRegistry: PiModelRegistry,
+  modelRuntime: PiModelRuntime,
   preferCustomEndpoint: boolean,
 ): string | undefined {
   const preferred = PI_PREFERRED_DEFAULTS[authProvider];
   if (!preferred || preferred.length === 0) return undefined;
   for (const candidate of preferred) {
     if (isDeniedMiniModelId(candidate, authProvider)) continue;
-    const resolved = resolvePiModel(modelRegistry, candidate, authProvider, preferCustomEndpoint);
+    const resolved = resolvePiModel(modelRuntime, candidate, authProvider, preferCustomEndpoint);
     if (resolved) return candidate;
   }
   return undefined;

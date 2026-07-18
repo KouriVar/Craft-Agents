@@ -259,11 +259,11 @@ describe('validateStatusesContent', () => {
   it('fails when required fixed status is missing', () => {
     const config = {
       ...validStatuses,
-      statuses: validStatuses.statuses.filter(s => s.id !== 'cancelled'),
+      statuses: validStatuses.statuses.filter(s => s.id !== 'todo'),
     };
     const result = validateStatusesContent(JSON.stringify(config));
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes("'cancelled'"))).toBe(true);
+    expect(result.errors.some(e => e.message.includes("'todo'"))).toBe(true);
   });
 
   it('fails when defaultStatusId references non-existent status', () => {

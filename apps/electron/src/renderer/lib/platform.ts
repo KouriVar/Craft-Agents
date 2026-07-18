@@ -30,6 +30,15 @@ export const isLinux =
   navigator.platform.toLowerCase().includes('linux')
 
 /**
+ * Expose the host platform to renderer CSS. Call once in every standalone
+ * renderer entry before mounting its React tree.
+ */
+export function applyPlatformAttribute(): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.platform = isWindows ? 'windows' : isMac ? 'macos' : 'linux'
+}
+
+/**
  * True when this bundle is running inside the browser-served Web UI
  * (apps/webui), as opposed to the Electron renderer.
  *

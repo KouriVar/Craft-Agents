@@ -166,6 +166,7 @@ const EXPECTED_CHANNELS: string[] = [
   'menu:selectAll',
   'menu:toggleDevTools',
   'menu:toggleFocusMode',
+  'menu:toggleSessionList',
   'menu:toggleSidebar',
   'menu:undo',
   'menu:zoomIn',

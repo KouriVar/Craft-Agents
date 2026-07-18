@@ -8,6 +8,7 @@
  */
 
 import { useTranslation } from "react-i18next"
+import { useEffect, useRef, useState } from "react"
 import * as Icons from "lucide-react"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
 import { PanelLeftRounded } from "../icons/PanelLeftRounded"
@@ -82,6 +83,41 @@ export function TopBar({
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
+  const [focusTopBarRevealed, setFocusTopBarRevealed] = useState(!isFocusModeActive)
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const topBarCollapsed = isFocusModeActive && !focusTopBarRevealed
+
+  const cancelCollapse = () => {
+    if (collapseTimerRef.current === null) return
+    clearTimeout(collapseTimerRef.current)
+    collapseTimerRef.current = null
+  }
+
+  useEffect(() => {
+    cancelCollapse()
+    setFocusTopBarRevealed(!isFocusModeActive)
+  }, [isFocusModeActive])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--app-topbar-inset',
+      topBarCollapsed ? '8px' : 'var(--topbar-height)',
+    )
+    return () => document.documentElement.style.setProperty('--app-topbar-inset', 'var(--topbar-height)')
+  }, [topBarCollapsed])
+
+  useEffect(() => () => cancelCollapse(), [])
+
+  const scheduleCollapse = () => {
+    if (!isFocusModeActive) return
+    cancelCollapse()
+    collapseTimerRef.current = setTimeout(() => {
+      collapseTimerRef.current = null
+      if (rootRef.current?.matches(':hover') || document.querySelector('[role="menu"][data-state="open"]')) return
+      setFocusTopBarRevealed(false)
+    }, 220)
+  }
 
   const goBackHotkey = useActionLabel('nav.goBackAlt').hotkey
   const goForwardHotkey = useActionLabel('nav.goForwardAlt').hotkey
@@ -94,8 +130,19 @@ export function TopBar({
 
   return (
     <div
+      ref={rootRef}
       className="fixed top-0 left-0 right-0 z-panel titlebar-drag-region"
-      style={{ height: 'var(--topbar-height)' }}
+      style={{
+        height: 'var(--topbar-height)',
+        transform: topBarCollapsed ? 'translateY(calc(-100% + 8px))' : 'translateY(0)',
+        transition: 'transform 160ms ease',
+      }}
+      onMouseEnter={() => {
+        cancelCollapse()
+        if (isFocusModeActive) setFocusTopBarRevealed(true)
+      }}
+      onMouseMove={cancelCollapse}
+      onMouseLeave={scheduleCollapse}
     >
       <div className="flex h-full w-full items-center justify-between gap-2">
       {/* === LEFT: Sidebar + Menu + Navigation + Workspace === */}
@@ -137,7 +184,7 @@ export function TopBar({
             <StyledDropdownMenuSeparator />
             <StyledDropdownMenuItem onClick={onToggleFocusMode}>
               <Icons.PanelLeftClose className="h-4 w-4" />
-              <span className="flex-1">{t("menu.collapseAll")}</span>
+              <span className="flex-1">{t("menu.toggleFocusMode")}</span>
               {isFocusModeActive && (
                 <Icons.Check className="h-4 w-4 text-muted-foreground" />
               )}
@@ -154,6 +201,7 @@ export function TopBar({
           onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
           onOpenStoredUserPreferences={onOpenStoredUserPreferences}
           onToggleSidebar={onToggleSidebar}
+          onToggleSessionList={onToggleSessionList}
           onToggleFocusMode={onToggleFocusMode}
         />
         </div>

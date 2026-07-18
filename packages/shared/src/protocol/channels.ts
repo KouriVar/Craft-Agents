@@ -159,6 +159,7 @@ export const RPC_CHANNELS = {
     KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
     TOGGLE_FOCUS_MODE: 'menu:toggleFocusMode',
     TOGGLE_SIDEBAR: 'menu:toggleSidebar',
+    TOGGLE_SESSION_LIST: 'menu:toggleSessionList',
     QUIT: 'menu:quit',
     MINIMIZE: 'menu:minimize',
     MAXIMIZE: 'menu:maximize',

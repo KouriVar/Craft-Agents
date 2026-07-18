@@ -6,7 +6,7 @@
  * shared session/cookie partition and CDP automation support.
  */
 
-import { join, parse as parsePath } from 'path'
+import { join, parse as parsePath, resolve } from 'path'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
@@ -70,6 +70,7 @@ const DANGEROUS_DOWNLOAD_EXTENSIONS = new Set([
 const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'file:', 'http:', 'https:', 'javascript:'])
 const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/
 const MAX_EXTENSION_PACKAGE_BYTES = 100 * 1024 * 1024
+const INSTALL_STORE_EXTENSION_CHANNEL = 'browser-extension:install-from-store-page'
 
 function escapeBookmarkHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -583,7 +584,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       embeddedHostWebContentsId,
       embeddedHostWindow,
       embeddedBounds: null,
-      embeddedToolbarMode: embeddedHostWindow ? 'floating' : 'fixed',
+      // Embedded workspaces now keep navigation controls with the tab list;
+      // fixed mode keeps the separate native floating toolbar hidden.
+      embeddedToolbarMode: 'fixed',
       embeddedToolbarRevealed: false,
       lastCrashAt: 0,
       crashRecoveryAttempts: 0,
@@ -968,7 +971,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       throw new Error(`Browser embed host not found: ${hostWebContentsId}`)
     }
 
-    if (instance.embeddedHostWebContentsId !== hostWebContentsId) {
+    const attachedToNewHost = instance.embeddedHostWebContentsId !== hostWebContentsId
+    if (attachedToNewHost) {
       this.detachPageViews(instance)
       instance.embeddedHostWebContentsId = hostWebContentsId
       instance.embeddedHostWindow = hostWindow
@@ -1001,6 +1005,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       y,
       width,
       height,
+    }
+
+    const previousBounds = instance.embeddedBounds
+    if (
+      !attachedToNewHost
+      && instance.embeddedHostWindow === hostWindow
+      && previousBounds
+      && previousBounds.x === nextBounds.x
+      && previousBounds.y === nextBounds.y
+      && previousBounds.width === nextBounds.width
+      && previousBounds.height === nextBounds.height
+    ) {
+      return
     }
 
     instance.embeddedHostWindow = hostWindow
@@ -2082,11 +2099,24 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return session.fromPartition(SESSION_PARTITION).extensions.getAllExtensions()
       .map((extension) => {
         const preference = this.profileStore.getExtensionPreference(extension.id)
+        const manifest = extension.manifest as {
+          description?: string
+          icons?: Record<string, string>
+          permissions?: string[]
+          host_permissions?: string[]
+          homepage_url?: string
+          manifest_version?: number
+        }
         return {
           id: extension.id,
           name: extension.name,
           version: extension.version,
           path: extension.path,
+          description: manifest.description ?? '',
+          icon: this.readExtensionIcon(extension.path, manifest.icons),
+          permissions: Array.from(new Set([...(manifest.permissions ?? []), ...(manifest.host_permissions ?? [])])),
+          homepageUrl: manifest.homepage_url ?? null,
+          manifestVersion: manifest.manifest_version ?? null,
           enabled: true,
           hasAction: Boolean(this.getExtensionActionPath(extension.manifest)),
           pinned: preference.pinned,
@@ -2095,6 +2125,48 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         }
       })
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+  }
+
+  private readExtensionIcon(extensionPath: string, icons?: Record<string, string>): string | null {
+    if (!icons) return null
+    const iconEntry = Object.entries(icons)
+      .filter(([, iconPath]) => typeof iconPath === 'string' && iconPath.length > 0)
+      .sort(([a], [b]) => Number(b) - Number(a))[0]
+    if (!iconEntry) return null
+
+    const absoluteRoot = resolve(extensionPath)
+    const absoluteIcon = resolve(absoluteRoot, iconEntry[1])
+    if (absoluteIcon !== absoluteRoot && !absoluteIcon.startsWith(`${absoluteRoot}/`)) return null
+    if (!existsSync(absoluteIcon) || !statSync(absoluteIcon).isFile() || statSync(absoluteIcon).size > 2 * 1024 * 1024) return null
+
+    const extension = parsePath(absoluteIcon).ext.toLowerCase()
+    const mime = extension === '.svg'
+      ? 'image/svg+xml'
+      : extension === '.jpg' || extension === '.jpeg'
+        ? 'image/jpeg'
+        : extension === '.webp'
+          ? 'image/webp'
+          : 'image/png'
+    return `data:${mime};base64,${readFileSync(absoluteIcon).toString('base64')}`
+  }
+
+  private extractCrxZipPayload(packageBuffer: Buffer): Buffer {
+    if (packageBuffer.byteLength > MAX_EXTENSION_PACKAGE_BYTES) throw new Error('Extension package is larger than 100 MB.')
+    if (packageBuffer.subarray(0, 4).toString('ascii') !== 'Cr24') throw new Error('The selected file is not a valid CRX package.')
+
+    const crxVersion = packageBuffer.readUInt32LE(4)
+    let zipOffset: number
+    if (crxVersion === 3) {
+      zipOffset = 12 + packageBuffer.readUInt32LE(8)
+    } else if (crxVersion === 2) {
+      zipOffset = 16 + packageBuffer.readUInt32LE(8) + packageBuffer.readUInt32LE(12)
+    } else {
+      throw new Error(`Unsupported CRX version: ${crxVersion}.`)
+    }
+    if (zipOffset >= packageBuffer.byteLength || packageBuffer.readUInt32LE(zipOffset) !== 0x04034b50) {
+      throw new Error('The CRX package does not contain a valid ZIP payload.')
+    }
+    return packageBuffer.subarray(zipOffset)
   }
 
   async installExtension(path: string): Promise<BrowserExtensionEntry> {
@@ -2109,8 +2181,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         cpSync(path, installRoot, { recursive: true })
       } else if (path.toLowerCase().endsWith('.zip')) {
         await extractZip(path, { dir: installRoot })
+      } else if (path.toLowerCase().endsWith('.crx')) {
+        const temporaryZip = join(installRoot, '.craft-import.zip')
+        writeFileSync(temporaryZip, this.extractCrxZipPayload(readFileSync(path)), { mode: 0o600 })
+        await extractZip(temporaryZip, { dir: installRoot })
+        rmSync(temporaryZip, { force: true })
       } else {
-        throw new Error('Select an unpacked extension directory or a .zip package. Chrome Web Store .crx packages are not supported yet.')
+        throw new Error('Select an unpacked extension directory, .zip package, or .crx package.')
       }
 
       const directManifest = join(installRoot, 'manifest.json')
@@ -2126,6 +2203,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         name?: string
         version?: string
         manifest_version?: number
+        description?: string
+        icons?: Record<string, string>
+        homepage_url?: string
         permissions?: string[]
         host_permissions?: string[]
       }
@@ -2162,6 +2242,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         name: extension.name,
         version: extension.version,
         path: extension.path,
+        description: manifest.description ?? '',
+        icon: this.readExtensionIcon(extension.path, (manifest as { icons?: Record<string, string> }).icons),
+        permissions: requestedPermissions,
+        homepageUrl: (manifest as { homepage_url?: string }).homepage_url ?? null,
+        manifestVersion: manifest.manifest_version ?? null,
         enabled: true,
         hasAction: Boolean(this.getExtensionActionPath(extension.manifest)),
         pinned: false,
@@ -2177,19 +2262,23 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   async installExtensionFromStore(urlOrId: string): Promise<BrowserExtensionEntry> {
     const raw = urlOrId.trim()
     let extensionId = CHROME_EXTENSION_ID_PATTERN.test(raw) ? raw : ''
+    let store: 'chrome' | 'edge' = 'chrome'
     if (!extensionId) {
       try {
         const parsed = new URL(raw)
-        if (parsed.hostname !== 'chromewebstore.google.com' && parsed.hostname !== 'chrome.google.com') {
-          throw new Error('Only Chrome Web Store links are supported.')
+        const isChromeStore = parsed.hostname === 'chromewebstore.google.com' || parsed.hostname === 'chrome.google.com'
+        const isEdgeStore = parsed.hostname === 'microsoftedge.microsoft.com'
+        if (!isChromeStore && !isEdgeStore) {
+          throw new Error('Only Chrome Web Store and Microsoft Edge Add-ons links are supported.')
         }
+        store = isEdgeStore ? 'edge' : 'chrome'
         extensionId = parsed.pathname.split('/').find((part) => CHROME_EXTENSION_ID_PATTERN.test(part)) ?? ''
       } catch (error) {
-        if (error instanceof Error && error.message === 'Only Chrome Web Store links are supported.') throw error
+        if (error instanceof Error && error.message.startsWith('Only Chrome Web Store')) throw error
       }
     }
     if (!CHROME_EXTENSION_ID_PATTERN.test(extensionId)) {
-      throw new Error('Paste a valid Chrome Web Store extension link or 32-character extension ID.')
+      throw new Error('Open a valid extension detail page or paste a 32-character extension ID.')
     }
 
     const updateQuery = new URLSearchParams({
@@ -2198,34 +2287,24 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       acceptformat: 'crx2,crx3',
       x: `id=${extensionId}&installsource=ondemand&uc`,
     })
-    const response = await net.fetch(`https://clients2.google.com/service/update2/crx?${updateQuery.toString()}`, {
+    const packageEndpoint = store === 'edge'
+      ? 'https://edge.microsoft.com/extensionwebstorebase/v1/crx'
+      : 'https://clients2.google.com/service/update2/crx'
+    const response = await net.fetch(`${packageEndpoint}?${updateQuery.toString()}`, {
       redirect: 'follow',
     })
-    if (!response.ok) throw new Error(`Chrome Web Store download failed (${response.status}).`)
+    if (!response.ok) throw new Error(`Extension store download failed (${response.status}).`)
     const declaredLength = Number(response.headers.get('content-length') ?? 0)
     if (declaredLength > MAX_EXTENSION_PACKAGE_BYTES) throw new Error('Extension package is larger than 100 MB.')
     const packageBuffer = Buffer.from(await response.arrayBuffer())
     if (packageBuffer.byteLength > MAX_EXTENSION_PACKAGE_BYTES) throw new Error('Extension package is larger than 100 MB.')
-    if (packageBuffer.subarray(0, 4).toString('ascii') !== 'Cr24') throw new Error('Chrome Web Store returned an invalid CRX package.')
-
-    const crxVersion = packageBuffer.readUInt32LE(4)
-    let zipOffset: number
-    if (crxVersion === 3) {
-      zipOffset = 12 + packageBuffer.readUInt32LE(8)
-    } else if (crxVersion === 2) {
-      zipOffset = 16 + packageBuffer.readUInt32LE(8) + packageBuffer.readUInt32LE(12)
-    } else {
-      throw new Error(`Unsupported CRX version: ${crxVersion}.`)
-    }
-    if (zipOffset >= packageBuffer.byteLength || packageBuffer.readUInt32LE(zipOffset) !== 0x04034b50) {
-      throw new Error('The CRX package does not contain a valid ZIP payload.')
-    }
+    const zipPayload = this.extractCrxZipPayload(packageBuffer)
 
     const temporaryRoot = join(app.getPath('temp'), `craft-browser-extension-${randomUUID()}`)
     mkdirSync(temporaryRoot, { recursive: true, mode: 0o700 })
     const zipPath = join(temporaryRoot, `${extensionId}.zip`)
     try {
-      writeFileSync(zipPath, packageBuffer.subarray(zipOffset), { mode: 0o600 })
+      writeFileSync(zipPath, zipPayload, { mode: 0o600 })
       return await this.installExtension(zipPath)
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true })
@@ -2747,25 +2826,26 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const revealed = instance.embeddedToolbarRevealed
     const toolbarBounds = {
       x: bounds.x + inset,
-      // Keep the revealed view attached to the collapsed trigger so the pointer
-      // remains inside it during expansion; moving the native view downward
-      // here would immediately fire mouseleave and cause a reveal flicker.
-      y: bounds.y,
+      // Keep the invisible trigger and revealed toolbar on the same inset
+      // baseline so expanding it does not jump under the pointer.
+      y: bounds.y + inset,
       width: Math.max(1, bounds.width - (inset * 2)),
-      // Keep a native hover target above the page while collapsed. The
-      // full toolbar is another WebContentsView, so it can genuinely sit above
-      // the native page without changing the page viewport.
       height: revealed ? TOOLBAR_HEIGHT : collapsedTriggerHeight,
     }
     instance.toolbarView.setBounds(toolbarBounds)
-    instance.toolbarView.setBorderRadius(EMBEDDED_VIEW_RADIUS)
+    // The collapsed trigger is a background-colored hit area, not a visible
+    // capsule. The revealed surface gets its radius from renderer CSS.
+    // CSS owns the visible rounded surface. Native clipping on top of the CSS
+    // border/shadow creates a dark, doubled corner on macOS.
+    instance.toolbarView.setBorderRadius(0)
     instance.toolbarView.setVisible(true)
-    // Re-adding an already attached WebContentsView does not consistently
-    // promote it above sibling views on every Electron/macOS combination.
-    // Remove it first so the floating toolbar and its transparent trigger are
-    // always the top-most native surface after page navigation or resize.
-    host.contentView.removeChildView(instance.toolbarView)
-    host.contentView.addChildView(instance.toolbarView)
+    // Promote only when another native sibling is actually above the toolbar.
+    // Unconditionally removing/re-adding the view produces synthetic pointer
+    // exits on macOS, interrupting clicks and causing reveal/collapse flicker.
+    if (host.contentView.children.at(-1) !== instance.toolbarView) {
+      host.contentView.removeChildView(instance.toolbarView)
+      host.contentView.addChildView(instance.toolbarView)
+    }
   }
 
   private updateNativeOverlayState(instance: BrowserInstance): void {
@@ -2981,7 +3061,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private async maybeHandleEmptyStateLaunch(instance: BrowserInstance, url: string): Promise<boolean> {
-    if (!this.isBrowserEmptyStateUrl(url) || !url.includes('#launch=')) {
+    if (!this.isBrowserEmptyStateUrl(url)) {
       return false
     }
 
@@ -2993,6 +3073,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash
+    if (hash.startsWith('navigate=')) {
+      const params = new URLSearchParams(hash.slice('navigate='.length))
+      const value = params.get('value')?.trim()
+      if (!value) return false
+      await this.navigate(instance.id, value)
+      return true
+    }
+
+    if (!hash.startsWith('launch=')) return false
     const launchPayload = hash.startsWith('launch=') ? hash.slice('launch='.length) : hash
     if (!launchPayload) return false
 
@@ -3107,59 +3196,70 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       bookmarked: /^https?:/i.test(instance.currentUrl)
         && this.profileStore.listBookmarks(instance.workspaceId).some((entry) => entry.url === instance.currentUrl),
       embedded: instance.embeddedHostWebContentsId !== null,
+      toolbarMode: instance.embeddedToolbarMode,
     }
     instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
   }
 
   /** Register IPC handlers for toolbar actions. Call once at app startup. */
   registerToolbarIpc(): void {
-    const findInstance = (instanceId: string): BrowserInstance | undefined => {
+    const findInstance = (instanceId: string, event?: Electron.IpcMainInvokeEvent): BrowserInstance | undefined => {
+      // Resolve by the sender WebContents first. The packaged toolbar preload
+      // can briefly observe an empty/stale query string during native reloads;
+      // the sender identity remains stable and is the authoritative binding.
+      if (typeof event?.sender?.id === 'number') {
+        return Array.from(this.instances.values()).find(
+          instance => instance.toolbarView.webContents.id === event.sender.id,
+        )
+      }
       return this.instances.get(instanceId)
     }
 
-    ipcMain.handle(TOOLBAR_CHANNELS.NAVIGATE, async (_event, instanceId: string, url: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.NAVIGATE, async (event, instanceId: string, url: string) => {
+      const inst = findInstance(instanceId, event)
       if (inst) await this.navigate(inst.id, url)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.GO_BACK, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.GO_BACK, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       if (inst) await this.goBack(inst.id)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.GO_FORWARD, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.GO_FORWARD, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       if (inst) await this.goForward(inst.id)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.RELOAD, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.RELOAD, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       if (inst) this.reload(inst.id)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.STOP, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.STOP, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       if (inst) this.stop(inst.id)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.SET_REVEALED, (_event, instanceId: string, revealed: boolean) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.SET_REVEALED, (event, instanceId: string, revealed: boolean) => {
+      const inst = findInstance(instanceId, event)
       if (!inst || inst.embeddedToolbarMode !== 'floating') return
-      inst.embeddedToolbarRevealed = !!revealed
+      const nextRevealed = !!revealed
+      // Resizing the native view can synthesize another pointer-enter event.
+      // A no-op reveal must not reorder/layout the view again or it loops.
+      if (inst.embeddedToolbarRevealed === nextRevealed) return
+      inst.embeddedToolbarRevealed = nextRevealed
       this.layoutEmbeddedToolbar(inst)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.PIN_EMBEDDED, (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      if (!inst || inst.embeddedHostWebContentsId === null) return
-      inst.embeddedToolbarMode = 'fixed'
-      inst.embeddedToolbarRevealed = false
-      this.layoutEmbeddedToolbar(inst)
-      this.emitStateChange(inst)
+    ipcMain.handle(TOOLBAR_CHANNELS.PIN_EMBEDDED, (event, instanceId: string): boolean => {
+      const inst = findInstance(instanceId, event)
+      if (!inst || inst.embeddedHostWebContentsId === null) return false
+      this.setEmbeddedToolbarMode(inst.id, inst.embeddedHostWebContentsId, 'fixed')
+      return inst.embeddedToolbarMode === 'fixed'
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.SHOW_EMBEDDED_MENU, (_event, instanceId: string, kind: 'extensions' | 'permissions' | 'passwords') => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.SHOW_EMBEDDED_MENU, (event, instanceId: string, kind: 'extensions' | 'permissions' | 'passwords') => {
+      const inst = findInstance(instanceId, event)
       if (!inst) return
       let origin: string | null = null
       try {
@@ -3176,8 +3276,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       void this.handleCapturedCredential(instance, payload)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.TOGGLE_BOOKMARK, (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.TOGGLE_BOOKMARK, (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       if (!inst || !/^https?:/i.test(inst.currentUrl)) return
       const existing = this.profileStore.listBookmarks(inst.workspaceId).find((entry) => entry.url === inst.currentUrl)
       if (existing) {
@@ -3192,8 +3292,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.pushToolbarState(inst)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.MENU_GEOMETRY, async (_event, instanceId: string, open: boolean, height?: number) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(INSTALL_STORE_EXTENSION_CHANNEL, async (event, storeUrl: string) => {
+      const inst = this.getInstanceByWebContentsId(event.sender.id)
+      if (!inst || inst.pageView.webContents.id !== event.sender.id) {
+        throw new Error('The extension store page is not attached to an active Craft Agents browser tab.')
+      }
+      const extension = await this.installExtensionFromStore(storeUrl)
+      this.emitStateChange(inst)
+      return extension
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.MENU_GEOMETRY, async (event, instanceId: string, open: boolean, height?: number) => {
+      const inst = findInstance(instanceId, event)
       if (!inst) return
 
       const normalizedOpen = !!open
@@ -3216,14 +3326,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.layoutAllViews(inst)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.HIDE, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.HIDE, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       mainLog.info(`[browser-pane] toolbar ipc hide requested instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       if (inst) this.hide(inst.id)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.DESTROY, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
+    ipcMain.handle(TOOLBAR_CHANNELS.DESTROY, async (event, instanceId: string) => {
+      const inst = findInstance(instanceId, event)
       mainLog.info(`[browser-pane] toolbar ipc destroy requested instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       if (inst) this.destroyInstance(inst.id)
     })

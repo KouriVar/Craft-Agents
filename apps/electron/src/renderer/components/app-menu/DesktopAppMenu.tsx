@@ -34,6 +34,7 @@ import type { AppMenuProps } from "./types"
 type MenuActionHandlers = {
   toggleFocusMode?: () => void
   toggleSidebar?: () => void
+  toggleSessionList?: () => void
 }
 
 const roleHandlers: Record<string, () => void> = {
@@ -98,7 +99,9 @@ function renderSubmenuItem(
       ? actionHandlers.toggleFocusMode
       : item.id === 'toggleSidebar'
         ? actionHandlers.toggleSidebar
-        : undefined
+        : item.id === 'toggleSessionList'
+          ? actionHandlers.toggleSessionList
+          : undefined
     return (
       <StyledDropdownMenuItem key={item.id} onClick={handler}>
         {Icon && <Icon className="h-3.5 w-3.5" />}
@@ -144,6 +147,7 @@ export function DesktopAppMenu({
   onOpenSettingsSubpage,
   onOpenKeyboardShortcuts,
   onToggleSidebar,
+  onToggleSessionList,
   onToggleFocusMode,
 }: AppMenuProps) {
   const { t } = useTranslation()
@@ -162,6 +166,7 @@ export function DesktopAppMenu({
   const actionHandlers: MenuActionHandlers = {
     toggleFocusMode: onToggleFocusMode,
     toggleSidebar: onToggleSidebar,
+    toggleSessionList: onToggleSessionList,
   }
 
   return (

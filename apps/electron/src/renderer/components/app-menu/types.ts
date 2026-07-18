@@ -15,5 +15,6 @@ export interface AppMenuProps {
   onOpenKeyboardShortcuts: () => void
   onOpenStoredUserPreferences: () => void
   onToggleSidebar?: () => void
+  onToggleSessionList?: () => void
   onToggleFocusMode?: () => void
 }

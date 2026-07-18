@@ -136,7 +136,6 @@ export const actions = {
     defaultHotkey: 'mod+.',
     category: 'View',
   },
-
   // ═══════════════════════════════════════════
   // Navigator (scoped — active entity list in middle panel)
   // ═══════════════════════════════════════════

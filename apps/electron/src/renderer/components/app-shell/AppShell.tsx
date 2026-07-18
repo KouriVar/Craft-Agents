@@ -94,7 +94,7 @@ import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/ato
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { pluginListKindAtom, pluginsAtom } from "@/atoms/plugins"
-import { browserNavigatorKindAtom, browserWorkspaceTabsAtom } from "@/atoms/browser-workspace"
+import { browserNativeViewsSuspendedAtom, browserNavigatorKindAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
 import { filterInstancesForWorkspace } from "@/atoms/browser-pane"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -130,6 +130,7 @@ import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { PluginsListPanel } from "../plugins/PluginsListPanel"
 import { PluginInstallMenu } from "../plugins/PluginInstallMenu"
+import { BrowserExtensionInstallMenu } from "../plugins/BrowserExtensionInstallMenu"
 import { PluginListToggle } from "../plugins/PluginListToggle"
 import { BrowserExtensionsListPanel } from "../plugins/BrowserExtensionsListPanel"
 import { BrowserTabsListPanel } from "../browser/BrowserTabsListPanel"
@@ -576,10 +577,11 @@ function AppShellContent({
     return storage.get(storage.KEYS.rightSidebarWidth, RIGHT_SIDEBAR_DEFAULT_WIDTH)
   })
 
-  // Hides both sidebar and navigator (CMD+. toggle)
-  // Seed from either focused window param or persisted preference, then keep it toggleable.
+  // Hides both sidebar and navigator (Cmd+. / Ctrl+. toggle).
+  // Focus mode is intentionally session-only so restarting the app always restores
+  // the standard layout. Dedicated focused windows may still opt in via the prop.
   const [isSidebarAndNavigatorHidden, setIsSidebarAndNavigatorHidden] = React.useState(() => {
-    return isFocusedMode || storage.get(storage.KEYS.focusModeEnabled, false)
+    return isFocusedMode
   })
 
   // Auto-compact mode: shell width below mobile threshold hides sidebar/navigator
@@ -596,6 +598,74 @@ function AppShellContent({
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
+  const [rendererOverlayOpen, setRendererOverlayOpen] = React.useState(false)
+  const setBrowserNativeViewsSuspended = useSetAtom(browserNativeViewsSuspendedAtom)
+  const setBrowserNotificationBottom = useSetAtom(browserNotificationBottomAtom)
+
+  // Native WebContentsViews always render above React DOM regardless of z-index.
+  // Observe renderer-owned overlays globally so every dropdown, context menu,
+  // popover and dialog can appear above the embedded browser surface.
+  useEffect(() => {
+    const overlaySelector = [
+      '[role="menu"][data-state="open"]',
+      '[role="dialog"][data-state="open"]',
+      '[data-radix-popper-content-wrapper] > [data-state="open"]:not([role="tooltip"])',
+      '[data-vaul-drawer][data-state="open"]',
+    ].join(',')
+    let frame = 0
+    const update = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        setRendererOverlayOpen(Boolean(document.querySelector(overlaySelector)))
+      })
+    }
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-state', 'role'],
+    })
+    update()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    setBrowserNativeViewsSuspended(showWhatsNew || rendererOverlayOpen)
+  }, [rendererOverlayOpen, setBrowserNativeViewsSuspended, showWhatsNew])
+
+  useEffect(() => () => setBrowserNativeViewsSuspended(false), [setBrowserNativeViewsSuspended])
+
+  // WebContentsView is composited above the renderer, so a toast cannot win via
+  // CSS z-index alone. Reserve only the vertical strip occupied by notifications
+  // instead of hiding the complete browser surface.
+  useEffect(() => {
+    let frame = 0
+    const update = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const bottom = Array.from(document.querySelectorAll<HTMLElement>('[data-sonner-toast]'))
+          .reduce((maximum, toastElement) => Math.max(maximum, toastElement.getBoundingClientRect().bottom), 0)
+        setBrowserNotificationBottom(Math.ceil(bottom))
+      })
+    }
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-mounted', 'data-removed', 'data-visible'],
+    })
+    update()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      setBrowserNotificationBottom(0)
+    }
+  }, [setBrowserNotificationBottom])
 
   // Check for unseen release notes on mount
   useEffect(() => {
@@ -1487,11 +1557,25 @@ function AppShellContent({
     setIsSessionListVisible(v => !v)
   }, [])
 
+  const handleToggleFocusMode = useCallback(() => {
+    const nextFocusMode = !isSidebarAndNavigatorHidden
+    setIsSidebarAndNavigatorHidden(nextFocusMode)
+
+    if (nextFocusMode) {
+      toast(t('toast.focusModeEnabled'), {
+        description: t('toast.focusModeExitHint', {
+          shortcut: isMac ? '⌘ + .' : 'Ctrl + .',
+        }),
+        duration: 6000,
+      })
+    }
+  }, [isSidebarAndNavigatorHidden, t])
+
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
 
   // Focus mode toggle (CMD+.) - hides both sidebars
-  useAction('view.toggleFocusMode', () => setIsSidebarAndNavigatorHidden(v => !v))
+  useAction('view.toggleFocusMode', handleToggleFocusMode)
 
   // Panel focus navigation (CMD+SHIFT+[ / ])
   const focusNextPanel = useSetAtom(focusNextPanelAtom)
@@ -2044,18 +2128,31 @@ function AppShellContent({
     storage.set(storage.KEYS.sessionListVisible, isSessionListVisible)
   }, [isSessionListVisible])
 
-  // Persist focus mode state to localStorage
+  // Remove the legacy persisted preference so users upgrading from an older build
+  // cannot get trapped in focus mode after restarting the app.
   React.useEffect(() => {
-    storage.set(storage.KEYS.focusModeEnabled, isSidebarAndNavigatorHidden)
+    storage.remove(storage.KEYS.focusModeEnabled)
+  }, [])
+
+  // Focus mode uses the whole window as a distraction-free canvas. Hide the
+  // macOS traffic lights with the existing window-management bridge and restore
+  // them immediately when focus mode ends or this shell unmounts.
+  React.useEffect(() => {
+    void window.electronAPI.setTrafficLightsVisible(!isSidebarAndNavigatorHidden).catch(() => {})
+    return () => {
+      if (isSidebarAndNavigatorHidden) {
+        void window.electronAPI.setTrafficLightsVisible(true).catch(() => {})
+      }
+    }
   }, [isSidebarAndNavigatorHidden])
 
   // Listen for focus mode toggle from menu (View → Focus Mode)
   React.useEffect(() => {
     const cleanup = window.electronAPI.onMenuToggleFocusMode?.(() => {
-      setIsSidebarAndNavigatorHidden(v => !v)
+      handleToggleFocusMode()
     })
     return cleanup
-  }, [])
+  }, [handleToggleFocusMode])
 
   // Listen for sidebar toggle from menu (View → Toggle Sidebar)
   React.useEffect(() => {
@@ -2064,6 +2161,14 @@ function AppShellContent({
     })
     return cleanup
   }, [handleToggleSidebar])
+
+  // Listen for session list toggle from menu (View → Toggle Session List)
+  React.useEffect(() => {
+    const cleanup = window.electronAPI.onMenuToggleSessionList?.(() => {
+      handleToggleSessionList()
+    })
+    return cleanup
+  }, [handleToggleSessionList])
 
   // Persist per-view filter map to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -2208,6 +2313,38 @@ function AppShellContent({
       }
     })
   }, [browserTabs, createRuntimeBrowserTab, navState, setBrowserTabs])
+
+  const handleCopyBrowserTabLink = useCallback(async (tab: BrowserWorkspaceTab) => {
+    if (!tab.url || tab.url === 'about:blank') return
+    try {
+      await navigator.clipboard.writeText(tab.url)
+      toast.success(t('browser.linkCopied', { defaultValue: '链接已复制' }))
+    } catch {
+      toast.error(t('browser.copyLinkFailed', { defaultValue: '复制链接失败' }))
+    }
+  }, [t])
+
+  const handleToggleBrowserTabBookmark = useCallback(async (tab: BrowserWorkspaceTab) => {
+    if (!tab.url || tab.url === 'about:blank') return
+    try {
+      const bookmarks = await window.electronAPI.browserPane.listBookmarks()
+      const existing = bookmarks.find((bookmark) => bookmark.url === tab.url)
+      if (existing) {
+        await window.electronAPI.browserPane.removeBookmark(existing.id)
+        toast.success(t('browser.bookmarkRemoved', { defaultValue: '已取消收藏' }))
+      } else {
+        await window.electronAPI.browserPane.addBookmark({
+          url: tab.url,
+          title: tab.title,
+          favicon: tab.favicon,
+        })
+        toast.success(t('browser.bookmarkAdded', { defaultValue: '已添加收藏' }))
+      }
+      window.dispatchEvent(new Event('craft-browser-profile-changed'))
+    } catch {
+      toast.error(t('browser.bookmarkUpdateFailed', { defaultValue: '更新收藏失败' }))
+    }
+  }, [t])
 
   // Handlers for automations view
   const handleAutomationsClick = useCallback(() => {
@@ -2757,7 +2894,7 @@ function AppShellContent({
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
           onToggleSessionList={handleToggleSessionList}
-          onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
+          onToggleFocusMode={handleToggleFocusMode}
           isSidebarVisible={isSidebarVisible}
           isSessionListVisible={isSessionListVisible}
           isFocusModeActive={effectiveSidebarAndNavigatorHidden}
@@ -3102,7 +3239,9 @@ function AppShellContent({
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
             <PanelHeader
-              title={isSidebarVisible && !isBrowserNavigation(navState) ? listTitle : undefined}
+              title={isSidebarVisible
+                ? (isBrowserNavigation(navState) ? t('sidebar.browser', { defaultValue: 'Browser' }) : listTitle)
+                : undefined}
               compensateForStoplight={!isSidebarVisible}
               badge={automationFilter?.automationType === 'scheduled' ? (
                 <Tooltip>
@@ -3875,6 +4014,9 @@ function AppShellContent({
                       }}
                     />
                   )}
+                  {isPluginsNavigation(navState) && pluginListKind === 'extensions' && (
+                    <BrowserExtensionInstallMenu onOpenStore={handleOpenBrowserUrl} />
+                  )}
                   {/* Add Automation button (only for automations mode) */}
                   {isAutomationsNavigation(navState) && activeWorkspace && (
                     <EditPopover
@@ -3939,6 +4081,17 @@ function AppShellContent({
                 selectedTabId={navState.details?.tabId ?? null}
                 onTabClick={handleBrowserTabSelect}
                 onTabClose={handleCloseBrowserTab}
+                onTabGoBack={(tabId) => { void window.electronAPI.browserPane.goBack(tabId) }}
+                onTabGoForward={(tabId) => { void window.electronAPI.browserPane.goForward(tabId) }}
+                onTabReload={(tabId) => { void window.electronAPI.browserPane.reload(tabId) }}
+                onTabStop={(tabId) => { void window.electronAPI.browserPane.stop(tabId) }}
+                onCopyLink={(tab) => { void handleCopyBrowserTabLink(tab) }}
+                onToggleBookmark={(tab) => { void handleToggleBrowserTabBookmark(tab) }}
+                onShowTabMenu={(kind, tab) => {
+                  let origin: string | null = null
+                  try { origin = new URL(tab.url).origin } catch { /* Non-web URL. */ }
+                  void window.electronAPI.browserPane.showToolbarMenu(kind, tab.id, origin)
+                }}
               />
             )}
             {isBrowserNavigation(navState) && browserNavigatorKind !== 'tabs' && (

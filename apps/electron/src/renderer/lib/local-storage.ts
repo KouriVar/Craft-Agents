@@ -25,7 +25,7 @@ export const KEYS = {
   chatGroupingMode: 'chat-grouping-mode', // How to group chats: 'date' | 'status'
   collapsedSessionGroups: 'collapsed-session-groups', // Collapsed group keys in session list
 
-  // Focus mode
+  // Focus mode (legacy key retained only so AppShell can remove persisted state)
   focusModeEnabled: 'focus-mode-enabled',
 
   // Session files panel state

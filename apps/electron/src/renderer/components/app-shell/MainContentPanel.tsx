@@ -46,6 +46,7 @@ import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
 import { PluginInfoPage } from '../plugins/PluginInfoPage'
 import { BrowserWorkspacePage } from '../browser/BrowserWorkspacePage'
+import { BrowserExtensionInfoPage } from '../plugins/BrowserExtensionInfoPage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
@@ -326,9 +327,7 @@ export function MainContentPanel({
     if (pluginListKind === 'extensions') {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <p className="text-sm">{t('plugins.browserExtensionsEmptyDescription')}</p>
-          </div>
+          <BrowserExtensionInfoPage />
         </Panel>
       )
     }

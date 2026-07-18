@@ -10,8 +10,10 @@ import {
   Image,
   Info,
   ListTree,
+  Gauge,
   Plus,
   Sparkles,
+  WalletCards,
   Zap,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -22,7 +24,15 @@ import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { resolveEffectiveConnectionSlug } from '@config/llm-connections'
 import type { Message, Session, SessionFile } from '../../../shared/types'
+import {
+  formatTokenCount,
+  formatUsd,
+  getContextUsage,
+  resolveModelName,
+  resolvePricingKind,
+} from './session-usage'
 
 export type ResourceKind = 'context' | 'output' | 'attachment' | 'folder' | 'source' | 'skill' | 'url'
 
@@ -369,11 +379,116 @@ function TitleSection({ session }: { session: Session }) {
   )
 }
 
+export function UsageSection({ session }: { session: Session }) {
+  const { t } = useTranslation()
+  const { llmConnections, workspaceDefaultLlmConnection } = useAppShellContext()
+  const connectionSlug = resolveEffectiveConnectionSlug(
+    session.llmConnection,
+    workspaceDefaultLlmConnection,
+    llmConnections,
+  )
+  const connection = llmConnections.find((entry) => entry.slug === connectionSlug) ?? null
+  const usage = session.tokenUsage
+  const context = getContextUsage(usage)
+  const pricingKind = resolvePricingKind(connection)
+  const modelName = resolveModelName(session.model, connection)
+  const hasUsage = Boolean(usage && (context.used > 0 || usage.outputTokens > 0 || usage.costUsd > 0))
+  const providerName = connection?.name ?? connection?.piAuthProvider ?? t('resources.unknownProvider')
+  const pricingLabel = pricingKind === 'deepseek-standard'
+    ? t('resources.pricingDeepSeekStandard')
+    : pricingKind === 'subscription'
+      ? t('resources.pricingSubscription')
+      : pricingKind === 'custom'
+        ? t('resources.pricingCustom')
+        : t('resources.pricingOfficial')
+
+  return (
+    <section className="min-w-0">
+      <div className="flex items-center justify-between px-1 pb-1.5">
+        <h3 className="text-xs font-semibold text-muted-foreground">{t('resources.usageInfo')}</h3>
+      </div>
+
+      <div className="rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-foreground/[0.05] text-muted-foreground">
+              <Gauge className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-foreground/90">{modelName}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{providerName}</div>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-sm font-semibold tabular-nums text-foreground/90">
+              {pricingKind === 'custom' && !usage?.costUsd ? '—' : formatUsd(usage?.costUsd ?? 0)}
+            </div>
+            <div className="text-[10px] text-muted-foreground">{t('resources.estimatedCost')}</div>
+          </div>
+        </div>
+
+        {hasUsage ? (
+          <>
+            <div className="mt-3">
+              <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]">
+                <span className="text-muted-foreground">{t('resources.contextUsage')}</span>
+                <span className="tabular-nums text-foreground/75">
+                  {context.window > 0
+                    ? t('resources.contextUsageValue', {
+                        percent: context.percent,
+                        remaining: context.remainingPercent,
+                        used: formatTokenCount(context.used),
+                        total: formatTokenCount(context.window),
+                      })
+                    : formatTokenCount(context.used)}
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-foreground/[0.06]">
+                <div
+                  className="h-full rounded-full bg-accent/75 transition-[width] duration-300"
+                  style={{ width: `${context.window > 0 ? Math.max(context.percent, context.used > 0 ? 1 : 0) : 0}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/50 pt-3">
+              <UsageMetric label={t('resources.currentInput')} value={formatTokenCount(context.used)} />
+              <UsageMetric label={t('resources.totalOutput')} value={formatTokenCount(usage?.outputTokens ?? 0)} />
+              <UsageMetric label={t('resources.cacheRead')} value={formatTokenCount(usage?.cacheReadTokens ?? 0)} />
+              <UsageMetric label={t('resources.cacheWrite')} value={formatTokenCount(usage?.cacheCreationTokens ?? 0)} />
+            </div>
+          </>
+        ) : (
+          <div className="mt-3 rounded-[7px] bg-foreground/[0.025] px-3 py-2 text-xs text-muted-foreground">
+            {t('resources.noUsage')}
+          </div>
+        )}
+
+        <div className="mt-3 flex items-start gap-2 border-t border-border/50 pt-2.5 text-[10px] leading-relaxed text-muted-foreground">
+          <WalletCards className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>{pricingLabel} · {t('resources.pricingDisclaimer')}</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function UsageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate text-[10px] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 truncate text-xs font-medium tabular-nums text-foreground/80">{value}</div>
+    </div>
+  )
+}
+
 export function SessionResourcesPopover({ session, open, onOpenChange, alignOffset = 0 }: SessionResourcesPopoverProps) {
   const { t } = useTranslation()
   const { activeWorkspaceId, enabledSources, onOpenFile, onOpenUrl, workspaces } = useAppShellContext()
   const [files, setFiles] = React.useState<SessionFile[]>([])
   const [loadingFiles, setLoadingFiles] = React.useState(false)
+  const contentRef = React.useRef<HTMLDivElement>(null)
+  const [availableHeight, setAvailableHeight] = React.useState<number | null>(null)
   const activeWorkspace = React.useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, workspaces],
@@ -396,6 +511,50 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
     if (!open) return
     void loadFiles()
   }, [loadFiles, open, session.id])
+
+  React.useLayoutEffect(() => {
+    if (!open) {
+      setAvailableHeight(null)
+      return
+    }
+
+    let frame = 0
+    let inputZone: HTMLElement | null = null
+    const resizeObserver = new ResizeObserver(() => scheduleMeasure())
+
+    const measure = () => {
+      const content = contentRef.current
+      if (!content) return
+
+      inputZone = Array.from(document.querySelectorAll<HTMLElement>('[data-chat-input-zone]'))
+        .find((element) => element.dataset.sessionId === session.id) ?? null
+
+      const inputContainer = inputZone?.querySelector<HTMLElement>('.input-container') ?? null
+      const contentTop = content.getBoundingClientRect().top
+      const targetBottom = inputContainer?.getBoundingClientRect().bottom
+        ?? inputZone?.getBoundingClientRect().bottom
+        ?? (window.innerHeight - 14)
+      const nextHeight = Math.max(1, Math.floor(Math.min(targetBottom, window.innerHeight - 14) - contentTop))
+      setAvailableHeight((current) => current === nextHeight ? current : nextHeight)
+
+      if (inputZone) resizeObserver.observe(inputZone)
+      if (inputContainer) resizeObserver.observe(inputContainer)
+    }
+
+    function scheduleMeasure() {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    }
+
+    scheduleMeasure()
+    window.addEventListener('resize', scheduleMeasure)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', scheduleMeasure)
+    }
+  }, [open, session.id])
 
   const outputs = React.useMemo(() => flattenOutputFiles(files), [files])
   const sessionFileItems = React.useMemo(() => flattenSessionFiles(files), [files])
@@ -474,7 +633,7 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
     }
 
     return items
-  }, [activeWorkspace?.rootPath, enabledSources, session.enabledSourceSlugs, session.messages, session.workingDirectory])
+  }, [activeWorkspace?.rootPath, enabledSources, session])
 
   const handleOpen = React.useCallback((item: ResourceItem) => {
     if (item.url) {
@@ -482,10 +641,6 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
       return
     }
     if (!item.path) return
-    if (item.kind === 'folder') {
-      void window.electronAPI.openFile(item.path)
-      return
-    }
     onOpenFile(item.path)
   }, [onOpenFile, onOpenUrl])
 
@@ -530,14 +685,16 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
         />
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         side="bottom"
         align="end"
         alignOffset={alignOffset}
         sideOffset={10}
         collisionPadding={14}
-        className="w-[var(--resources-panel-width,360px)] max-w-[calc(100vw-28px)] max-h-[min(560px,calc(100vh-72px))] overflow-hidden rounded-[14px] border border-border/70 bg-background/95 p-0 shadow-modal-small backdrop-blur-xl"
+        className="w-[var(--resources-panel-width,360px)] max-w-[calc(100vw-28px)] overflow-hidden rounded-[14px] border border-border/70 bg-background/95 p-0 shadow-modal-small backdrop-blur-xl"
         style={{
           '--resources-panel-width': 'min(360px, calc(100vw - 28px))',
+          maxHeight: availableHeight ? `${availableHeight}px` : 'calc(100vh - 72px)',
         } as React.CSSProperties}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
@@ -592,6 +749,10 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
               actionLabel={t('resources.addSource')}
               onAction={handleAddSource}
             />
+
+            <div className="my-3 h-px bg-border/50" />
+
+            <UsageSection session={session} />
           </div>
         </div>
       </PopoverContent>
