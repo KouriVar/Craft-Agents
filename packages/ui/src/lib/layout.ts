@@ -47,6 +47,10 @@ export const CHAT_LAYOUT = {
 
   /** Bottom branding area padding */
   brandingPadding: 'pt-16 pb-24',
+
+  /** Bottom spacing between the visible chat input and its panel edge. */
+  inputBottomPadding: 'pb-4',
+  inputBottomGapPx: 16,
 } as const
 
 /**

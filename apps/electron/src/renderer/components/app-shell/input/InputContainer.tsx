@@ -10,6 +10,8 @@ import { getStructuredInputMaxHeight } from './structured-height'
 import { BackgroundFinishedChip } from '../BackgroundFinishedChip'
 
 interface InputContainerProps extends Omit<FreeFormInputProps, 'inputRef'> {
+  /** Direct DOM ref used by adjacent overlays to align with the input boundary. */
+  containerRef?: React.Ref<HTMLDivElement>
   /** Structured input state - when present, shows structured UI instead of freeform */
   structuredInput?: StructuredInputState
   /** Callback when user responds to structured input */
@@ -43,6 +45,7 @@ const FALLBACK_HEIGHTS: Record<InputMode | string, number> = {
  * - All visible children use absolute positioning to stack during transition
  */
 export function InputContainer({
+  containerRef,
   structuredInput,
   onStructuredResponse,
   textareaRef,
@@ -261,6 +264,7 @@ export function InputContainer({
 
       {/* Visible animated container */}
       <motion.div
+        ref={containerRef}
         className={cn(
           "input-container relative rounded-[12px] overflow-hidden transition-colors",
           isFocusedPanel ? "shadow-middle" : "shadow-minimal",

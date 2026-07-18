@@ -4,10 +4,51 @@
  * Parses NO_PROXY rules and determines whether a given URL should bypass the proxy.
  */
 
+import type { NetworkProxySettings } from '@craft-agent/shared/config/types';
+
+export interface ElectronProxyConfigShape {
+  mode: 'system' | 'fixed_servers';
+  proxyRules?: string;
+  proxyBypassRules?: string;
+}
+
 /** Split a comma-separated string into trimmed, non-empty entries. */
 export function splitCommaSeparated(str: string | undefined): string[] {
   if (!str) return [];
   return str.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Resolve the Chromium proxy configuration used by Electron sessions.
+ *
+ * With no explicit Craft Agents proxy, inherit the operating system proxy/PAC
+ * instead of forcing direct connections. This keeps the embedded browser
+ * aligned with Chrome/Edge/Safari in system-proxy environments.
+ */
+export function buildElectronProxyConfig(
+  settings: NetworkProxySettings | undefined,
+): ElectronProxyConfigShape {
+  if (!settings?.enabled) {
+    return { mode: 'system' };
+  }
+
+  const rules: string[] = [];
+  if (settings.httpsProxy) rules.push(`https=${settings.httpsProxy}`);
+  if (settings.httpProxy) rules.push(`http=${settings.httpProxy}`);
+
+  // An enabled but empty form should remain usable and inherit the system
+  // route rather than silently cutting the browser off with direct mode.
+  if (rules.length === 0) {
+    return { mode: 'system' };
+  }
+
+  return {
+    mode: 'fixed_servers',
+    proxyRules: rules.join(';'),
+    proxyBypassRules: settings.noProxy
+      ? splitCommaSeparated(settings.noProxy).join(',')
+      : undefined,
+  };
 }
 
 export interface NoProxyRule {

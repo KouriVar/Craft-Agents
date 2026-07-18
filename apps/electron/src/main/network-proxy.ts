@@ -8,7 +8,7 @@
 
 import { app, session } from 'electron';
 import { Agent, Dispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
-import { parseNoProxyRules, shouldBypassProxy, splitCommaSeparated, type NoProxyRule } from './network-proxy-utils';
+import { buildElectronProxyConfig, parseNoProxyRules, shouldBypassProxy, type NoProxyRule } from './network-proxy-utils';
 import { getNetworkProxySettings, setNetworkProxySettings } from '@craft-agent/shared/config/storage';
 import type { NetworkProxySettings } from '@craft-agent/shared/config/types';
 import { BROWSER_PANE_SESSION_PARTITION } from './browser-pane-manager';
@@ -110,39 +110,19 @@ function configureNodeProxy(settings: NetworkProxySettings | undefined): void {
 async function configureElectronProxy(settings: NetworkProxySettings | undefined): Promise<void> {
   if (!app.isReady()) return;
 
-  const proxyConfig = settings?.enabled
-    ? buildElectronProxyConfig(settings)
-    : { mode: 'direct' as const };
+  const proxyConfig: Electron.ProxyConfig = buildElectronProxyConfig(settings);
 
   const sessions = [
     session.defaultSession,
     session.fromPartition(BROWSER_PANE_SESSION_PARTITION),
   ];
 
-  await Promise.all(sessions.map(ses => ses.setProxy(proxyConfig)));
-}
-
-function buildElectronProxyConfig(settings: NetworkProxySettings): Electron.ProxyConfig {
-  const rules: string[] = [];
-
-  if (settings.httpsProxy) {
-    rules.push(`https=${settings.httpsProxy}`);
-  }
-  if (settings.httpProxy) {
-    rules.push(`http=${settings.httpProxy}`);
-  }
-
-  if (rules.length === 0) {
-    return { mode: 'direct' };
-  }
-
-  return {
-    mode: 'fixed_servers',
-    proxyRules: rules.join(';'),
-    proxyBypassRules: settings.noProxy
-      ? splitCommaSeparated(settings.noProxy).join(',')
-      : undefined,
-  };
+  await Promise.all(sessions.map(async (ses) => {
+    await ses.setProxy(proxyConfig);
+    // setProxy does not invalidate pooled sockets. Close them so the new
+    // system/custom route takes effect immediately instead of after restart.
+    await ses.closeAllConnections();
+  }));
 }
 
 /**

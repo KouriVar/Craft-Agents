@@ -38,6 +38,10 @@ export interface ChatPageProps {
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
+  const [inputContainerElement, setInputContainerElement] = React.useState<HTMLDivElement | null>(null)
+  const inputContainerRef = React.useCallback((element: HTMLDivElement | null) => {
+    setInputContainerElement(element)
+  }, [])
   // Diagnostic: mark when component runs
   React.useLayoutEffect(() => {
     rendererPerf.markSessionSwitch(sessionId, 'panel.mounted')
@@ -647,9 +651,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         open={resourcesPanelOpen}
         onOpenChange={setResourcesPanelOpen}
         alignOffset={-72}
+        inputContainerElement={inputContainerElement}
       />
     )
-  }, [isCompactMode, resourcesPanelOpen, session])
+  }, [inputContainerElement, isCompactMode, resourcesPanelOpen, session])
 
   const headerActions = editTaskButton ? (
     <div className="flex items-center gap-1.5">
@@ -764,6 +769,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
+                inputContainerRef={inputContainerRef}
                 session={skeletonSession}
                 onSendMessage={() => {}}
                 onOpenFile={handleOpenFile}
@@ -845,6 +851,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         >
           <ChatDisplay
             ref={chatDisplayRef}
+            inputContainerRef={inputContainerRef}
             session={session}
             onSendMessage={(message, attachments, skillSlugs) => {
               if (session) {

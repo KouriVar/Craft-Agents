@@ -510,9 +510,36 @@ describe('BrowserPaneManager', () => {
     expect(manager.listInstances()).toHaveLength(1)
   })
 
-  it('allows http(s) popups with shared browser partition', () => {
+  it('opens regular http(s) window requests in a workspace tab', async () => {
+    const interacted: string[] = []
+    manager.onInteracted((id) => interacted.push(id))
+    manager.createInstance('popup-tab', { workspaceId: 'workspace-1' })
+    const instance = (manager as any).instances.get('popup-tab')
+    const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
+
+    const result = openHandler({
+      url: 'https://example.com/article',
+      disposition: 'new-popup',
+      frameName: '_blank',
+    })
+
+    expect(result).toEqual({ action: 'deny' })
+    expect(manager.listInstances()).toHaveLength(2)
+    const created = manager.listInstances().find((item) => item.id !== 'popup-tab')
+    expect(created).toBeDefined()
+    expect(created?.workspaceId).toBe('workspace-1')
+    await Bun.sleep(0)
+    expect(interacted).toEqual([created!.id])
+  })
+
+  it('allows Option/Alt-click http(s) popups with the shared browser partition', () => {
     manager.createInstance('popup-allow')
     const instance = (manager as any).instances.get('popup-allow')
+    instance.pageView.webContents._emit('before-input-event', {
+      type: 'keyDown',
+      key: 'Alt',
+      alt: true,
+    })
     const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
 
     const result = openHandler({

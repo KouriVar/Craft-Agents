@@ -2,7 +2,31 @@
  * Tests for network proxy bypass rules (NO_PROXY parsing and matching).
  */
 import { describe, it, expect } from 'bun:test';
-import { parseNoProxyRules, shouldBypassProxy } from '../network-proxy-utils';
+import { buildElectronProxyConfig, parseNoProxyRules, shouldBypassProxy } from '../network-proxy-utils';
+
+describe('buildElectronProxyConfig', () => {
+  it('inherits the operating system proxy when no custom proxy is enabled', () => {
+    expect(buildElectronProxyConfig(undefined)).toEqual({ mode: 'system' });
+    expect(buildElectronProxyConfig({ enabled: false })).toEqual({ mode: 'system' });
+  });
+
+  it('falls back to the system proxy when the custom form is enabled but empty', () => {
+    expect(buildElectronProxyConfig({ enabled: true })).toEqual({ mode: 'system' });
+  });
+
+  it('builds fixed HTTP and HTTPS proxy rules with normalized bypass entries', () => {
+    expect(buildElectronProxyConfig({
+      enabled: true,
+      httpProxy: 'http://127.0.0.1:7890',
+      httpsProxy: 'http://127.0.0.1:7890',
+      noProxy: ' localhost, 127.0.0.1, .example.com ',
+    })).toEqual({
+      mode: 'fixed_servers',
+      proxyRules: 'https=http://127.0.0.1:7890;http=http://127.0.0.1:7890',
+      proxyBypassRules: 'localhost,127.0.0.1,.example.com',
+    });
+  });
+});
 
 describe('parseNoProxyRules', () => {
   it('returns empty array for undefined/empty input', () => {

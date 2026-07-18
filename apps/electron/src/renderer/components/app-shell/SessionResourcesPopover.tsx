@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { useAppShellContext } from '@/context/AppShellContext'
+import { CHAT_LAYOUT } from '@/config/layout'
 import { getFileManagerName } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { resolveEffectiveConnectionSlug } from '@config/llm-connections'
@@ -52,6 +53,7 @@ interface SessionResourcesPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   alignOffset?: number
+  inputContainerElement: HTMLDivElement | null
 }
 
 const INTERNAL_FILE_NAMES = new Set([
@@ -62,6 +64,8 @@ const INTERNAL_FILE_NAMES = new Set([
   'notes.md',
   'config.json',
 ])
+
+const RESOURCES_POPOVER_SIDE_OFFSET = 10
 
 const INTERNAL_DIR_NAMES = new Set([
   'meta',
@@ -482,12 +486,12 @@ function UsageMetric({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function SessionResourcesPopover({ session, open, onOpenChange, alignOffset = 0 }: SessionResourcesPopoverProps) {
+export function SessionResourcesPopover({ session, open, onOpenChange, alignOffset = 0, inputContainerElement }: SessionResourcesPopoverProps) {
   const { t } = useTranslation()
   const { activeWorkspaceId, enabledSources, onOpenFile, onOpenUrl, workspaces } = useAppShellContext()
   const [files, setFiles] = React.useState<SessionFile[]>([])
   const [loadingFiles, setLoadingFiles] = React.useState(false)
-  const contentRef = React.useRef<HTMLDivElement>(null)
+  const [triggerElement, setTriggerElement] = React.useState<HTMLButtonElement | null>(null)
   const [availableHeight, setAvailableHeight] = React.useState<number | null>(null)
   const activeWorkspace = React.useMemo(
     () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
@@ -518,43 +522,50 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
       return
     }
 
+    if (!inputContainerElement || !triggerElement) return
+
     let frame = 0
-    let inputZone: HTMLElement | null = null
+    let settleFrame = 0
     const resizeObserver = new ResizeObserver(() => scheduleMeasure())
 
     const measure = () => {
-      const content = contentRef.current
-      if (!content) return
-
-      inputZone = Array.from(document.querySelectorAll<HTMLElement>('[data-chat-input-zone]'))
-        .find((element) => element.dataset.sessionId === session.id) ?? null
-
-      const inputContainer = inputZone?.querySelector<HTMLElement>('.input-container') ?? null
-      const contentTop = content.getBoundingClientRect().top
-      const targetBottom = inputContainer?.getBoundingClientRect().bottom
-        ?? inputZone?.getBoundingClientRect().bottom
-        ?? (window.innerHeight - 14)
-      const nextHeight = Math.max(1, Math.floor(Math.min(targetBottom, window.innerHeight - 14) - contentTop))
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+      const contentTop = triggerElement.getBoundingClientRect().bottom + RESOURCES_POPOVER_SIDE_OFFSET
+      const targetBottom = inputContainerElement.getBoundingClientRect().bottom
+      const nextHeight = Math.max(1, Math.floor(
+        Math.min(targetBottom, viewportHeight - CHAT_LAYOUT.inputBottomGapPx) - contentTop,
+      ))
       setAvailableHeight((current) => current === nextHeight ? current : nextHeight)
 
-      if (inputZone) resizeObserver.observe(inputZone)
-      if (inputContainer) resizeObserver.observe(inputContainer)
+      resizeObserver.observe(inputContainerElement)
+      resizeObserver.observe(triggerElement)
     }
 
     function scheduleMeasure() {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(measure)
+      cancelAnimationFrame(settleFrame)
+      frame = requestAnimationFrame(() => {
+        measure()
+        // Recheck after layout settles so window and input height animations
+        // cannot leave the panel with a stale maximum height.
+        settleFrame = requestAnimationFrame(measure)
+      })
     }
 
     scheduleMeasure()
     window.addEventListener('resize', scheduleMeasure)
+    window.visualViewport?.addEventListener('resize', scheduleMeasure)
+    window.visualViewport?.addEventListener('scroll', scheduleMeasure)
 
     return () => {
       cancelAnimationFrame(frame)
+      cancelAnimationFrame(settleFrame)
       resizeObserver.disconnect()
       window.removeEventListener('resize', scheduleMeasure)
+      window.visualViewport?.removeEventListener('resize', scheduleMeasure)
+      window.visualViewport?.removeEventListener('scroll', scheduleMeasure)
     }
-  }, [open, session.id])
+  }, [inputContainerElement, open, triggerElement])
 
   const outputs = React.useMemo(() => flattenOutputFiles(files), [files])
   const sessionFileItems = React.useMemo(() => flattenSessionFiles(files), [files])
@@ -674,10 +685,15 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
     onOpenChange(false)
   }, [onOpenChange, session.id, sourceItems])
 
+  const measuredMaxHeight = availableHeight === null
+    ? 'min(var(--radix-popover-content-available-height), calc(100vh - 72px))'
+    : `${availableHeight}px`
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <PanelHeaderCenterButton
+          ref={setTriggerElement}
           icon={<ListTree className="h-4 w-4" />}
           tooltip={t('resources.openPanel')}
           aria-label={t('resources.openPanel')}
@@ -685,23 +701,34 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
         />
       </PopoverTrigger>
       <PopoverContent
-        ref={contentRef}
         side="bottom"
         align="end"
         alignOffset={alignOffset}
-        sideOffset={10}
-        collisionPadding={14}
+        sideOffset={RESOURCES_POPOVER_SIDE_OFFSET}
+        collisionPadding={{
+          top: 14,
+          right: 14,
+          bottom: CHAT_LAYOUT.inputBottomGapPx,
+          left: 14,
+        }}
         className="w-[var(--resources-panel-width,360px)] max-w-[calc(100vw-28px)] overflow-hidden rounded-[14px] border border-border/70 bg-background/95 p-0 shadow-modal-small backdrop-blur-xl"
         style={{
           '--resources-panel-width': 'min(360px, calc(100vw - 28px))',
-          maxHeight: availableHeight ? `${availableHeight}px` : 'calc(100vh - 72px)',
+          maxHeight: measuredMaxHeight,
+          animation: 'none',
         } as React.CSSProperties}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
       >
-        <div className="flex max-h-[inherit] flex-col">
-          <div className="flex-1 overflow-y-auto px-3 py-3">
+        <div
+          className="flex min-h-0 flex-col"
+          style={{ maxHeight: measuredMaxHeight }}
+        >
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 [scrollbar-gutter:stable]"
+            style={{ maxHeight: measuredMaxHeight }}
+          >
             <TitleSection session={session} />
 
             <div className="my-3 h-px bg-border/50" />

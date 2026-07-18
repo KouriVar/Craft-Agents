@@ -1211,14 +1211,28 @@ function AppShellContent({
       if (disposed) return
       setBrowserTabs((current) => current.filter((tab) => tab.id !== id))
     })
+    const cleanupInteracted = api.onInteracted((id) => {
+      if (disposed) return
+      void api.list().then((instances) => {
+        if (disposed) return
+        const info = instances.find((instance) => instance.id === id)
+        if (!info || !belongsHere(info)) return
+        setLastActiveBrowserTabId(id)
+        setBrowserNavigatorKind('tabs')
+        navigate(routes.view.browser(id))
+      }).catch((error) => {
+        console.warn(`[AppShell] Failed to activate browser tab ${id}:`, error)
+      })
+    })
     void hydrate()
 
     return () => {
       disposed = true
       cleanupState()
       cleanupRemoved()
+      cleanupInteracted()
     }
-  }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
+  }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserNavigatorKind, setBrowserTabs])
 
   React.useEffect(() => {
     if (isBrowserNavigation(navState) && navState.details?.tabId) {

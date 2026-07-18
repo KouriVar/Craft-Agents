@@ -27,6 +27,7 @@ interface ChatInputZoneProps {
   onSessionStatusChange?: (stateId: string) => void
   rightAccessory?: React.ReactNode
   className?: string
+  inputContainerRef?: React.Ref<HTMLDivElement>
   inputProps: React.ComponentProps<typeof InputContainer>
 }
 
@@ -48,6 +49,7 @@ export function ChatInputZone({
   onSessionStatusChange,
   rightAccessory,
   className,
+  inputContainerRef,
   inputProps,
 }: ChatInputZoneProps) {
   const [autoOpenLabelId, setAutoOpenLabelId] = React.useState<string | null>(null)
@@ -78,7 +80,7 @@ export function ChatInputZone({
       className={cn(
         CHAT_LAYOUT.maxWidth,
         'mx-auto w-full mt-1',
-        compactMode ? 'px-2 pb-3' : 'px-3 @xs/panel:px-4 pb-4',
+        compactMode ? 'px-2 pb-3' : ['px-3 @xs/panel:px-4', CHAT_LAYOUT.inputBottomPadding],
         className,
       )}
     >
@@ -114,6 +116,7 @@ export function ChatInputZone({
       >
         <InputContainer
           {...inputProps}
+          containerRef={inputContainerRef}
           compactMode={compactMode}
           permissionMode={permissionMode}
           onPermissionModeChange={onPermissionModeChange}

@@ -384,6 +384,8 @@ interface ChatDisplayProps {
   onConnectionChange?: (connectionSlug: string) => void
   /** Ref for the input, used for external focus control */
   textareaRef?: React.RefObject<RichTextInputHandle>
+  /** DOM ref for aligning session overlays to the visible input container. */
+  inputContainerRef?: React.Ref<HTMLDivElement>
   /** When true, disables input (e.g., when agent needs activation) */
   disabled?: boolean
   /** Pending permission request for this session */
@@ -686,6 +688,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   onModelChange,
   onConnectionChange,
   textareaRef: externalTextareaRef,
+  inputContainerRef,
   disabled = false,
   pendingPermission,
   onRespondToPermission,
@@ -2354,6 +2357,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}
           <ChatInputZone
+            inputContainerRef={inputContainerRef}
             compactMode={compactMode}
             permissionMode={permissionMode}
             onPermissionModeChange={onPermissionModeChange}
