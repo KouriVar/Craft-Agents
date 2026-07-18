@@ -250,8 +250,12 @@ export async function downloadUv(config: BuildConfig): Promise<void> {
     mkdirSync(extractDir, { recursive: true });
 
     if (uvDownload.endsWith('.zip')) {
-      // Use PowerShell on Windows for consistent extraction support.
-      await $`powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '${assetPath}' -DestinationPath '${extractDir}' -Force"`;
+      // The target can be Windows while the build host is macOS/Linux.
+      if (process.platform === 'win32') {
+        await $`powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '${assetPath}' -DestinationPath '${extractDir}' -Force"`;
+      } else {
+        await $`unzip -q -o ${assetPath} -d ${extractDir}`;
+      }
     } else {
       await $`tar -xzf ${assetPath} -C ${extractDir}`;
     }

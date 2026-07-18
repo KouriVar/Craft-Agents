@@ -98,15 +98,21 @@ bun run typecheck:all
 
 ## 打包
 
+macOS 本地发行建议直接运行桌面的 `打包CraftAgent.command`。菜单支持 macOS arm64、Windows x64、Linux x64 AppImage、macOS + Windows 和三平台全量打包，成品统一复制到 `~/Downloads/Craft Pack/`，中间解包目录保留在仓库的 `apps/electron/release/`。
+
+打包脚本会复用 `~/Library/Caches/CraftAgent/build-downloads/` 中经过校验的 Bun 与 ripgrep，以及 Bun/npm/electron-builder 自身缓存。`bun install` 会在每个平台构建前校验工作区，但依赖未变化时不会完整重装。网络中断的运行时下载支持重试与断点续传。
+
 ```bash
-# macOS
-bun run electron:dist:dev:mac
+# 三平台交互式菜单
+bash apps/electron/scripts/package-menu.sh
 
-# Windows
-bun run electron:dist:dev:win
+# 只检查环境、版本、输出与缓存目录
+bash apps/electron/scripts/package-menu.sh --check
 
-# Linux
-bun run electron:dist:dev:linux
+# 也可直接调用单平台脚本
+bash apps/electron/scripts/build-dmg.sh arm64
+bash apps/electron/scripts/build-win.sh
+bash apps/electron/scripts/build-linux.sh x64
 ```
 
 ## 同步上游

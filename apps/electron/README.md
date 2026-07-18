@@ -174,6 +174,10 @@ bun run electron:build:resources # Copy icons
 bun run electron:build           # All of the above
 ```
 
+For distributable desktop artifacts, use `scripts/package-menu.sh`. It builds macOS arm64, Windows x64, and Linux x64 AppImage packages and copies only release files to `${CRAFT_PACK_OUTPUT_DIR:-~/Downloads/Craft Pack}`. Intermediate unpacked applications remain under `release/`.
+
+Large target runtimes are cached between builds. Bun and target-native ripgrep downloads use a persistent cache with retries, resume support, and SHA-256 verification; uv is retained under `resources/bin/<platform-arch>`, while npm and electron-builder reuse their own caches. Cross-builds explicitly stage target-native ripgrep, koffi, uv, SDK, and Pi subprocess resources instead of copying host binaries.
+
 ## macOS App Icon
 
 The packaged macOS app uses `resources/icon.icns` for the Dock and Finder icon. A pre-compiled `Assets.car` may exist in `resources/` for experimentation, but the packaging hook removes it from the app bundle so macOS does not switch to a different icon after launch.

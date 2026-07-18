@@ -29,6 +29,7 @@ import {
   buildMcpServers,
   copyPiAgentServer,
   copySessionServer,
+  downloadUv,
   type Arch,
   type BuildConfig,
   type Platform,
@@ -61,6 +62,7 @@ const config: BuildConfig = {
 };
 
 console.log(`Building bundled subprocess servers for ${platform}-${arch}...`);
+await downloadUv(config);
 buildMcpServers(config);
 copySessionServer(config);
 copyPiAgentServer(config);

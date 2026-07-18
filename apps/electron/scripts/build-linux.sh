@@ -65,6 +65,8 @@ done
 
 # Configuration
 BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
+OUTPUT_DIR="$(craft_pack_output_dir)"
+mkdir -p "$OUTPUT_DIR"
 
 echo "=== Building Craft Agents AppImage (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
@@ -110,7 +112,12 @@ download_with_retry \
     "$BUN_CHECKSUMS" \
     "Bun checksums"
 
-if [ -s "$BUN_ARCHIVE" ] && ! (cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | sha256sum -c - >/dev/null 2>&1); then
+EXPECTED_BUN_HASH=$(grep "${BUN_DOWNLOAD}.zip" "$BUN_CHECKSUMS" | awk '{print $1}')
+if [ -z "$EXPECTED_BUN_HASH" ]; then
+    echo "ERROR: Bun checksum entry not found for ${BUN_DOWNLOAD}.zip"
+    exit 1
+fi
+if [ -s "$BUN_ARCHIVE" ] && ! verify_sha256_file "$BUN_ARCHIVE" "$EXPECTED_BUN_HASH"; then
     echo "Cached Bun archive failed checksum; downloading a clean copy..."
     rm -f "$BUN_ARCHIVE" "$BUN_ARCHIVE.partial"
 fi
@@ -121,8 +128,8 @@ download_with_retry \
 
 # Verify checksum
 echo "Verifying checksum..."
-# Use sha256sum on Linux (not shasum)
-(cd "$BUN_CACHE_DIR" && grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | sha256sum -c -)
+verify_sha256_file "$BUN_ARCHIVE" "$EXPECTED_BUN_HASH"
+echo "${BUN_DOWNLOAD}.zip: OK"
 
 # Extract and install
 unzip -o "$BUN_ARCHIVE" -d "$TEMP_DIR"
@@ -167,21 +174,17 @@ mkdir -p "$ALIAS_DEST"
 cp -r "$SDK_BIN_SOURCE/." "$ALIAS_DEST/"
 chmod +x "$ALIAS_DEST/claude"
 
-BIN_SIZE=$(stat -c%s "$ALIAS_DEST/claude")
+BIN_SIZE=$(stat -f%z "$ALIAS_DEST/claude" 2>/dev/null || stat -c%s "$ALIAS_DEST/claude")
 if [ "$BIN_SIZE" -lt 50000000 ]; then
     echo "ERROR: claude binary at $ALIAS_DEST/claude is only ${BIN_SIZE} bytes (expected ~210 MB)"
     exit 1
 fi
 echo "  Native binary: $((BIN_SIZE / 1024 / 1024)) MB"
 
-# 5. Copy ripgrep (sourced from @vscode/ripgrep since 0.2.113).
-RG_SOURCE="$ROOT_DIR/node_modules/@vscode/ripgrep"
-require_path "$RG_SOURCE" "@vscode/ripgrep" "Run 'bun install' and 'bun pm trust @vscode/ripgrep' first."
-require_path "$RG_SOURCE/bin/rg" "ripgrep binary" "@vscode/ripgrep postinstall did not run."
-echo "Copying @vscode/ripgrep..."
-mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
-rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
-cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
+# 5. Stage Linux-native dependencies. Copying host node_modules here would
+#    otherwise put macOS binaries inside the AppImage during a cross-build.
+stage_target_ripgrep "linux" "$ARCH" "$ROOT_DIR" "$ELECTRON_DIR"
+ensure_target_koffi "linux" "$ARCH" "$ROOT_DIR"
 
 # 6. Copy network interceptor sources (for Pi subprocess; Claude no longer
 #    uses --preload — Phase 2 will move that to SDK hooks or a local proxy).
@@ -199,7 +202,10 @@ done
 # 6. Build Electron app
 echo "Building Electron app..."
 cd "$ROOT_DIR"
-bun run electron:build
+CRAFT_DEV_RUNTIME=1 bun run electron:build
+
+echo "Rebuilding bundled subprocess resources for linux-${ARCH}..."
+bun run scripts/electron-build-subprocess.ts --platform=linux --arch=${ARCH}
 
 # 7. Package with electron-builder
 echo "Packaging app with electron-builder..."
@@ -217,9 +223,14 @@ else
     LINUX_ARCH="aarch64"
 fi
 
-# electron-builder outputs: Craft-Agents-x86_64.AppImage or Craft-Agents-aarch64.AppImage
-BUILT_APPIMAGE_NAME="Craft-Agents-${LINUX_ARCH}.AppImage"
-BUILT_APPIMAGE_PATH="$ELECTRON_DIR/release/$BUILT_APPIMAGE_NAME"
+# Prefer the current electron-builder naming, with the historical Linux arch
+# spelling retained as a compatibility fallback.
+APPIMAGE_NAME="Craft-Agents-${ARCH}.AppImage"
+BUILT_APPIMAGE_PATH="$ELECTRON_DIR/release/$APPIMAGE_NAME"
+if [ ! -f "$BUILT_APPIMAGE_PATH" ]; then
+    BUILT_APPIMAGE_NAME="Craft-Agents-${LINUX_ARCH}.AppImage"
+    BUILT_APPIMAGE_PATH="$ELECTRON_DIR/release/$BUILT_APPIMAGE_NAME"
+fi
 
 if [ ! -f "$BUILT_APPIMAGE_PATH" ]; then
     echo "ERROR: Expected AppImage not found at $BUILT_APPIMAGE_PATH"
@@ -228,16 +239,18 @@ if [ ! -f "$BUILT_APPIMAGE_PATH" ]; then
     exit 1
 fi
 
-# Rename to our standard naming convention: Craft-Agents-x64.AppImage, Craft-Agents-arm64.AppImage
-APPIMAGE_NAME="Craft-Agents-${ARCH}.AppImage"
-APPIMAGE_PATH="$ELECTRON_DIR/release/$APPIMAGE_NAME"
-mv "$BUILT_APPIMAGE_PATH" "$APPIMAGE_PATH"
-echo "Renamed $BUILT_APPIMAGE_NAME -> $APPIMAGE_NAME"
+APPIMAGE_PATH="$OUTPUT_DIR/$APPIMAGE_NAME"
+cp -f "$BUILT_APPIMAGE_PATH" "$APPIMAGE_PATH"
+for artifact in "${APPIMAGE_NAME}.blockmap" "latest-linux.yml"; do
+    if [ -f "$ELECTRON_DIR/release/$artifact" ]; then
+        cp -f "$ELECTRON_DIR/release/$artifact" "$OUTPUT_DIR/$artifact"
+    fi
+done
 
 echo ""
 echo "=== Build Complete ==="
-echo "AppImage: $ELECTRON_DIR/release/${APPIMAGE_NAME}"
-echo "Size: $(du -h "$ELECTRON_DIR/release/${APPIMAGE_NAME}" | cut -f1)"
+echo "AppImage: $APPIMAGE_PATH"
+echo "Size: $(du -h "$APPIMAGE_PATH" | cut -f1)"
 
 # 9. Create manifest.json for upload script
 # Read version from package.json

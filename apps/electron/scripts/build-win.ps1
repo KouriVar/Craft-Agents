@@ -6,66 +6,39 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ElectronDir = Split-Path -Parent $ScriptDir
 $RootDir = Split-Path -Parent (Split-Path -Parent $ElectronDir)
+$OutputDir = if ($env:CRAFT_PACK_OUTPUT_DIR) { $env:CRAFT_PACK_OUTPUT_DIR } else { Join-Path $HOME "Downloads\Craft Pack" }
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 # Configuration
 $BunVersion = "bun-v1.3.9"  # Pinned version for reproducible builds
 
+function Invoke-DownloadWithRetry {
+    param([string]$Uri, [string]$OutFile, [int]$MaxAttempts = 8)
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            Write-Host "Downloading $(Split-Path -Leaf $OutFile) (attempt $attempt/$MaxAttempts)..."
+            Invoke-WebRequest -Uri $Uri -OutFile $OutFile
+            return
+        } catch {
+            if ($attempt -eq $MaxAttempts) { throw }
+            Write-Host "Download interrupted; retrying in 3 seconds..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
 Write-Host "=== Building Craft Agents Windows Installer using electron-builder ===" -ForegroundColor Cyan
 
-# Debug: System information
-Write-Host ""
-Write-Host "=== Debug: System Information ===" -ForegroundColor Magenta
-Write-Host "OS: $([System.Environment]::OSVersion.VersionString)"
-Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
-Write-Host "Hostname: $env:COMPUTERNAME"
-Write-Host "User: $env:USERNAME"
-Write-Host "Temp: $env:TEMP"
-Write-Host "Working Dir: $(Get-Location)"
-
-# Debug: Check Windows Defender status
-Write-Host ""
-Write-Host "=== Debug: Windows Defender Status ===" -ForegroundColor Magenta
-try {
-    $defenderStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue
-    if ($defenderStatus) {
-        Write-Host "Real-time Protection: $($defenderStatus.RealTimeProtectionEnabled)"
-        Write-Host "Antivirus Enabled: $($defenderStatus.AntivirusEnabled)"
-        Write-Host "On Access Protection: $($defenderStatus.OnAccessProtectionEnabled)"
-        Write-Host "IO AV Protection: $($defenderStatus.IoavProtectionEnabled)"
-    } else {
-        Write-Host "Could not get Defender status"
-    }
-} catch {
-    Write-Host "Defender status check failed: $_"
+# 0. Stop only processes launched from this repository. The old implementation
+# killed every Node/Electron process on the machine, including unrelated apps.
+Write-Host "Checking for repository-local processes that may lock build files..."
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.CommandLine -and $_.CommandLine.Contains($RootDir) -and
+    $_.Name -match '^(node|npm|electron|electron-builder)(\.exe)?$'
+} | ForEach-Object {
+    Write-Host "  Stopping $($_.Name) (PID: $($_.ProcessId))..." -ForegroundColor Yellow
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
 }
-
-# Debug: List exclusions
-Write-Host ""
-Write-Host "=== Debug: Defender Exclusions ===" -ForegroundColor Magenta
-try {
-    $prefs = Get-MpPreference -ErrorAction SilentlyContinue
-    if ($prefs.ExclusionPath) {
-        Write-Host "Path Exclusions: $($prefs.ExclusionPath -join ', ')"
-    }
-    if ($prefs.ExclusionProcess) {
-        Write-Host "Process Exclusions: $($prefs.ExclusionProcess -join ', ')"
-    }
-} catch {
-    Write-Host "Could not get exclusions: $_"
-}
-Write-Host ""
-
-# 0. Kill any lingering processes that might lock files
-Write-Host "Killing any lingering node/npm processes..."
-$processesToKill = @('node', 'npm', 'electron', 'electron-builder')
-foreach ($procName in $processesToKill) {
-    Get-Process -Name $procName -ErrorAction SilentlyContinue | ForEach-Object {
-        Write-Host "  Killing $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor Yellow
-        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-    }
-}
-# Give processes time to fully terminate
-Start-Sleep -Seconds 2
 
 # 1. Clean previous build artifacts (with retry for locked files)
 Write-Host "Cleaning previous builds..."
@@ -108,20 +81,35 @@ New-Item -ItemType Directory -Force -Path "$ElectronDir\vendor\bun" | Out-Null
 $BunDownload = "bun-windows-x64-baseline"
 $TempDir = Join-Path $env:TEMP "bun-download-$(Get-Random)"
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+$BuildCacheRoot = if ($env:CRAFT_BUILD_CACHE_DIR) { $env:CRAFT_BUILD_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA "CraftAgent\build-downloads" }
+$BunCacheDir = Join-Path $BuildCacheRoot $BunVersion
+$CachedZip = Join-Path $BunCacheDir "$BunDownload.zip"
+New-Item -ItemType Directory -Force -Path $BunCacheDir | Out-Null
 
 try {
     # Download binary and checksums
     $ZipUrl = "https://github.com/oven-sh/bun/releases/download/$BunVersion/$BunDownload.zip"
     $ChecksumUrl = "https://github.com/oven-sh/bun/releases/download/$BunVersion/SHASUMS256.txt"
 
-    Write-Host "Downloading from $ZipUrl..."
-    Invoke-WebRequest -Uri $ZipUrl -OutFile "$TempDir\$BunDownload.zip"
-    Invoke-WebRequest -Uri $ChecksumUrl -OutFile "$TempDir\SHASUMS256.txt"
+    Invoke-DownloadWithRetry -Uri $ChecksumUrl -OutFile "$TempDir\SHASUMS256.txt"
 
     # Verify checksum
-    Write-Host "Verifying checksum..."
     $ExpectedHash = (Get-Content "$TempDir\SHASUMS256.txt" | Select-String "$BunDownload.zip").ToString().Split(" ")[0]
-    $ActualHash = (Get-FileHash "$TempDir\$BunDownload.zip" -Algorithm SHA256).Hash.ToLower()
+    if (Test-Path $CachedZip) {
+        $CachedHash = (Get-FileHash $CachedZip -Algorithm SHA256).Hash.ToLower()
+        if ($CachedHash -ne $ExpectedHash) {
+            Write-Host "Cached Bun archive failed checksum; downloading a clean copy..." -ForegroundColor Yellow
+            Remove-Item -Force $CachedZip
+        } else {
+            Write-Host "Using cached Bun archive: $CachedZip"
+        }
+    }
+    if (-not (Test-Path $CachedZip)) {
+        Invoke-DownloadWithRetry -Uri $ZipUrl -OutFile $CachedZip
+    }
+
+    Write-Host "Verifying checksum..."
+    $ActualHash = (Get-FileHash $CachedZip -Algorithm SHA256).Hash.ToLower()
 
     if ($ActualHash -ne $ExpectedHash) {
         throw "Checksum verification failed! Expected: $ExpectedHash, Got: $ActualHash"
@@ -130,7 +118,7 @@ try {
 
     # Extract and install using robocopy for better file handle management
     Write-Host "Extracting Bun..."
-    Expand-Archive -Path "$TempDir\$BunDownload.zip" -DestinationPath $TempDir -Force
+    Expand-Archive -Path $CachedZip -DestinationPath $TempDir -Force
 
     # Unblock in temp first (before copy)
     Unblock-File -Path "$TempDir\$BunDownload\bun.exe" -ErrorAction SilentlyContinue
@@ -328,61 +316,23 @@ try {
     Pop-Location
 }
 
+# Rebuild platform-specific uv, session server, Pi server, and koffi resources.
+Write-Host "  Building bundled subprocess resources for win32-x64..."
+Push-Location $RootDir
+try {
+    bun run scripts/electron-build-subprocess.ts --platform=win32 --arch=x64
+    if ($LASTEXITCODE -ne 0) { throw "Subprocess resource build failed" }
+} finally {
+    Pop-Location
+}
+
 # 7. Package with electron-builder
 Write-Host "Packaging app with electron-builder..."
 
-# Debug: Show bun.exe file info
-Write-Host ""
-Write-Host "=== Debug: bun.exe File Info ===" -ForegroundColor Magenta
 $BunExe = "$ElectronDir\vendor\bun\bun.exe"
-if (Test-Path $BunExe) {
-    $fileInfo = Get-Item $BunExe
-    Write-Host "Path: $($fileInfo.FullName)"
-    Write-Host "Size: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
-    Write-Host "Created: $($fileInfo.CreationTime)"
-    Write-Host "Modified: $($fileInfo.LastWriteTime)"
-    Write-Host "Attributes: $($fileInfo.Attributes)"
-
-    # Check Zone.Identifier (Mark of the Web)
-    $zoneFile = "$BunExe`:Zone.Identifier"
-    if (Test-Path $zoneFile -ErrorAction SilentlyContinue) {
-        Write-Host "Zone.Identifier: EXISTS (file may be blocked)" -ForegroundColor Yellow
-    } else {
-        Write-Host "Zone.Identifier: None (file is unblocked)"
-    }
-
-    # Check file hash
-    $hash = (Get-FileHash $BunExe -Algorithm SHA256).Hash
-    Write-Host "SHA256: $hash"
-} else {
-    Write-Host "ERROR: bun.exe not found at $BunExe" -ForegroundColor Red
+if (-not (Test-Path $BunExe)) {
+    throw "bun.exe not found at $BunExe"
 }
-
-# Debug: List vendor directory contents
-Write-Host ""
-Write-Host "=== Debug: vendor/bun Directory ===" -ForegroundColor Magenta
-Get-ChildItem "$ElectronDir\vendor\bun" -ErrorAction SilentlyContinue | ForEach-Object {
-    Write-Host "  $($_.Name) - $($_.Length) bytes"
-}
-
-# Debug: Check for processes that might have files open
-Write-Host ""
-Write-Host "=== Debug: Potentially Relevant Processes ===" -ForegroundColor Magenta
-$relevantProcesses = Get-Process | Where-Object {
-    $_.ProcessName -match 'node|npm|bun|electron|defender|antimalware|mpcmdrun'
-} | Select-Object ProcessName, Id, CPU, WorkingSet64
-if ($relevantProcesses) {
-    $relevantProcesses | ForEach-Object {
-        Write-Host "  $($_.ProcessName) (PID: $($_.Id)) - Memory: $([math]::Round($_.WorkingSet64 / 1MB, 1)) MB"
-    }
-} else {
-    Write-Host "  No relevant processes found"
-}
-Write-Host ""
-
-# NOTE: bun.exe is now copied via extraResources in electron-builder.yml
-# This avoids EBUSY errors from the npm node module collector.
-# See electron-builder.yml for details.
 
 # Verify bun.exe is accessible (not locked by another process)
 Write-Host "  Verifying $BunExe is accessible..."
@@ -439,10 +389,13 @@ while (-not $builderSuccess -and $builderRetry -lt $maxBuilderRetries) {
         if ($builderRetry -lt $maxBuilderRetries) {
             Write-Host "  Waiting 10 seconds before retry..." -ForegroundColor Yellow
 
-            # Kill any processes that might be holding file locks
-            Get-Process -Name 'node', 'npm' -ErrorAction SilentlyContinue | ForEach-Object {
-                Write-Host "    Killing $($_.ProcessName) (PID: $($_.Id))..." -ForegroundColor Yellow
-                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            # Stop only build processes belonging to this checkout.
+            Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.CommandLine -and $_.CommandLine.Contains($RootDir) -and
+                $_.Name -match '^(node|npm)(\.exe)?$'
+            } | ForEach-Object {
+                Write-Host "    Stopping $($_.Name) (PID: $($_.ProcessId))..." -ForegroundColor Yellow
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
             }
 
             Start-Sleep -Seconds 10
@@ -468,5 +421,12 @@ if (-not $InstallerPath) {
 
 Write-Host ""
 Write-Host "=== Build Complete ===" -ForegroundColor Green
-Write-Host "Installer: $($InstallerPath.FullName)"
+foreach ($artifact in @("Craft-Agents-x64.exe", "Craft-Agents-x64.exe.blockmap", "latest.yml")) {
+    $source = Join-Path "$ElectronDir\release" $artifact
+    if (Test-Path $source) {
+        Copy-Item -Force $source (Join-Path $OutputDir $artifact)
+    }
+}
+$PublishedInstaller = Join-Path $OutputDir "Craft-Agents-x64.exe"
+Write-Host "Installer: $PublishedInstaller"
 Write-Host "Size: $([math]::Round($InstallerPath.Length / 1MB, 2)) MB"

@@ -26,6 +26,8 @@ require_path() {
 
 ARCH="x64"
 BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
+OUTPUT_DIR="$(craft_pack_output_dir)"
+mkdir -p "$OUTPUT_DIR"
 
 echo "=== Building Craft Agents Windows NSIS (${ARCH}) using electron-builder ==="
 
@@ -44,7 +46,7 @@ bun install
 # 3. Download Bun binary for win32-x64
 echo "Downloading Bun ${BUN_VERSION} for win32-${ARCH}..."
 mkdir -p "$ELECTRON_DIR/vendor/bun"
-BUN_DOWNLOAD="bun-windows-${ARCH}"
+BUN_DOWNLOAD="bun-windows-${ARCH}-baseline"
 
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
@@ -126,37 +128,9 @@ else
     echo "  Native binary: $((BIN_SIZE / 1024 / 1024)) MB"
 fi
 
-# 5. Copy ripgrep (was previously bundled inside the SDK; moved out in 0.2.113)
-RG_SOURCE="$ROOT_DIR/node_modules/@vscode/ripgrep"
-require_path "$RG_SOURCE" "@vscode/ripgrep" "Run 'bun install' and 'bun pm trust @vscode/ripgrep' first."
-require_path "$RG_SOURCE/bin/rg" "ripgrep binary" "@vscode/ripgrep postinstall did not run."
-echo "Copying @vscode/ripgrep..."
-mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
-rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
-cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
-
-# 5a. Resolve koffi's Windows native package for the Pi agent subprocess.
-# Bun only installs optional dependencies for the host platform, so macOS
-# cross-builds need to fetch the win32 package explicitly.
-KOFFI_BIN_PKG="koffi-win32-${ARCH}"
-KOFFI_BIN_SOURCE="$ROOT_DIR/node_modules/@koromix/${KOFFI_BIN_PKG}"
-if [ ! -d "$KOFFI_BIN_SOURCE" ]; then
-    echo "Cross-arch build: @koromix/${KOFFI_BIN_PKG} not in node_modules — fetching from npm..."
-    KOFFI_VERSION=$(node -p "require('$ROOT_DIR/package.json').dependencies['koffi']" | tr -d '"')
-    KOFFI_TMP=$(mktemp -d)
-    (
-        cd "$KOFFI_TMP"
-        npm pack "@koromix/${KOFFI_BIN_PKG}@${KOFFI_VERSION}" >/dev/null
-        TARBALL=$(ls koromix-*.tgz | head -1)
-        tar -xzf "$TARBALL"
-    )
-    mkdir -p "$KOFFI_BIN_SOURCE"
-    cp -r "$KOFFI_TMP/package/." "$KOFFI_BIN_SOURCE/"
-    rm -rf "$KOFFI_TMP"
-fi
-
-require_path "$KOFFI_BIN_SOURCE/win32_${ARCH}" "koffi native binary package (@koromix/${KOFFI_BIN_PKG})" \
-  "Check your network for the npm cross-fetch."
+# 5. Stage target-native dependencies for the cross-build.
+stage_target_ripgrep "win32" "$ARCH" "$ROOT_DIR" "$ELECTRON_DIR"
+ensure_target_koffi "win32" "$ARCH" "$ROOT_DIR"
 
 # 6. Copy network interceptor sources (needed for the Pi subprocess)
 INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/unified-network-interceptor.ts"
@@ -191,8 +165,16 @@ npx electron-builder --win --x64
 
 # 9. Verify the EXE was built
 EXE_NAME="Craft-Agents-x64.exe"
-OUTPUT_DIR="$HOME/Downloads"
 EXE_PATH="$OUTPUT_DIR/$EXE_NAME"
+
+for artifact in \
+    "$EXE_NAME" \
+    "${EXE_NAME}.blockmap" \
+    "latest.yml"; do
+    if [ -f "$ELECTRON_DIR/release/$artifact" ]; then
+        cp -f "$ELECTRON_DIR/release/$artifact" "$OUTPUT_DIR/$artifact"
+    fi
+done
 
 if [ ! -f "$EXE_PATH" ]; then
     echo "ERROR: Expected EXE not found at $EXE_PATH"

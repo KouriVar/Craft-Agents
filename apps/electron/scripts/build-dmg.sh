@@ -80,6 +80,8 @@ done
 
 # Configuration
 BUN_VERSION="bun-v1.3.9"  # Pinned version for reproducible builds
+OUTPUT_DIR="$(craft_pack_output_dir)"
+mkdir -p "$OUTPUT_DIR"
 
 echo "=== Building Craft Agents DMG (${ARCH}) using electron-builder ==="
 if [ "$UPLOAD" = true ]; then
@@ -194,15 +196,10 @@ if [ "$BIN_SIZE" -lt 50000000 ]; then
 fi
 echo "  Native binary: $((BIN_SIZE / 1024 / 1024)) MB"
 
-# 5. Copy ripgrep (was previously bundled inside the SDK at vendor/ripgrep/;
-#    moved out in 0.2.113. Search service still needs the binary directly.)
-RG_SOURCE="$ROOT_DIR/node_modules/@vscode/ripgrep"
-require_path "$RG_SOURCE" "@vscode/ripgrep" "Run 'bun install' and 'bun pm trust @vscode/ripgrep' first."
-require_path "$RG_SOURCE/bin/rg" "ripgrep binary" "@vscode/ripgrep postinstall did not run."
-echo "Copying @vscode/ripgrep..."
-mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
-rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
-cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
+# 5. Stage target-native dependencies. This also prevents x64 cross-builds on
+#    Apple Silicon from accidentally bundling arm64 host binaries.
+stage_target_ripgrep "darwin" "$ARCH" "$ROOT_DIR" "$ELECTRON_DIR"
+ensure_target_koffi "darwin" "$ARCH" "$ROOT_DIR"
 
 # 6. Copy network interceptor sources.
 #    NOTE (Phase 1 of SDK uplift): the Claude native binary doesn't accept
@@ -244,6 +241,9 @@ fi
 
 bun run electron:build
 
+echo "Rebuilding bundled subprocess resources for darwin-${ARCH}..."
+bun run scripts/electron-build-subprocess.ts --platform=darwin --arch=${ARCH}
+
 # 7. Package with electron-builder
 echo "Packaging app with electron-builder..."
 cd "$ELECTRON_DIR"
@@ -278,21 +278,30 @@ fi
 # Run electron-builder
 npx electron-builder $BUILDER_ARGS $ENTITLEMENTS_ARGS
 
-# 8. Verify the DMG was built
+# 8. Verify the DMG was built and publish distributable artifacts
 # electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg
 DMG_NAME="Craft-Agents-${ARCH}.dmg"
-# Look for DMG in both old and new output directories
-DMG_PATH="$HOME/Downloads/$DMG_NAME"
-if [ ! -f "$DMG_PATH" ]; then
-    DMG_PATH="$ELECTRON_DIR/release/$DMG_NAME"
-fi
+DMG_SOURCE="$ELECTRON_DIR/release/$DMG_NAME"
 
-if [ ! -f "$DMG_PATH" ]; then
-    echo "ERROR: Expected DMG not found at $DMG_PATH"
+if [ ! -f "$DMG_SOURCE" ]; then
+    echo "ERROR: Expected DMG not found at $DMG_SOURCE"
     echo "Contents of release directory:"
     ls -la "$ELECTRON_DIR/release/"
     exit 1
 fi
+
+for artifact in \
+    "$DMG_NAME" \
+    "${DMG_NAME}.blockmap" \
+    "Craft-Agents-${ARCH}.zip" \
+    "Craft-Agents-${ARCH}.zip.blockmap" \
+    "latest-mac.yml"; do
+    if [ -f "$ELECTRON_DIR/release/$artifact" ]; then
+        cp -f "$ELECTRON_DIR/release/$artifact" "$OUTPUT_DIR/$artifact"
+    fi
+done
+DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
+echo "Artifacts copied to: $OUTPUT_DIR"
 
 ELECTRON_VERSION=$(cat "$ELECTRON_DIR/package.json" | grep '"version"' | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 echo "Creating manifest.json (version: $ELECTRON_VERSION)..."

@@ -7,7 +7,9 @@ electronVersion: "41.10.2"
 afterPack: scripts/afterPack.cjs
 
 directories:
-  output: /Users/halfsignal/Downloads
+  # Keep unpacked/intermediate builder output inside the repository. Platform
+  # scripts copy only distributable artifacts to CRAFT_PACK_OUTPUT_DIR.
+  output: release
   buildResources: resources
 
 files:
