@@ -144,6 +144,39 @@ export interface BrowserEmptyStateLaunchResult {
   reason?: string
 }
 
+export type BrowserAskAiStatus =
+  | 'starting'
+  | 'streaming'
+  | 'attention'
+  | 'complete'
+  | 'error'
+  | 'interrupted'
+
+/** Privacy-safe projection of a full session for the browser new-tab surface. */
+export interface BrowserAskAiSnapshot {
+  sessionId: string | null
+  workspaceId: string | null
+  prompt: string
+  answer: string
+  status: BrowserAskAiStatus
+  activity: string | null
+  error: string | null
+  title: string | null
+}
+
+export interface BrowserAskAiStartPayload {
+  prompt: string
+  token?: string
+}
+
+export interface BrowserNewTabApi {
+  startAskAi(payload: BrowserAskAiStartPayload): Promise<BrowserAskAiSnapshot>
+  getAskAiState(): Promise<BrowserAskAiSnapshot | null>
+  cancelAskAi(): Promise<void>
+  openAskAiSession(): Promise<void>
+  onAskAiState(callback: (snapshot: BrowserAskAiSnapshot) => void): () => void
+}
+
 export type TransportMode = 'local' | 'remote'
 
 export type TransportConnectionStatus =
@@ -1078,8 +1111,7 @@ export const isProjectsNavigation = (
 ): state is ProjectsNavigationState => state.navigator === 'projects'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
-  navigator: 'sessions',
-  filter: { kind: 'allSessions' },
+  navigator: 'browser',
   details: null,
 }
 
@@ -1244,5 +1276,7 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    /** Exposed only to CraftAgent's trusted internal browser new-tab page. */
+    browserNewTab?: BrowserNewTabApi
   }
 }

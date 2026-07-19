@@ -156,9 +156,12 @@ function matchesGlob(pattern: string, path: string): boolean {
   });
 }
 
-function requestPaths(request: string, attachments: FileAttachment[] = []): string[] {
+function requestPaths(request: string, attachments?: FileAttachment[] | null): string[] {
   const paths = new Set<string>();
-  for (const attachment of attachments) {
+  // IPC and persisted messages can represent an omitted optional field as null.
+  // Treat every non-array value as "no attachments" instead of failing an
+  // otherwise valid text-only turn in implicit skill routing.
+  for (const attachment of Array.isArray(attachments) ? attachments : []) {
     if (attachment.path) paths.add(attachment.path);
     if (attachment.name) paths.add(attachment.name);
   }

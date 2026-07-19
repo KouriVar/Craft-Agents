@@ -26,6 +26,7 @@ export interface DiagnosticSource {
     crashReason?: string | null
     crashRecoveryAttempts?: number
   }>
+  update: DiagnosticBundle['update']
   plugins?: {
     installedCount: number
     mcpCheckedAt?: number
@@ -88,7 +89,7 @@ export function createDiagnosticBundle(source: DiagnosticSource): DiagnosticBund
   }
 
   return {
-    version: 1,
+    version: 2,
     generatedAt: (source.generatedAt ?? new Date()).toISOString(),
     application: source.application,
     runtime: {
@@ -114,6 +115,7 @@ export function createDiagnosticBundle(source: DiagnosticSource): DiagnosticBund
           attempts: Math.max(0, Math.round(instance.crashRecoveryAttempts ?? 0)),
         })),
     },
+    update: source.update,
     plugins: {
       installedCount: Math.max(0, source.plugins?.installedCount ?? 0),
       mcp: {

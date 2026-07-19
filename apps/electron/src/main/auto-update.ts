@@ -30,6 +30,7 @@ import type { EventSink } from '@craft-agent/server-core/transport'
 import {
   UPDATE_FEED_URL,
   UPDATE_RELEASE_URL,
+  getUpdateManifestName,
   getUpdateManifestUrl,
   getUpdatePlatformPolicy,
   isDownloadedUpdateEligible,
@@ -63,6 +64,7 @@ function getPlatformPolicy(): UpdatePlatformPolicy {
 
 const UPDATE_CACHE_MIGRATION_VERSION = '0.11.8'
 const UPDATE_CACHE_MIGRATION_MARKER = `updater-cache-migrated-${UPDATE_CACHE_MIGRATION_VERSION}`
+let lastCacheCleanupResult: 'not-attempted' | 'succeeded' | 'failed' = 'not-attempted'
 
 function getUpdaterBaseCacheDir(): string {
   if (IS_MAC) {
@@ -94,6 +96,7 @@ async function clearPendingUpdateCache(reason: string): Promise<boolean> {
     const helper = autoUpdater.downloadedUpdateHelper
     if (helper?.clear) {
       await helper.clear()
+      lastCacheCleanupResult = 'succeeded'
       autoUpdateLog.warn('[auto-update] Cleared pending update cache', { reason, source: 'updater-helper' })
       return true
     }
@@ -101,9 +104,11 @@ async function clearPendingUpdateCache(reason: string): Promise<boolean> {
     const cacheDir = getUpdateCacheDir()
     if (!cacheDir) return false
     await fs.promises.rm(cacheDir, { recursive: true, force: true })
+    lastCacheCleanupResult = 'succeeded'
     autoUpdateLog.warn('[auto-update] Cleared pending update cache', { reason, cacheDir })
     return true
   } catch (error) {
+    lastCacheCleanupResult = 'failed'
     autoUpdateLog.error('[auto-update] Failed to clear pending update cache', { reason, error })
     return false
   }
@@ -174,6 +179,27 @@ export function setAutoUpdateEventSink(sink: EventSink): void {
  */
 export function getUpdateInfo(): UpdateInfo {
   return { ...updateInfo }
+}
+
+/** Privacy-safe updater state included in the exported diagnostic package. */
+export function getAutoUpdateDiagnostic() {
+  const markerPath = path.join(app.getPath('userData'), UPDATE_CACHE_MIGRATION_MARKER)
+  return {
+    provider: 'generic' as const,
+    channel: 'latest' as const,
+    manifest: getUpdateManifestName(PLATFORM as UpdatePlatform),
+    currentVersion: updateInfo.currentVersion,
+    latestVersion: updateInfo.latestVersion,
+    downloadState: updateInfo.downloadState,
+    installMode: updateInfo.installMode ?? getPlatformPolicy().installMode,
+    manualRecoveryAvailable: updateInfo.downloadState === 'manual' || updateInfo.downloadState === 'error',
+    allowDowngrade: autoUpdater.allowDowngrade,
+    autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
+    cacheDirectoryResolved: getUpdateCacheDir() !== null,
+    cacheMigrationVersion: UPDATE_CACHE_MIGRATION_VERSION,
+    cacheMigrationApplied: fs.existsSync(markerPath),
+    lastCacheCleanupResult,
+  }
 }
 
 /**

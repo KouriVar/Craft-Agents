@@ -1044,12 +1044,12 @@ export function NavigationProvider({
         // Replace all params with the saved workspace's URL
         url.search = savedSearch
       } else {
-        // No saved state — default to allSessions
+        // No saved state — default to Explore.
         for (const key of [...url.searchParams.keys()]) {
           url.searchParams.delete(key)
         }
         url.searchParams.set('ws', workspaceSlug)
-        url.searchParams.set('route', 'allSessions')
+        url.searchParams.set('route', routes.view.browser())
       }
 
       // Push a new history entry for the workspace switch
@@ -1096,7 +1096,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.allSessions())
+      navigate(routes.view.browser())
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)

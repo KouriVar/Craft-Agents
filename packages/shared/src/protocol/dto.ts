@@ -966,7 +966,7 @@ export type CallMcpWidgetToolResult =
 // ---------------------------------------------------------------------------
 
 export interface DiagnosticBundle {
-  version: 1
+  version: 2
   generatedAt: string
   application: {
     version: string
@@ -1011,6 +1011,22 @@ export interface DiagnosticBundle {
     totalTabs: number
     visibleTabs: number
     crashedTabs: Array<{ reason: string | null; attempts: number }>
+  }
+  update: {
+    provider: 'generic'
+    channel: 'latest'
+    manifest: 'latest.yml' | 'latest-mac.yml' | 'latest-linux.yml'
+    currentVersion: string
+    latestVersion: string | null
+    downloadState: string
+    installMode: 'automatic' | 'manual'
+    manualRecoveryAvailable: boolean
+    allowDowngrade: boolean
+    autoInstallOnAppQuit: boolean
+    cacheDirectoryResolved: boolean
+    cacheMigrationVersion: string
+    cacheMigrationApplied: boolean
+    lastCacheCleanupResult: 'not-attempted' | 'succeeded' | 'failed'
   }
   plugins: {
     installedCount: number

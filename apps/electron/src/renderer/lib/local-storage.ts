@@ -41,6 +41,7 @@ export const KEYS = {
   tabs: 'tabs', // Used as: tabs-${workspaceId}
   rightSidebarWidgetTabs: 'right-sidebar-widget-tabs',
   browserWorkspace: 'browser-workspace',
+  browserIntentCorrections: 'browser-intent-corrections',
 
   // Working directory
   recentWorkingDirs: 'recent-working-dirs',

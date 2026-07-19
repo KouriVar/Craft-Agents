@@ -5,9 +5,15 @@ import {
   parseCompoundRoute,
   parseRouteToNavigationState,
 } from '../route-parser'
-import { getNavigationStateKey, parseNavigationStateKey } from '../types'
+import { DEFAULT_NAVIGATION_STATE, getNavigationStateKey, parseNavigationStateKey } from '../types'
+import { routes } from '../routes'
 
 describe('browser routes', () => {
+  test('uses Explore as the default app destination', () => {
+    expect(routes.view.browser()).toBe('browser')
+    expect(DEFAULT_NAVIGATION_STATE).toEqual({ navigator: 'browser', details: null })
+  })
+
   test('parses the browser navigator route', () => {
     expect(parseCompoundRoute('browser')).toEqual({
       navigator: 'browser',

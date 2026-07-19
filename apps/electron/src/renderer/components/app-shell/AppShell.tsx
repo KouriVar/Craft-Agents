@@ -23,6 +23,7 @@ import {
   Plug,
   Inbox,
   Globe,
+  Compass,
   FolderOpen,
   Cake,
   Calendar,
@@ -94,7 +95,7 @@ import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/ato
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { pluginListKindAtom, pluginsAtom } from "@/atoms/plugins"
-import { browserNavigatorKindAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom, updateBrowserNativeViewPauseReasonAtom, type BrowserNativeViewPauseReason, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
+import { browserNavigatorKindAtom, browserWorkspaceTabsAtom, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
 import { filterInstancesForWorkspace } from "@/atoms/browser-pane"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -160,7 +161,9 @@ import {
   RADIUS_EDGE,
   RADIUS_INNER,
 } from "./panel-constants"
-import { detectNativeViewPauseReasons, hasOpenOverlay } from "@/lib/overlay-detection"
+import { hasOpenOverlay } from "@/lib/overlay-detection"
+import { getReleaseNotesPresentation } from "@/lib/release-notes-presentation"
+import { useNativeViewSuspension } from "@/hooks/useNativeViewSuspension"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 import type { WorkspacePluginEntry } from "@craft-agent/shared/plugins"
@@ -599,91 +602,27 @@ function AppShellContent({
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
   const [releaseNotesContent, setReleaseNotesContent] = React.useState('')
   const [hasUnseenReleaseNotes, setHasUnseenReleaseNotes] = React.useState(false)
-  const [rendererOverlayReasons, setRendererOverlayReasons] = React.useState<BrowserNativeViewPauseReason[]>([])
-  const updateBrowserNativeViewPauseReason = useSetAtom(updateBrowserNativeViewPauseReasonAtom)
-  const heldNativeViewPauseReasonsRef = React.useRef(new Set<BrowserNativeViewPauseReason>())
-  const setBrowserNotificationBottom = useSetAtom(browserNotificationBottomAtom)
-
-  // Native WebContentsViews always render above React DOM regardless of z-index.
-  // Observe renderer-owned overlays globally so every dropdown, context menu,
-  // popover and dialog can appear above the embedded browser surface.
-  useEffect(() => {
-    let frame = 0
-    const update = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        setRendererOverlayReasons(detectNativeViewPauseReasons())
-      })
-    }
-    const observer = new MutationObserver(update)
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['data-state', 'role'],
-    })
-    update()
-    return () => {
-      cancelAnimationFrame(frame)
-      observer.disconnect()
-    }
-  }, [])
-
-  useEffect(() => {
-    const next = new Set(rendererOverlayReasons)
-    if (showWhatsNew) next.add('whats-new')
-    const held = heldNativeViewPauseReasonsRef.current
-    for (const reason of held) {
-      if (!next.has(reason)) updateBrowserNativeViewPauseReason({ reason, active: false })
-    }
-    for (const reason of next) {
-      if (!held.has(reason)) updateBrowserNativeViewPauseReason({ reason, active: true })
-    }
-    heldNativeViewPauseReasonsRef.current = next
-  }, [rendererOverlayReasons, showWhatsNew, updateBrowserNativeViewPauseReason])
-
-  useEffect(() => () => {
-    for (const reason of heldNativeViewPauseReasonsRef.current) {
-      updateBrowserNativeViewPauseReason({ reason, active: false })
-    }
-    heldNativeViewPauseReasonsRef.current.clear()
-  }, [updateBrowserNativeViewPauseReason])
-
-  // WebContentsView is composited above the renderer, so a toast cannot win via
-  // CSS z-index alone. Reserve only the vertical strip occupied by notifications
-  // instead of hiding the complete browser surface.
-  useEffect(() => {
-    let frame = 0
-    const update = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const bottom = Array.from(document.querySelectorAll<HTMLElement>('[data-sonner-toast]'))
-          .reduce((maximum, toastElement) => Math.max(maximum, toastElement.getBoundingClientRect().bottom), 0)
-        setBrowserNotificationBottom(Math.ceil(bottom))
-      })
-    }
-    const observer = new MutationObserver(update)
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['data-mounted', 'data-removed', 'data-visible'],
-    })
-    update()
-    return () => {
-      cancelAnimationFrame(frame)
-      observer.disconnect()
-      setBrowserNotificationBottom(0)
-    }
-  }, [setBrowserNotificationBottom])
+  useNativeViewSuspension(showWhatsNew)
 
   // Check for unseen release notes on mount
   useEffect(() => {
-    window.electronAPI.getLatestReleaseVersion().then((latestVersion) => {
-      if (!latestVersion) return
+    let cancelled = false
+    void (async () => {
+      const latestVersion = await window.electronAPI.getLatestReleaseVersion()
+      if (!latestVersion || cancelled) return
       const lastSeen = storage.get(storage.KEYS.whatsNewLastSeenVersion, '')
-      setHasUnseenReleaseNotes(lastSeen !== latestVersion)
-    })
+      const presentation = getReleaseNotesPresentation(latestVersion, lastSeen)
+      setHasUnseenReleaseNotes(presentation.unseen)
+      if (!presentation.autoOpen) return
+
+      const content = await window.electronAPI.getReleaseNotes()
+      if (cancelled) return
+      setReleaseNotesContent(content)
+      setShowWhatsNew(true)
+      setHasUnseenReleaseNotes(false)
+      storage.set(storage.KEYS.whatsNewLastSeenVersion, latestVersion)
+    })().catch((error) => console.warn('[release-notes] Failed to prepare latest dynamics:', error))
+    return () => { cancelled = true }
   }, [])
 
   const [isResizing, setIsResizing] = React.useState<ResizeTarget | null>(null)
@@ -740,6 +679,7 @@ function AppShellContent({
   // UNIFIED NAVIGATION STATE - single source of truth from NavigationContext
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
+  const [unifiedExploreActive, setUnifiedExploreActive] = React.useState(() => isBrowserNavigation(navState))
 
   const store = useStore()
   const panelStack = useAtomValue(panelStackAtom)
@@ -774,6 +714,15 @@ function AppShellContent({
   }, [navState])
 
   const sessionFilter = sessionsContext?.filter ?? null
+  // Explore is a single navigator surface for live browser tabs and regular
+  // conversations. Browser and session lifecycles remain independent; only
+  // their navigation list is composed together.
+  const isUnifiedExploreNavigation = isBrowserNavigation(navState)
+    || (unifiedExploreActive && isSessionsNavigation(navState) && sessionFilter?.kind === 'allSessions')
+
+  React.useEffect(() => {
+    if (isBrowserNavigation(navState)) setUnifiedExploreActive(true)
+  }, [navState])
 
   // Board view replaces the session-list navigator with the full-width Kanban panel,
   // so the navigator (and its resize handle) collapse to zero width while it's active.
@@ -2252,24 +2201,29 @@ function AppShellContent({
   }, [collapsedItems, activeWorkspaceId])
 
   const handleAllSessionsClick = useCallback(() => {
+    setUnifiedExploreActive(false)
     navigate(routes.view.allSessions())
   }, [])
 
   const handleArchivedClick = useCallback(() => {
+    setUnifiedExploreActive(false)
     navigate(routes.view.archived())
   }, [])
 
   // Handler for individual todo state views
   const handleSessionStatusClick = useCallback((stateId: SessionStatusId) => {
+    setUnifiedExploreActive(false)
     navigate(routes.view.state(stateId))
   }, [])
 
   // Handler for label filter views (hierarchical — includes descendant labels)
   const handleLabelClick = useCallback((labelId: string) => {
+    setUnifiedExploreActive(false)
     navigate(routes.view.label(labelId))
   }, [])
 
   const handleViewClick = useCallback((viewId: string) => {
+    setUnifiedExploreActive(false)
     navigate(routes.view.view(viewId))
   }, [])
 
@@ -2349,6 +2303,7 @@ function AppShellContent({
   }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, createRuntimeBrowserTab])
 
   const handleBrowserClick = useCallback(() => {
+    setUnifiedExploreActive(true)
     const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
       ? lastActiveBrowserTabId
       : browserTabs[0]?.id
@@ -2360,6 +2315,28 @@ function AppShellContent({
       if (id) navigate(routes.view.browser(id))
     })
   }, [browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId])
+
+  // A bare browser route is the app's default entry. Resolve it only after
+  // workspace tab restoration finishes so cold start cannot create a duplicate.
+  React.useEffect(() => {
+    // NavigationContext has not restored the URL yet while the stack is empty.
+    // Waiting here preserves explicit deep links and restored session routes.
+    if (panelStack.length === 0) return
+    if (!isBrowserNavigation(navState) || navState.details) return
+    if (!activeWorkspaceId || browserHydratedWorkspaceId !== activeWorkspaceId) return
+
+    const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
+      ? lastActiveBrowserTabId
+      : browserTabs[0]?.id
+    if (existingId) {
+      navigate(routes.view.browser(existingId))
+      return
+    }
+
+    void createRuntimeBrowserTab().then((id) => {
+      if (id) navigate(routes.view.browser(id))
+    })
+  }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId, navState, panelStack.length])
 
   const handleBrowserTabSelect = useCallback((tabId: string) => {
     setLastActiveBrowserTabId(tabId)
@@ -2725,14 +2702,17 @@ function AppShellContent({
   const unifiedSidebarItems = React.useMemo((): SidebarItem[] => {
     const result: SidebarItem[] = []
 
-    // 1. Sessions section: All Sessions (expandable) with status items and Archived as children
+    // 1. Explore is the primary app entry.
+    result.push({ id: 'nav:browser', type: 'nav', action: handleBrowserClick })
+
+    // 2. Sessions section: All Sessions (expandable) with status items and Archived as children
     result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
     for (const state of effectiveSessionStatuses) {
       result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleSessionStatusClick(state.id) })
     }
     result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
 
-    // 2. Labels section header + regular label tree for keyboard nav
+    // 3. Labels section header + regular label tree for keyboard nav
     result.push({ id: 'nav:labels', type: 'nav', action: () => handleLabelClick('__all__') })
     // Flatten regular label tree for keyboard navigation (depth-first)
     const flattenTree = (nodes: LabelTreeNode[]) => {
@@ -2745,8 +2725,7 @@ function AppShellContent({
     }
     flattenTree(labelTree)
 
-    // 3. Browser, Sources, Skills, Settings
-    result.push({ id: 'nav:browser', type: 'nav', action: handleBrowserClick })
+    // 4. Sources, Skills, Settings
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:plugins', type: 'nav', action: handlePluginsClick })
@@ -3064,6 +3043,16 @@ function AppShellContent({
                   getItemProps={getSidebarItemProps}
                   focusedItemId={focusedSidebarItemId}
                   links={[
+                    // --- Primary Entry ---
+                    {
+                      id: "nav:browser",
+                      title: t("sidebar.browser", { defaultValue: "Explore" }),
+                      label: String(browserTabs.length),
+                      icon: Compass,
+                      variant: isUnifiedExploreNavigation ? "default" : "ghost",
+                      onClick: handleBrowserClick,
+                    },
+                    { id: "separator:explore-sessions", type: "separator" },
                     // --- Sessions Section ---
                     // All Sessions: expandable with status children (sortable) + Flagged & Archived as trailing items
                     {
@@ -3071,7 +3060,7 @@ function AppShellContent({
                       title: t("sidebar.allSessions"),
                       label: String(workspaceSessionMetas.length),
                       icon: Inbox,
-                      variant: sessionFilter?.kind === 'allSessions' ? "default" : "ghost",
+                      variant: sessionFilter?.kind === 'allSessions' && !isUnifiedExploreNavigation ? "default" : "ghost",
                       onClick: handleAllSessionsClick,
                       expandable: true,
                       expanded: isExpanded('nav:allSessions'),
@@ -3148,14 +3137,6 @@ function AppShellContent({
                     // --- Separator ---
                     { id: "separator:chats-sources", type: "separator" },
                     // --- Sources & Skills Section ---
-                    {
-                      id: "nav:browser",
-                      title: t("sidebar.browser", { defaultValue: "Browser" }),
-                      label: String(browserTabs.length),
-                      icon: Globe,
-                      variant: isBrowserNavigation(navState) ? "default" : "ghost",
-                      onClick: handleBrowserClick,
-                    },
                     {
                       id: "nav:sources",
                       title: t("sidebar.sources"),
@@ -3340,9 +3321,9 @@ function AppShellContent({
               style={{ width: isAutoCompact ? '100%' : sessionListWidth }}
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
-            <PanelHeader
+              <PanelHeader
               title={isSidebarVisible
-                ? (isBrowserNavigation(navState) ? t('sidebar.browser', { defaultValue: 'Browser' }) : listTitle)
+                ? (isUnifiedExploreNavigation ? t('sidebar.browser', { defaultValue: 'Explore' }) : listTitle)
                 : undefined}
               compensateForStoplight={!isSidebarVisible}
               badge={automationFilter?.automationType === 'scheduled' ? (
@@ -3361,7 +3342,7 @@ function AppShellContent({
                 <>
                   {/* List ⇄ Board view switch (sessions mode, desktop widths only).
                       In board view the navigator is collapsed, so the board hosts its own copy. */}
-                  {!isAutoCompact && isSessionsNavigation(navState) && (
+                  {!isAutoCompact && isSessionsNavigation(navState) && !isUnifiedExploreNavigation && (
                     <BoardListToggle
                       value="list"
                       onChange={view => {
@@ -3382,7 +3363,7 @@ function AppShellContent({
                       compact={sessionListWidth < 284}
                     />
                   )}
-                  {isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
+                  {isUnifiedExploreNavigation && browserNavigatorKind === 'tabs' && (
                     <HeaderIconButton
                       icon={<Plus className="h-4 w-4" />}
                       tooltip={t('browser.newTab', { defaultValue: 'New Tab' })}
@@ -4177,11 +4158,17 @@ function AppShellContent({
             {isPluginsNavigation(navState) && pluginListKind === 'extensions' && (
               <BrowserExtensionsListPanel />
             )}
-            {isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
+            {isUnifiedExploreNavigation && browserNavigatorKind === 'tabs' && (
               <BrowserTabsListPanel
                 tabs={browserTabs}
-                selectedTabId={navState.details?.tabId ?? null}
+                sessions={activeSessionMetas}
+                selectedTabId={isBrowserNavigation(navState) ? (navState.details?.tabId ?? null) : null}
+                selectedSessionId={isSessionsNavigation(navState) ? (navState.details?.sessionId ?? null) : null}
                 onTabClick={handleBrowserTabSelect}
+                onSessionClick={(sessionId) => {
+                  setUnifiedExploreActive(true)
+                  navigate(routes.view.allSessions(sessionId))
+                }}
                 onTabClose={handleCloseBrowserTab}
                 onTabGoBack={(tabId) => { void window.electronAPI.browserPane.goBack(tabId) }}
                 onTabGoForward={(tabId) => { void window.electronAPI.browserPane.goForward(tabId) }}
@@ -4231,7 +4218,7 @@ function AppShellContent({
                 onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
               />
             )}
-            {isSessionsNavigation(navState) && (
+            {isSessionsNavigation(navState) && !isUnifiedExploreNavigation && (
               /* Sessions List */
               <>
                 {/* SessionList: Scrollable list of session cards */}

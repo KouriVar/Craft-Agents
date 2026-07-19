@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAtomValue } from 'jotai'
 import { KeyRound, Pin, Puzzle, RotateCw, ShieldCheck, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { BrowserExtensionEntry } from '../../../shared/types'
 import { BrowserToolbar } from './BrowserToolbar'
 import { Button } from '@/components/ui/button'
-import { BROWSER_NEW_TAB_URL, browserNativeViewsSuspendedAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
+import { browserNativeViewsSuspendedAtom, browserNotificationBottomAtom, browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
 import { cn } from '@/lib/utils'
+import { shouldShowEmbeddedBrowserSurface } from '@/lib/browser-workspace-surface'
 import { PANEL_GAP } from '@/components/app-shell/panel-constants'
-import { resolveBrowserAddress } from './utils'
 
 interface BrowserWorkspacePageProps {
   activeTabId?: string | null
@@ -18,54 +18,6 @@ interface BrowserWorkspacePageProps {
 // below for rollback, but the workspace now keeps navigation controls with the
 // selected tab and uses an address field only on the new-tab page.
 const SHOW_LEGACY_EMBEDDED_TOOLBAR = false
-
-interface RendererNewTabProps {
-  tabId: string
-  onNavigate: (value: string) => Promise<void>
-}
-
-function RendererNewTab({ tabId, onNavigate }: RendererNewTabProps) {
-  const { t } = useTranslation()
-  const [value, setValue] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const input = value.trim()
-    if (!input || submitting) return
-    setSubmitting(true)
-    try {
-      await onNavigate(input)
-    } catch (error) {
-      console.warn(`[BrowserWorkspacePage] Failed to navigate new tab ${tabId}:`, error)
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <main className="absolute inset-0 z-local flex min-h-[360px] items-center justify-center rounded-[10px] bg-background px-8">
-      <form onSubmit={handleSubmit} className="w-full max-w-[720px]">
-        <label htmlFor={`browser-new-tab-address-${tabId}`} className="sr-only">
-          {t('browser.urlPlaceholder')}
-        </label>
-        <div className="flex h-14 items-center rounded-[14px] border border-border/70 bg-background px-5 shadow-minimal transition-[border-color,box-shadow] focus-within:border-foreground/20 focus-within:shadow-modal-small">
-          <input
-            id={`browser-new-tab-address-${tabId}`}
-            autoFocus
-            value={value}
-            disabled={submitting}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={t('browser.urlPlaceholder')}
-            autoCapitalize="none"
-            autoComplete="off"
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-70"
-          />
-        </div>
-      </form>
-    </main>
-  )
-}
 
 export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps) {
   const { t } = useTranslation()
@@ -80,8 +32,8 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     [activeTabId, tabs],
   )
   const activeId = activeTab?.id ?? null
-  const isNewTab = activeTab?.url === BROWSER_NEW_TAB_URL
   const isCrashed = activeTab?.crashed === true
+  const showsEmbeddedSurface = shouldShowEmbeddedBrowserSurface({ nativeViewsSuspended, isCrashed })
   const toolbarPinned = activeTab?.toolbarMode !== 'floating'
   const tabIdsKey = useMemo(() => tabs.map((tab) => tab.id).join('|'), [tabs])
   const tabIds = useMemo(() => tabIdsKey ? tabIdsKey.split('|') : [], [tabIdsKey])
@@ -141,16 +93,11 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     await api.setEmbeddedVisible(activeId, true)
   }, [activeId, notificationBottom])
 
-  const navigateNewTab = useCallback(async (value: string) => {
-    if (!activeId) return
-    await window.electronAPI.browserPane.navigate(activeId, resolveBrowserAddress(value))
-  }, [activeId])
-
   useEffect(() => {
     const api = window.electronAPI?.browserPane
     if (!api || !activeId) return
 
-    if (nativeViewsSuspended || isNewTab || isCrashed) {
+    if (!showsEmbeddedSurface) {
       for (const tabId of tabIds) {
         void api.setEmbeddedVisible(tabId, false).catch(() => {})
       }
@@ -169,11 +116,11 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
     return () => {
       void api.setEmbeddedVisible(activeId, false).catch(() => {})
     }
-  }, [activeId, isCrashed, isNewTab, nativeViewsSuspended, syncActiveSurface, tabIds])
+  }, [activeId, showsEmbeddedSurface, syncActiveSurface, tabIds])
 
   useEffect(() => {
     const surface = surfaceRef.current
-    if (!surface || !activeId || nativeViewsSuspended || isNewTab || isCrashed) return
+    if (!surface || !activeId || !showsEmbeddedSurface) return
 
     let frame = 0
     const scheduleSync = () => {
@@ -194,7 +141,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       observer.disconnect()
       window.removeEventListener('resize', scheduleSync)
     }
-  }, [activeId, isCrashed, isNewTab, nativeViewsSuspended, syncActiveSurface])
+  }, [activeId, showsEmbeddedSurface, syncActiveSurface])
 
   const navigateActive = useCallback((input: string) => {
     if (!activeId) return
@@ -328,9 +275,6 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       )}
       <div className="relative min-h-0 flex-1 bg-foreground-2">
         <div ref={surfaceRef} className="h-full min-h-0 w-full rounded-[10px] bg-background" />
-        {activeId && isNewTab && (
-          <RendererNewTab key={activeId} tabId={activeId} onNavigate={navigateNewTab} />
-        )}
         {activeId && isCrashed && (
           <main className="absolute inset-0 z-local flex items-center justify-center rounded-[10px] bg-background px-8">
             <div className="flex max-w-sm flex-col items-center gap-3 text-center">

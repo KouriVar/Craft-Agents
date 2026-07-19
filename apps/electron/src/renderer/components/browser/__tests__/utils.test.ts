@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { getHostname, resolveBrowserAddress } from '../utils'
+import { buildBrowserSearchUrl, getHostname, looksLikeBrowserAddress, resolveBrowserAddress } from '../utils'
 
 describe('getHostname', () => {
   it('returns stripped hostname for https URLs', () => {
@@ -40,5 +40,17 @@ describe('resolveBrowserAddress', () => {
     expect(resolveBrowserAddress('Craft Agents 浏览器')).toBe(
       'https://www.google.com/search?q=Craft%20Agents%20%E6%B5%8F%E8%A7%88%E5%99%A8',
     )
+  })
+})
+
+describe('browser input helpers', () => {
+  it('recognizes browser addresses without treating ordinary text as a URL', () => {
+    expect(looksLikeBrowserAddress('localhost:5173')).toBe(true)
+    expect(looksLikeBrowserAddress('example.com/docs')).toBe(true)
+    expect(looksLikeBrowserAddress('Electron updater')).toBe(false)
+  })
+
+  it('can explicitly search text that resembles a host', () => {
+    expect(buildBrowserSearchUrl('example.com')).toBe('https://www.google.com/search?q=example.com')
   })
 })

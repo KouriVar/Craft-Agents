@@ -107,11 +107,17 @@ export function isImageAttachment(attachment: Pick<FileAttachment, 'type' | 'mim
  * models even if an older subprocess has stale vision-capable registry state.
  */
 export function filterAttachmentsForModelInput(
-  attachments: FileAttachment[] | undefined,
+  attachments: FileAttachment[] | null | undefined,
   connection: LlmConnection | null,
   modelId: string,
 ): ModelAttachmentFilterResult {
-  if (!attachments?.length) return { attachments, omittedImages: [] }
+  // Positional RPC arguments are serialized as a JSON array, where an omitted
+  // `undefined` attachment argument arrives as `null`. Normalize it at the
+  // model-input boundary so text-only messages never pass a non-iterable value
+  // into BaseAgent's skill router.
+  if (!Array.isArray(attachments) || attachments.length === 0) {
+    return { attachments: undefined, omittedImages: [] }
+  }
   if (!connection || !isCompatProvider(connection.providerType)) return { attachments, omittedImages: [] }
   if (modelSupportsImages(connection, modelId)) return { attachments, omittedImages: [] }
 

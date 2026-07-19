@@ -353,6 +353,51 @@ describe('BrowserPaneManager', () => {
     expect(manager.listInstances()[0].boundSessionId).toBe('session-1')
   })
 
+  it('keeps an Ask AI result tab out of the agent browser reuse pool', () => {
+    const resultTabId = (manager as any).createInstance('ask-ai-result', { workspaceId: 'workspace-1' })
+    const resultTab = (manager as any).instances.get(resultTabId)
+    resultTab.askAiState = {
+      sessionId: 'ask-session', workspaceId: 'workspace-1', prompt: 'Research this', answer: '',
+      status: 'streaming', activity: 'Thinking…', error: null, title: null,
+    }
+
+    const agentTabId = manager.createForSession('agent-session', { workspaceId: 'workspace-1' })
+    expect(agentTabId).not.toBe(resultTabId)
+    expect((manager as any).instances.get(resultTabId).askAiState.sessionId).toBe('ask-session')
+  })
+
+  it('starts one mirrored session for a duplicate new-tab submission and forwards safe events', async () => {
+    const id = (manager as any).createInstance('ask-ai-ipc', { workspaceId: 'workspace-1' })
+    const instance = (manager as any).instances.get(id)
+    instance.pageView.webContents.getURL = mock(() => 'file:///tmp/browser-empty-state.html')
+    const start = mock(async () => 'session-1')
+    manager.setAskAiController({ start, cancel: mock(async () => {}) })
+    manager.registerAskAiIpc()
+
+    const registration = (
+      mockIpcMainHandle.mock.calls as unknown as Array<[string, (event: any, payload: any) => Promise<any>]>
+    ).find(([channel]) => channel === 'browser-new-tab:ask-ai-start')
+    expect(registration).toBeTruthy()
+    if (!registration) throw new Error('Expected Ask AI IPC registration')
+
+    const [, handler] = registration
+    const event = { sender: instance.pageView.webContents }
+    const first = await handler(event, { prompt: 'Explain CraftAgent', token: 'submit-1' })
+    const duplicate = await handler(event, { prompt: 'Explain CraftAgent', token: 'submit-1' })
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(first.sessionId).toBe('session-1')
+    expect(duplicate.sessionId).toBe('session-1')
+
+    manager.forwardAskAiSessionEvent({
+      type: 'tool_start', sessionId: 'session-1', toolName: 'browser_navigate', toolUseId: 'tool-1',
+      toolInput: { token: 'private-value' }, toolDisplayName: 'Searching',
+    })
+    const stateSend = instance.pageView.webContents.send.mock.calls.at(-1)
+    expect(stateSend[0]).toBe('browser-new-tab:ask-ai-state')
+    expect(stateSend[1].activity).toBe('Searching')
+    expect(JSON.stringify(stateSend[1])).not.toContain('private-value')
+  })
+
   it('shows toolbar menus above an embedded page by parenting them to the visible host', () => {
     const hostWindow = createMockWindow({ width: 1400, height: 900 })
     manager.setWindowManager({

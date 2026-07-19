@@ -75,6 +75,19 @@ describe('implicit skill router', () => {
     expect(result.prompt).toContain('glob_match="true"');
   });
 
+  it('treats a serialized null attachment field as an empty list', () => {
+    const result = buildImplicitSkillCatalog([
+      skill('research', { description: 'Research and answer questions.' }),
+    ], '会话测试', {
+      // Runtime payloads loaded from JSON can contain null even though the
+      // TypeScript-facing field is optional.
+      attachments: null as unknown as never[],
+    });
+
+    expect(result.includedSlugs).toEqual(['research']);
+    expect(result.matches[0]?.globMatched).toBe(false);
+  });
+
   it('ranks CJK descriptions using character bigrams', () => {
     const result = buildImplicitSkillCatalog([
       skill('research', { description: '执行资料调研、来源核验和研究摘要。' }),

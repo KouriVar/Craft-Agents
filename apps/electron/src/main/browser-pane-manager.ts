@@ -18,6 +18,8 @@ import {
   type BrowserPaneBounds,
   type BrowserEmptyStateLaunchPayload,
   type BrowserEmptyStateLaunchResult,
+  type BrowserAskAiSnapshot,
+  type BrowserAskAiStartPayload,
   type BrowserInstanceInfo,
   type BrowserBookmarkEntry,
   type BrowserBookmarkFolder,
@@ -40,6 +42,8 @@ import type {
 import { BrowserProfileStore } from './browser-profile-store'
 import { BrowserPasswordVault } from './browser-password-vault'
 import { BrowserTabLifecycle } from './browser-tab-lifecycle'
+import { createBrowserAskAiSnapshot, reduceBrowserAskAiSnapshot } from './browser-ask-ai-state'
+import type { SessionEvent } from '@craft-agent/shared/protocol'
 import extractZip from 'extract-zip'
 
 export type { BrowserInstanceInfo }
@@ -72,6 +76,19 @@ const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'file:',
 const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/
 const MAX_EXTENSION_PACKAGE_BYTES = 100 * 1024 * 1024
 const INSTALL_STORE_EXTENSION_CHANNEL = 'browser-extension:install-from-store-page'
+const ASK_AI_CHANNELS = {
+  START: 'browser-new-tab:ask-ai-start',
+  GET_STATE: 'browser-new-tab:ask-ai-get-state',
+  CANCEL: 'browser-new-tab:ask-ai-cancel',
+  OPEN_SESSION: 'browser-new-tab:ask-ai-open-session',
+  STATE: 'browser-new-tab:ask-ai-state',
+} as const
+const MAX_ASK_AI_PROMPT_LENGTH = 20_000
+
+interface BrowserAskAiController {
+  start(workspaceId: string, prompt: string): Promise<string>
+  cancel(sessionId: string): Promise<void>
+}
 
 function escapeBookmarkHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -195,6 +212,7 @@ interface BrowserInstance {
   canGoBack: boolean
   canGoForward: boolean
   boundSessionId: string | null
+  askAiState: BrowserAskAiSnapshot | null
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   /**
@@ -410,6 +428,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly activeDownloads = new Map<string, { item: DownloadItem; instanceId: string }>()
   private readonly passwordVault = new BrowserPasswordVault()
   private readonly pendingCredentialPrompts = new Set<string>()
+  private askAiController: BrowserAskAiController | null = null
 
   constructor() {
     for (const entry of this.profileStore.listPermissions()) {
@@ -567,6 +586,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       canGoBack: false,
       canGoForward: false,
       boundSessionId: ownerSessionId,
+      askAiState: null,
       ownerType,
       ownerSessionId,
       workspaceId,
@@ -763,6 +783,96 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
+  setAskAiController(controller: BrowserAskAiController): void {
+    this.askAiController = controller
+  }
+
+  forwardAskAiSessionEvent(event: SessionEvent): void {
+    for (const instance of this.instances.values()) {
+      const current = instance.askAiState
+      if (!current || current.sessionId !== event.sessionId) continue
+      const next = reduceBrowserAskAiSnapshot(current, event)
+      if (next === current) continue
+      instance.askAiState = next
+      if (!instance.pageView.webContents.isDestroyed()) {
+        instance.pageView.webContents.send(ASK_AI_CHANNELS.STATE, next)
+      }
+    }
+  }
+
+  private isTrustedAskAiSender(senderWebContentsId: number): BrowserInstance | null {
+    const instance = this.findInstanceByPageWebContentsId(senderWebContentsId)
+    if (!instance) return null
+    return this.isBrowserEmptyStateUrl(instance.pageView.webContents.getURL()) ? instance : null
+  }
+
+  private emitAskAiState(instance: BrowserInstance): void {
+    if (instance.askAiState && !instance.pageView.webContents.isDestroyed()) {
+      instance.pageView.webContents.send(ASK_AI_CHANNELS.STATE, instance.askAiState)
+    }
+  }
+
+  registerAskAiIpc(): void {
+    ipcMain.handle(ASK_AI_CHANNELS.START, async (event, payload: BrowserAskAiStartPayload) => {
+      const instance = this.isTrustedAskAiSender(event.sender.id)
+      if (!instance) throw new Error('Ask AI is only available from the CraftAgent new-tab page.')
+      if (!instance.workspaceId) throw new Error('Open this browser from a workspace before using Ask AI.')
+      if (!this.askAiController) throw new Error('Ask AI is unavailable in remote-client mode.')
+
+      const prompt = payload?.prompt?.trim()
+      if (!prompt) throw new Error('Enter a question first.')
+      if (prompt.length > MAX_ASK_AI_PROMPT_LENGTH) throw new Error('The question is too long.')
+
+      const token = payload.token ?? prompt
+      if (instance.lastLaunchToken === token && instance.askAiState) return instance.askAiState
+      instance.lastLaunchToken = token
+      instance.askAiState = createBrowserAskAiSnapshot(instance.workspaceId, prompt)
+      this.emitAskAiState(instance)
+
+      try {
+        const sessionId = await this.askAiController.start(instance.workspaceId, prompt)
+        if (!instance.askAiState || instance.askAiState.prompt !== prompt) return instance.askAiState
+        instance.askAiState = {
+          ...instance.askAiState,
+          sessionId,
+          status: 'streaming',
+          activity: 'Thinking…',
+        }
+        this.emitAskAiState(instance)
+        return instance.askAiState
+      } catch (error) {
+        instance.askAiState = {
+          ...instance.askAiState,
+          status: 'error',
+          activity: null,
+          error: error instanceof Error ? error.message : String(error),
+        }
+        this.emitAskAiState(instance)
+        return instance.askAiState
+      }
+    })
+
+    ipcMain.handle(ASK_AI_CHANNELS.GET_STATE, (event) => {
+      return this.isTrustedAskAiSender(event.sender.id)?.askAiState ?? null
+    })
+
+    ipcMain.handle(ASK_AI_CHANNELS.CANCEL, async (event) => {
+      const instance = this.isTrustedAskAiSender(event.sender.id)
+      const sessionId = instance?.askAiState?.sessionId
+      if (sessionId && this.askAiController) await this.askAiController.cancel(sessionId)
+    })
+
+    ipcMain.handle(ASK_AI_CHANNELS.OPEN_SESSION, async (event) => {
+      const instance = this.isTrustedAskAiSender(event.sender.id)
+      const sessionId = instance?.askAiState?.sessionId
+      const workspaceId = instance?.askAiState?.workspaceId
+      if (!sessionId || !workspaceId) throw new Error('The conversation is not ready yet.')
+      await this.handleDeepLinkUrl(
+        `${CRAFT_DEEPLINK_SCHEME_PREFIX}workspace/${encodeURIComponent(workspaceId)}/allSessions/session/${encodeURIComponent(sessionId)}`,
+      )
+    })
+  }
+
   private findInstanceByPageWebContentsId(senderWebContentsId: number): BrowserInstance | undefined {
     for (const instance of this.instances.values()) {
       if (instance.pageView.webContents.id === senderWebContentsId) {
@@ -787,13 +897,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return managedWindows[0]?.workspaceId ?? null
   }
 
-  private buildDeepLinkFromRoute(route: string): string {
+  private buildDeepLinkFromRoute(route: string, workspaceId = this.resolveLaunchWorkspaceId()): string {
     const queryStart = route.indexOf('?')
     const routePath = queryStart >= 0 ? route.slice(0, queryStart) : route
     const routeQuery = queryStart >= 0 ? route.slice(queryStart + 1) : ''
     let normalizedPath = routePath.replace(/^\/+/, '')
 
-    const workspaceId = this.resolveLaunchWorkspaceId()
     if (workspaceId && !normalizedPath.startsWith('workspace/')) {
       normalizedPath = `workspace/${encodeURIComponent(workspaceId)}/${normalizedPath}`
     }
@@ -814,7 +923,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     instance.lastLaunchToken = dedupeToken
-    const deepLink = this.buildDeepLinkFromRoute(route)
+    const deepLink = this.buildDeepLinkFromRoute(route, instance.workspaceId ?? this.resolveLaunchWorkspaceId())
     mainLog.info(`[browser-pane] handling empty-state launch id=${instance.id} source=${source} route=${route} deepLink=${deepLink}`)
 
     await this.handleDeepLinkUrl(deepLink)
@@ -2642,6 +2751,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const candidates = Array.from(this.instances.values()).filter(
       (i) =>
         i.boundSessionId === null &&
+        i.askAiState === null &&
         i.ownerType === 'manual' &&
         (i.workspaceId === null || i.workspaceId === workspaceId),
     )
@@ -4848,6 +4958,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     pageWc.on('did-navigate', (_event, urlFromEvent) => {
       const url = typeof pageWc.getURL === 'function' ? pageWc.getURL() : (urlFromEvent || instance.currentUrl)
+      if (!this.isBrowserEmptyStateUrl(url)) {
+        // Navigating the result tab away detaches only the lightweight mirror;
+        // the canonical session continues in the main conversation window.
+        instance.askAiState = null
+      }
       const previousUrl = instance.currentUrl
       if (instance.inPageThemeTimer) {
         clearTimeout(instance.inPageThemeTimer)

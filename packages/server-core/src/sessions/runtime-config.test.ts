@@ -60,6 +60,12 @@ describe('buildBackendRuntimeSignature', () => {
 })
 
 describe('filterAttachmentsForModelInput', () => {
+  it('normalizes a serialized null attachment argument for text-only messages', () => {
+    const result = filterAttachmentsForModelInput(null, baseCompat, 'gemma')
+
+    expect(result).toEqual({ attachments: undefined, omittedImages: [] })
+  })
+
   it('omits images for pi_compat text-only models while preserving other attachments', () => {
     const result = filterAttachmentsForModelInput(
       [imageAttachment, textAttachment],

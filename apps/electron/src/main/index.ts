@@ -730,6 +730,7 @@ app.whenReady().then(async () => {
     browserPaneManager.setWindowManager(windowManager)
     browserPaneManager.registerToolbarIpc()
     browserPaneManager.registerCapabilityIpc()
+    browserPaneManager.registerAskAiIpc()
 
     // Build real PlatformServices from Electron APIs
     const platform: PlatformServices = createElectronPlatform({
@@ -1036,7 +1037,26 @@ app.whenReady().then(async () => {
         // Always install — this lets workspaces enable messaging at runtime
         // without a process restart.
         const baseSink = instance.wsServer.push.bind(instance.wsServer)
-        instance.sessionManager.setEventSink(messagingHandle.wrapSink(baseSink))
+        const messagingSink = messagingHandle.wrapSink(baseSink)
+        instance.sessionManager.setEventSink((channel, target, ...args) => {
+          messagingSink(channel, target, ...args)
+          if (channel === RPC_CHANNELS.sessions.EVENT) {
+            browserPaneManager?.forwardAskAiSessionEvent(args[0] as import('@craft-agent/shared/protocol').SessionEvent)
+          }
+        })
+        browserPaneManager?.setAskAiController({
+          start: async (workspaceId, prompt) => {
+            const session = await instance.sessionManager.createSession(workspaceId)
+            // Match the renderer send path: an attachment-free prompt still carries
+            // concrete arrays. This also avoids optional values becoming `null`
+            // when the request crosses a serialized agent boundary.
+            void instance.sessionManager.sendMessage(session.id, prompt, [], []).catch((error) => {
+              mainLog.error(`[browser-ask-ai] session failed id=${session.id}:`, error)
+            })
+            return session.id
+          },
+          cancel: (sessionId) => instance.sessionManager.cancelProcessing(sessionId),
+        })
         if (messagingHandle.registry.size > 0) {
           mainLog.info(`[messaging] Fan-out sink active for ${messagingHandle.registry.size} workspace(s)`)
         }

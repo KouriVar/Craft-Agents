@@ -15,6 +15,11 @@ import { debug } from '../utils/debug.ts';
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
 const RELEASE_NOTES_DIR = join(CONFIG_DIR, 'release-notes');
+const VERSIONED_RELEASE_NOTE = /^\d+\.\d+\.\d+\.md$/;
+
+export function isVersionedReleaseNoteFilename(filename: string): boolean {
+  return VERSIONED_RELEASE_NOTE.test(filename);
+}
 
 let releaseNotesInitialized = false;
 
@@ -41,7 +46,7 @@ function loadBundledReleaseNotes(): Record<string, string> {
 
   let files: string[];
   try {
-    files = existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.md')) : [];
+    files = existsSync(dir) ? readdirSync(dir).filter(isVersionedReleaseNoteFilename) : [];
   } catch {
     console.warn(`[release-notes] Could not read release notes dir: ${dir}`);
     return notes;

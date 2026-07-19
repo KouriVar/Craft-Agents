@@ -25,14 +25,24 @@ export function getHostname(url: string): string {
   }
 }
 
-/** Resolve new-tab input consistently across the renderer-owned and legacy pages. */
-export function resolveBrowserAddress(value: string): string {
+export function looksLikeBrowserAddress(value: string): boolean {
   const trimmed = value.trim()
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
   const looksLikeHost = /^(localhost|\d{1,3}(?:\.\d{1,3}){3}|[\w-]+(?:\.[\w-]+)+)(?::\d+)?(?:\/|$)/i.test(trimmed)
 
-  if (hasScheme || looksLikeHost) return trimmed
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
+  return hasScheme || looksLikeHost
+}
+
+export function buildBrowserSearchUrl(value: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(value.trim())}`
+}
+
+/** Resolve new-tab input consistently across the renderer-owned and legacy pages. */
+export function resolveBrowserAddress(value: string): string {
+  const trimmed = value.trim()
+
+  if (looksLikeBrowserAddress(trimmed)) return trimmed
+  return buildBrowserSearchUrl(trimmed)
 }
 
 /**

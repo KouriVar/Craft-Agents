@@ -306,6 +306,7 @@ export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps):
 
     const messagingConfig = workspaceId ? deps.messagingRegistry?.getConfig(workspaceId) : null
     const messagingRuntime = Object.values(messagingConfig?.runtime ?? {}).filter(Boolean)
+    const { getAutoUpdateDiagnostic } = await import('../auto-update')
     const bundle = createDiagnosticBundle({
       application: {
         version: app.getVersion(),
@@ -324,6 +325,7 @@ export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps):
       resources: collectResourceDiagnostic(app),
       proxy,
       browserInstances,
+      update: getAutoUpdateDiagnostic(),
       plugins: { installedCount, mcpCheckedAt, mcpServers },
       services: {
         sessionManagerReady: Boolean(deps.sessionManager),

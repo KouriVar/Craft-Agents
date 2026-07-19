@@ -6,13 +6,14 @@ export const UPDATE_RELEASE_URL = 'https://github.com/KouriVar/Craft-Agents/rele
 
 export type UpdatePlatform = 'darwin' | 'win32' | 'linux'
 export type UpdateInstallMode = 'automatic' | 'manual'
+export type UpdateManifestName = 'latest.yml' | 'latest-mac.yml' | 'latest-linux.yml'
 
 export interface UpdatePlatformPolicy {
   installMode: UpdateInstallMode
   reason?: 'unsigned-macos' | 'missing-appimage' | 'invalid-appimage'
 }
 
-export function getUpdateManifestName(platform: UpdatePlatform): string {
+export function getUpdateManifestName(platform: UpdatePlatform): UpdateManifestName {
   if (platform === 'darwin') return 'latest-mac.yml'
   if (platform === 'linux') return 'latest-linux.yml'
   return 'latest.yml'

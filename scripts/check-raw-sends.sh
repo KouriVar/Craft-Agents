@@ -20,6 +20,7 @@ while IFS= read -r match; do
     *"apps/electron/src/main/window-manager.ts"*"window.webContents.send(channel,"*) ;;
     *"apps/electron/src/main/terminal-pane-manager.ts"*"webContents.send('terminal:"*) ;;
     *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send(TOOLBAR_CHANNELS."*) ;;
+    *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send(ASK_AI_CHANNELS.STATE"*) ;;
     *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send('browser-credentials:fill'"*) ;;
     *) violations+=("$match") ;;
   esac
@@ -31,4 +32,4 @@ if (( ${#violations[@]} > 0 )); then
   exit 1
 fi
 
-echo "Raw IPC check OK (only reviewed bootstrap, terminal, browser-toolbar, credential, and pre-handshake fallback channels remain)"
+echo "Raw IPC check OK (only reviewed bootstrap, terminal, browser-toolbar/new-tab, credential, and pre-handshake fallback channels remain)"

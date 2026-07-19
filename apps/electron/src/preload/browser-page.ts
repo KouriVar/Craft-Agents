@@ -1,4 +1,5 @@
-import { ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
+import type { BrowserAskAiSnapshot, BrowserAskAiStartPayload, BrowserNewTabApi } from '../shared/types'
 
 const CAPTURE_CHANNEL = 'browser-credentials:captured'
 const FILL_CHANNEL = 'browser-credentials:fill'
@@ -6,6 +7,43 @@ const INSTALL_STORE_EXTENSION_CHANNEL = 'browser-extension:install-from-store-pa
 const STORE_INSTALL_BUTTON_ID = 'craft-agents-store-install-button'
 const STORE_INSTALL_Z_INDEX = 'var(--z-floating-menu, 400)'
 const REPLACED_STORE_BUTTON_ATTRIBUTE = 'data-craft-agents-replaced-store-button'
+const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
+const ASK_AI_CHANNELS = {
+  START: 'browser-new-tab:ask-ai-start',
+  GET_STATE: 'browser-new-tab:ask-ai-get-state',
+  CANCEL: 'browser-new-tab:ask-ai-cancel',
+  OPEN_SESSION: 'browser-new-tab:ask-ai-open-session',
+  STATE: 'browser-new-tab:ask-ai-state',
+} as const
+
+function isTrustedNewTabPage(): boolean {
+  try {
+    const current = new URL(location.href)
+    if (current.protocol === 'file:') return current.pathname.endsWith(`/${BROWSER_EMPTY_STATE_PAGE}`)
+
+    const configuredDevServer = process.env.VITE_DEV_SERVER_URL
+    if (!configuredDevServer) return false
+    const devServer = new URL(configuredDevServer)
+    return current.origin === devServer.origin && current.pathname.endsWith(`/${BROWSER_EMPTY_STATE_PAGE}`)
+  } catch {
+    return false
+  }
+}
+
+if (isTrustedNewTabPage()) {
+  const api: BrowserNewTabApi = {
+    startAskAi: (payload: BrowserAskAiStartPayload) => ipcRenderer.invoke(ASK_AI_CHANNELS.START, payload),
+    getAskAiState: () => ipcRenderer.invoke(ASK_AI_CHANNELS.GET_STATE),
+    cancelAskAi: () => ipcRenderer.invoke(ASK_AI_CHANNELS.CANCEL),
+    openAskAiSession: () => ipcRenderer.invoke(ASK_AI_CHANNELS.OPEN_SESSION),
+    onAskAiState: (callback: (snapshot: BrowserAskAiSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: BrowserAskAiSnapshot) => callback(snapshot)
+      ipcRenderer.on(ASK_AI_CHANNELS.STATE, listener)
+      return () => ipcRenderer.removeListener(ASK_AI_CHANNELS.STATE, listener)
+    },
+  }
+  contextBridge.exposeInMainWorld('browserNewTab', api)
+}
 
 const CHROME_INSTALL_LABELS = [
   'add to chrome',
@@ -158,12 +196,18 @@ const scheduleStoreButton = () => {
   storeButtonFrame = requestAnimationFrame(installStoreButton)
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', scheduleStoreButton, { once: true })
-} else {
+const startStoreButtonObserver = () => {
   scheduleStoreButton()
+  const root = document.documentElement
+  if (!root) return
+  new MutationObserver(scheduleStoreButton).observe(root, { childList: true, subtree: true })
 }
-new MutationObserver(scheduleStoreButton).observe(document.documentElement, { childList: true, subtree: true })
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startStoreButtonObserver, { once: true })
+} else {
+  startStoreButtonObserver()
+}
 window.addEventListener('popstate', scheduleStoreButton)
 window.addEventListener('hashchange', scheduleStoreButton)
 

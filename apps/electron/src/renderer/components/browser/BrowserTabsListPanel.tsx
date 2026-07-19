@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Ellipsis, Globe, KeyRound, Loader2, Pin, Puzzle, RotateCw, ShieldCheck, Star, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Copy, Ellipsis, Globe, KeyRound, Loader2, MessageCircle, Pin, Puzzle, RotateCw, ShieldCheck, Star, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { EntityList } from '@/components/ui/entity-list'
 import { cn } from '@/lib/utils'
 import type { BrowserWorkspaceTab } from '@/atoms/browser-workspace'
+import type { SessionMeta } from '@/atoms/sessions'
+import { getSessionTitle, hasUnreadMeta } from '@/utils/session'
 import type { BrowserExtensionEntry } from '../../../shared/types'
 
 interface BrowserTabsListPanelProps {
   tabs: BrowserWorkspaceTab[]
+  sessions?: SessionMeta[]
   selectedTabId?: string | null
+  selectedSessionId?: string | null
   onTabClick: (tabId: string) => void
+  onSessionClick?: (sessionId: string) => void
   onTabClose: (tabId: string) => void
   onTabGoBack: (tabId: string) => void
   onTabGoForward: (tabId: string) => void
@@ -19,6 +24,10 @@ interface BrowserTabsListPanelProps {
   onToggleBookmark: (tab: BrowserWorkspaceTab) => void
   onShowTabMenu: (kind: 'permissions' | 'passwords', tab: BrowserWorkspaceTab) => void
 }
+
+type ExploreListItem =
+  | { kind: 'tab'; tab: BrowserWorkspaceTab }
+  | { kind: 'session'; session: SessionMeta }
 
 function getTabSubtitle(tab: BrowserWorkspaceTab, newTabLabel: string): string {
   if (!tab.url || tab.url === 'about:blank') return newTabLabel
@@ -31,8 +40,11 @@ function getTabSubtitle(tab: BrowserWorkspaceTab, newTabLabel: string): string {
 
 export function BrowserTabsListPanel({
   tabs,
+  sessions = [],
   selectedTabId,
+  selectedSessionId,
   onTabClick,
+  onSessionClick,
   onTabClose,
   onTabGoBack,
   onTabGoForward,
@@ -68,6 +80,22 @@ export function BrowserTabsListPanel({
     () => [...extensions].sort((left, right) => left.order - right.order || left.name.localeCompare(right.name)),
     [extensions],
   )
+  const groups = useMemo(() => [
+    {
+      key: 'tabs',
+      label: t('browser.tabs', { defaultValue: 'Tabs' }),
+      items: tabs.map((tab): ExploreListItem => ({ kind: 'tab', tab })),
+    },
+    {
+      key: 'chats',
+      label: t('sidebar.allSessions', { defaultValue: 'Chats' }),
+      items: sessions
+        .slice()
+        .sort((left, right) => (right.lastMessageAt ?? 0) - (left.lastMessageAt ?? 0))
+        .slice(0, 50)
+        .map((session): ExploreListItem => ({ kind: 'session', session })),
+    },
+  ].filter((group) => group.items.length > 0), [sessions, t, tabs])
 
   const toggleExtensionPin = useCallback(async (extension: BrowserExtensionEntry) => {
     await window.electronAPI.browserPane.setExtensionPreference(extension.id, {
@@ -79,11 +107,49 @@ export function BrowserTabsListPanel({
   }, [refreshExtensions])
 
   return (
-    <EntityList
-      items={tabs}
-      getKey={(tab) => tab.id}
+    <EntityList<ExploreListItem>
+      groups={groups}
+      getKey={(item) => item.kind === 'tab' ? `tab:${item.tab.id}` : `session:${item.session.id}`}
       containerProps={{ 'data-list-role': 'browser-tabs' }}
-      renderItem={(tab, _index, isFirst) => {
+      renderItem={(item, _index, isFirst) => {
+        if (item.kind === 'session') {
+          const session = item.session
+          const isSelected = session.id === selectedSessionId
+          return (
+            <div
+              className={cn(
+                'group relative mx-2 rounded-[8px] transition-colors',
+                isSelected ? 'bg-foreground/[0.06]' : 'hover:bg-foreground/[0.03]',
+              )}
+            >
+              {!isFirst && <div className="absolute left-10 right-3 top-0 border-t border-border/40" />}
+              <button
+                type="button"
+                onClick={() => onSessionClick?.(session.id)}
+                className="flex min-h-[48px] w-full items-center gap-2.5 px-2.5 text-left"
+                aria-current={isSelected ? 'page' : undefined}
+              >
+                <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  {(session.isProcessing || hasUnreadMeta(session)) && (
+                    <span className={cn(
+                      'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-background',
+                      session.isProcessing ? 'animate-pulse bg-accent' : 'bg-accent',
+                    )} />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-foreground">{getSessionTitle(session)}</span>
+                  {session.preview && (
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{session.preview}</span>
+                  )}
+                </span>
+              </button>
+            </div>
+          )
+        }
+
+        const tab = item.tab
         const isSelected = tab.id === selectedTabId
         const actionsOpen = isSelected && openActionsTabId === tab.id
         const visibleExtensions = extensionsExpanded
