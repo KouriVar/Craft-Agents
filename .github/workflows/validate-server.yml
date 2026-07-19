@@ -34,7 +34,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run --validate-server (includes automation conditions pass/fail)
+      - name: Run cross-platform server smoke tests
+        if: github.event_name != 'workflow_dispatch'
+        run: bun test packages/server/src/__tests__/smoke.test.ts
+
+      - name: Run full --validate-server integration suite
+        if: github.event_name == 'workflow_dispatch'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.CRAFT_ANTHROPIC_API_KEY }}
           STITCH_API_KEY: ${{ secrets.STITCH_API_KEY }}
