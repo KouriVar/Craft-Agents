@@ -29,6 +29,8 @@ interface UseUpdateCheckerResult {
   checkForUpdates: () => Promise<void>
   /** Install the downloaded update and restart */
   installUpdate: () => Promise<void>
+  /** Open the latest GitHub Release for manual download or recovery */
+  openRelease: () => Promise<void>
 }
 
 // Toast ID for update notification (allows dismiss/update)
@@ -39,6 +41,12 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   // Track if we've shown the toast for this version to avoid duplicates
   const shownToastVersionRef = useRef<string | null>(null)
+
+  const openRelease = useCallback(async () => {
+    const releaseUrl = updateInfo?.releaseUrl
+      ?? 'https://github.com/KouriVar/Craft-Agents/releases/latest'
+    await window.electronAPI.openUrl(releaseUrl)
+  }, [updateInfo?.releaseUrl])
 
   // Show toast notification when update is ready
   const showUpdateToast = useCallback((version: string, onInstall: () => void) => {
@@ -63,6 +71,39 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     })
   }, [t])
 
+  const showManualUpdateToast = useCallback((info: UpdateInfo) => {
+    const version = info.latestVersion
+    if (!version || shownToastVersionRef.current === version) return
+    shownToastVersionRef.current = version
+
+    toast.info(t('toast.updateAvailable', { version }), {
+      id: UPDATE_TOAST_ID,
+      description: t('toast.downloadUpdateManually'),
+      duration: 15000,
+      action: {
+        label: t('toast.openRelease'),
+        onClick: () => void window.electronAPI.openUrl(
+          info.releaseUrl ?? 'https://github.com/KouriVar/Craft-Agents/releases/latest',
+        ),
+      },
+      onDismiss: () => window.electronAPI.dismissUpdate(version),
+    })
+  }, [t])
+
+  const showUpdateErrorToast = useCallback((info: UpdateInfo) => {
+    toast.error(t('toast.updateFailed'), {
+      id: UPDATE_TOAST_ID,
+      description: t('toast.updateFailedRecovery'),
+      duration: 15000,
+      action: {
+        label: t('toast.openRelease'),
+        onClick: () => void window.electronAPI.openUrl(
+          info.releaseUrl ?? 'https://github.com/KouriVar/Craft-Agents/releases/latest',
+        ),
+      },
+    })
+  }, [t])
+
   // Install the update
   const installUpdate = useCallback(async () => {
     try {
@@ -76,16 +117,23 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     } catch (error) {
       console.error('[useUpdateChecker] Install failed:', error)
       toast.error(t('toast.failedToInstallUpdate'), {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: t('toast.updateFailedRecovery'),
+        action: {
+          label: t('toast.openRelease'),
+          onClick: () => void openRelease(),
+        },
       })
     }
-  }, [])
+  }, [openRelease, t])
 
   // Load initial state and check if update ready
   useEffect(() => {
     const checkAndNotify = async (info: UpdateInfo) => {
+      if (info.downloadState === 'error') {
+        showUpdateErrorToast(info)
+        return
+      }
       if (!info.available || !info.latestVersion) return
-      if (info.downloadState !== 'ready') return
 
       // Check if this version was dismissed
       const dismissedVersion = await window.electronAPI.getDismissedUpdateVersion()
@@ -93,8 +141,11 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
         return
       }
 
-      // Show toast for ready update
-      showUpdateToast(info.latestVersion, installUpdate)
+      if (info.downloadState === 'ready') {
+        showUpdateToast(info.latestVersion, installUpdate)
+      } else if (info.downloadState === 'manual') {
+        showManualUpdateToast(info)
+      }
     }
 
     // Get initial update info
@@ -118,7 +169,7 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
       cleanupAvailable()
       cleanupProgress()
     }
-  }, [showUpdateToast, installUpdate])
+  }, [showUpdateToast, showManualUpdateToast, showUpdateErrorToast, installUpdate])
 
   // Check for updates manually
   const checkForUpdates = useCallback(async () => {
@@ -126,7 +177,9 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
       const info = await window.electronAPI.checkForUpdates()
       setUpdateInfo(info)
 
-      if (!info.available) {
+      if (info.downloadState === 'error') {
+        showUpdateErrorToast(info)
+      } else if (!info.available) {
         toast.success(t('toast.upToDate'), {
           description: t('toast.versionIsLatest', { version: info.currentVersion }),
           duration: 3000,
@@ -135,6 +188,9 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
         // If already ready, show toast (clear any previous dismissal since user explicitly checked)
         shownToastVersionRef.current = null // Reset so toast can show again
         showUpdateToast(info.latestVersion, installUpdate)
+      } else if (info.downloadState === 'manual') {
+        shownToastVersionRef.current = null
+        showManualUpdateToast(info)
       }
     } catch (error) {
       console.error('[useUpdateChecker] Check failed:', error)
@@ -142,7 +198,7 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [showUpdateToast, installUpdate])
+  }, [showUpdateToast, showManualUpdateToast, showUpdateErrorToast, installUpdate, t])
 
   return {
     updateInfo,
@@ -152,5 +208,6 @@ export function useUpdateChecker(): UseUpdateCheckerResult {
     downloadProgress: updateInfo?.downloadProgress ?? 0,
     checkForUpdates,
     installUpdate,
+    openRelease,
   }
 }

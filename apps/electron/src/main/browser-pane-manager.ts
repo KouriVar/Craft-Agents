@@ -39,6 +39,7 @@ import type {
 } from '@craft-agent/server-core/transport'
 import { BrowserProfileStore } from './browser-profile-store'
 import { BrowserPasswordVault } from './browser-password-vault'
+import { BrowserTabLifecycle } from './browser-tab-lifecycle'
 import extractZip from 'extract-zip'
 
 export type { BrowserInstanceInfo }
@@ -387,8 +388,10 @@ interface LastBrowserAction {
 let instanceCounter = 0
 
 export class BrowserPaneManager implements IBrowserPaneManager {
-  private instances: Map<string, BrowserInstance> = new Map()
-  private destroyingIds: Set<string> = new Set()
+  private readonly tabLifecycle = new BrowserTabLifecycle<BrowserInstance>()
+  private get instances(): Map<string, BrowserInstance> {
+    return this.tabLifecycle.records
+  }
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
@@ -630,7 +633,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.layoutAllViews(instance)
 
     this.setupWindowListeners(instance)
-    this.instances.set(instanceId, instance)
+    this.tabLifecycle.register(instance)
     this.emitStateChange(instance)
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
     mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'})`)
@@ -699,7 +702,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     try {
       if (!instance.window.isDestroyed()) {
-        this.destroyingIds.add(id)
+        this.tabLifecycle.beginClose(id)
         instance.window.destroy()
       }
     } catch (error) {
@@ -2978,11 +2981,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private finalizeDestroyedInstance(instance: BrowserInstance, source: 'destroy' | 'closed'): void {
-    if (!this.instances.has(instance.id)) {
+    if (!this.tabLifecycle.has(instance.id)) {
       return
     }
 
-    this.destroyingIds.delete(instance.id)
     this.closePopupsForParent(instance.id, 'parent_destroy')
     this.applyAgentControlLock(instance, false)
     this.detachPageViews(instance)
@@ -2990,7 +2992,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     for (const view of [instance.pageView, instance.nativeOverlayView]) {
       if (!view.webContents.isDestroyed()) view.webContents.close()
     }
-    this.instances.delete(instance.id)
+    if (!this.tabLifecycle.finalizeClose(instance.id, instance)) return
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
@@ -4654,7 +4656,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const overlayWc = instance.nativeOverlayView.webContents
 
     instance.window.on('close', (event) => {
-      const explicitDestroy = this.destroyingIds.has(instance.id)
+      const explicitDestroy = this.tabLifecycle.isClosing(instance.id)
       const interceptToHide = !explicitDestroy && instance.keepAliveOnWindowClose
       mainLog.info(`[browser-pane] window close requested id=${instance.id} explicitDestroy=${explicitDestroy} keepAlive=${instance.keepAliveOnWindowClose} interceptToHide=${interceptToHide}`)
 
@@ -4691,9 +4693,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('did-start-loading', () => {
-      instance.isLoading = true
-      instance.crashed = false
-      instance.crashReason = null
+      this.tabLifecycle.markLoadStarted(instance)
       this.emitStateChange(instance)
       void this.pushToolbarState(instance)
     })
@@ -4713,20 +4713,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('render-process-gone', (_event, details) => {
-      if (!this.instances.has(instance.id) || details.reason === 'clean-exit' || details.reason === 'killed') return
       const now = Date.now()
-      instance.crashRecoveryAttempts = now - instance.lastCrashAt < 60_000
-        ? instance.crashRecoveryAttempts + 1
-        : 1
-      instance.lastCrashAt = now
-      instance.isLoading = false
-      instance.crashReason = details.reason
+      const transition = this.tabLifecycle.recordCrash(instance, details, now)
+      if (transition === 'ignored') return
       mainLog.error(`[browser-pane] renderer gone id=${instance.id} reason=${details.reason} code=${details.exitCode}`)
-      if (instance.crashRecoveryAttempts <= 2 && /^https?:/i.test(instance.currentUrl)) {
-        instance.crashed = false
+      if (transition === 'reload') {
         void pageWc.reload()
       } else {
-        instance.crashed = true
         instance.title = app.getLocale().toLowerCase().startsWith('zh') ? '页面已崩溃' : 'Page crashed'
         this.emitStateChange(instance)
         void this.pushToolbarState(instance)
@@ -5109,7 +5102,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private emitStateChange(instance: BrowserInstance): void {
-    if (!this.instances.has(instance.id)) {
+    if (!this.tabLifecycle.shouldAcceptEvent(instance.id)) {
       return
     }
     this.stateChangeCallback?.(this.toInfo(instance))

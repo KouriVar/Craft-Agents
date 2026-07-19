@@ -724,8 +724,10 @@ export interface UpdateInfo {
   available: boolean
   currentVersion: string
   latestVersion: string | null
-  downloadState: 'idle' | 'downloading' | 'ready' | 'installing' | 'error'
+  downloadState: 'idle' | 'downloading' | 'ready' | 'installing' | 'manual' | 'error'
   downloadProgress: number
+  installMode?: 'automatic' | 'manual'
+  releaseUrl?: string
   error?: string
 }
 

@@ -1,10 +1,14 @@
 name: Validate
 
 on:
-  pull_request:
   push:
     branches:
       - main
+      - my-changes
+  pull_request:
+    branches:
+      - main
+      - my-changes
   workflow_dispatch:
 
 concurrency:
@@ -12,8 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  validate-fast:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -43,3 +48,58 @@ jobs:
 
       - name: Run validation suite
         run: bun run validate:ci
+
+  doc-tools-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run document tool smoke tests with bounded environment setup
+        run: bun run test:doc-tools
+        env:
+          DOC_TOOLS_TIMEOUT_MS: "600000"
+
+  cross-platform-critical:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    name: critical (${{ matrix.os }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check versions and Electron types
+        run: bun run check-version && bun run typecheck:electron
+
+      - name: Run update and browser lifecycle tests
+        run: bun test apps/electron/src/main/__tests__/auto-update-policy.test.ts apps/electron/src/main/__tests__/browser-tab-lifecycle.test.ts apps/electron/src/renderer/lib/__tests__/browser-workspace-lifecycle.test.ts

@@ -1,5 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test'
-import { activateWindow, extractDeepLink } from '../app-activation'
+import {
+  activateExistingOrCreateWindow,
+  activateWindow,
+  extractDeepLink,
+} from '../app-activation'
 
 function createWindow(options: { destroyed?: boolean; minimized?: boolean; visible?: boolean } = {}) {
   return {
@@ -32,5 +36,41 @@ describe('single-instance activation', () => {
     expect(window.restore).not.toHaveBeenCalled()
     expect(window.show).not.toHaveBeenCalled()
     expect(window.focus).not.toHaveBeenCalled()
+  })
+
+  it('activates an existing live window without creating a replacement', () => {
+    const window = createWindow({ visible: false })
+    const createReplacement = mock(() => {})
+
+    expect(activateExistingOrCreateWindow({
+      getExistingWindow: () => window,
+      createWindow: createReplacement,
+    })).toBe(true)
+
+    expect(window.show).toHaveBeenCalledTimes(1)
+    expect(createReplacement).not.toHaveBeenCalled()
+  })
+
+  it('creates a replacement after the last window was closed', () => {
+    const createReplacement = mock(() => {})
+
+    expect(activateExistingOrCreateWindow({
+      getExistingWindow: () => null,
+      createWindow: createReplacement,
+    })).toBe(true)
+
+    expect(createReplacement).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a replacement when the managed window reference is stale', () => {
+    const staleWindow = createWindow({ destroyed: true })
+    const createReplacement = mock(() => {})
+
+    expect(activateExistingOrCreateWindow({
+      getExistingWindow: () => staleWindow,
+      createWindow: createReplacement,
+    })).toBe(true)
+
+    expect(createReplacement).toHaveBeenCalledTimes(1)
   })
 })

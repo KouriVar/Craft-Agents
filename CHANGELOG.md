@@ -1,5 +1,32 @@
 # 更新日志
 
+## 2026-07-19 v0.11.7 本地更新渠道与维护基础设施
+
+### 本地版更新
+
+- `electron-builder` 保留 generic provider，但 feed 改为个人仓库 GitHub Latest Release 的 `releases/latest/download`；Windows、macOS、Linux 分别读取 `latest.yml`、`latest-mac.yml`、`latest-linux.yml`，版本只比较 YAML 的 `version`，不解析 `vX.Y.Z-local` tag。
+- Windows x64 保留后台下载、退出安装和重启；Linux x64 在自动替换前验证 `APPIMAGE` 路径，环境不成立或更新失败时提供 GitHub Release 手动下载恢复操作。
+- 未签名 macOS 构建只检查新版本并展示 GitHub Release 手动下载入口，不承诺自动替换，同时不影响 Windows/Linux 自动更新。
+- 0.11.6 的安装包仍包含旧 feed，无法自动获得此修复。用户需手动安装一次 0.11.7；从 0.11.8 开始用递增版本验证 Windows/Linux 自动升级，禁止用同版本覆盖包模拟升级。
+
+### 浏览器生命周期边界
+
+- `BrowserPaneManager` 继续作为公共 Facade，新增 `BrowserTabLifecycle` 管理实例注册去重、关闭中的迟到事件屏蔽/回滚/最终化，以及连续崩溃计数和恢复决策。
+- WebContentsView 创建、布局、焦点、扩展、下载、历史/收藏、OAuth 与弹窗仍留在原 Manager，本批未改变外部调用方式或 UI。
+- 关闭最后一个窗口不再等同于退出；三端保留应用进程，macOS Dock 和 Windows/Linux 再次启动会恢复现有窗口或按上次工作区创建新窗口，明确选择 Quit 时仍执行完整清理。
+
+### 验证基础设施
+
+- `my-changes` push/PR 触发 Ubuntu 快速验证；Windows/macOS 运行 Electron 类型检查及更新/浏览器生命周期关键测试，不要求每次构建完整三平台安装包。
+- 恢复版本一致性、i18n 新缺口、裸 IPC 白名单和 Task/Agent 工具命名检查；30 个既有 i18n 缺口显式记录为基线，新增缺口会失败。
+- 文档工具 smoke 由 10 分钟超时包装，超时会明确指出 bundled uv/Python 环境可能卡住；三平台 validate-server 在 `my-changes` push 触发并保留 15 分钟 job 超时。
+
+### 验证
+
+- 更新策略 5 项、BrowserTabLifecycle 6 项、BrowserPaneManager 隔离套件 87 项、Renderer 工作区生命周期 10 项通过。
+- Electron 类型检查、i18n parity/sort/coverage、版本、IPC 和工具命名检查通过。
+- main、preload、renderer、resources 与 subprocess 正式构建及资源产物校验通过。
+
 ## 2026-07-18 v0.11.6 稳定性、跨平台回归与视觉规范
 
 本版本专注稳定性与可诊断性，不引入大型功能或改变 Craft Agents 现有视觉方向。

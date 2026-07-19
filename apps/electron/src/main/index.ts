@@ -291,7 +291,7 @@ import { WindowManager } from './window-manager'
 import { isTrustedCowartRuntimeUrl, normalizeCowartFollowUpRequest } from '../shared/cowart-bridge'
 import { loadWindowState, saveWindowState } from './window-state'
 import { fitWindowBoundsToWorkAreas, windowBoundsEqual } from './window-restore'
-import { activateWindow, extractDeepLink } from './app-activation'
+import { activateExistingOrCreateWindow as activateOrCreateWindow, extractDeepLink } from './app-activation'
 import { collectResourceDiagnostic, getStartupDiagnostic, recordStartupMilestone } from './resource-diagnostics'
 import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
@@ -423,14 +423,22 @@ let pendingSecondInstanceActivation = false
 let isAppReadyForActivation = false
 
 function activateExistingOrCreateWindow(): boolean {
-  if (!windowManager) return false
-  const existing = windowManager.getLastActiveWindow()
-  if (existing) return activateWindow(existing)
+  if (!windowManager || isQuitting) return false
 
-  const firstWorkspace = getWorkspaces()[0]
-  if (!firstWorkspace) return false
-  windowManager.createWindow({ workspaceId: firstWorkspace.id })
-  return true
+  const manager = windowManager
+  const workspaces = getWorkspaces()
+  if (workspaces.length === 0) return false
+
+  return activateOrCreateWindow({
+    getExistingWindow: () => manager.getLastActiveWindow(),
+    createWindow: () => {
+      const savedWorkspaceId = loadWindowState()?.lastFocusedWorkspaceId
+      const workspaceId = savedWorkspaceId && workspaces.some(workspace => workspace.id === savedWorkspaceId)
+        ? savedWorkspaceId
+        : workspaces[0].id
+      manager.createWindow({ workspaceId })
+    },
+  })
 }
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
@@ -1413,31 +1421,20 @@ app.whenReady().then(async () => {
     resources: collectResourceDiagnostic(app),
   })
 
-  // macOS: Re-create window when dock icon is clicked
+  // Re-create or reveal a window when the app icon is activated. Electron emits
+  // this directly from the macOS Dock; Windows/Linux use the second-instance
+  // path above when a shortcut or pinned icon launches the resident app again.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && windowManager) {
-      // Open first workspace or last focused
-      const workspaces = getWorkspaces()
-      if (workspaces.length > 0) {
-        const savedState = loadWindowState()
-        const wsId = savedState?.lastFocusedWorkspaceId || workspaces[0].id
-        // Verify workspace still exists
-        if (workspaces.some(ws => ws.id === wsId)) {
-          windowManager.createWindow({ workspaceId: wsId })
-        } else {
-          windowManager.createWindow({ workspaceId: workspaces[0].id })
-        }
-      }
-    }
+    activateExistingOrCreateWindow()
   })
 })
 
 app.on('window-all-closed', () => {
   if (process.env.CRAFT_HEADLESS) return  // headless server stays alive
-  // On macOS, apps typically stay active until explicitly quit
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  // Closing the last window is not the same as choosing Quit. Keep the process
+  // resident on every desktop platform so Dock/taskbar/shortcut activation can
+  // create a replacement window. Explicit Quit still runs the shutdown flow.
+  mainLog.info('All windows closed; app remains active until explicit quit')
 })
 
 // Track if we're in the process of quitting (to avoid re-entry)

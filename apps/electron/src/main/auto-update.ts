@@ -2,13 +2,13 @@
  * Auto-update module using electron-updater
  *
  * Handles checking for updates, downloading, and installing via the standard
- * electron-updater library. Updates are served from https://agents.craft.do/electron/latest
- * using the generic provider (YAML manifests + binaries on R2/S3).
+ * electron-updater library. Updates are served from the latest GitHub Release
+ * using the generic provider (platform YAML manifests + release assets).
  *
  * Platform behavior:
- * - macOS: Downloads zip, extracts and swaps app bundle atomically
+ * - macOS: Unsigned local builds offer the GitHub Release for manual download
  * - Windows: Downloads NSIS installer, runs silently on quit
- * - Linux: Downloads AppImage, replaces current file
+ * - Linux: Validates APPIMAGE, then downloads and replaces the current file
  *
  * All platforms support download-progress events (electron-updater v6.8.0+).
  * quitAndInstall() handles restart natively — no external scripts.
@@ -28,11 +28,37 @@ import {
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
 import { RPC_CHANNELS, type UpdateInfo } from '../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
+import {
+  UPDATE_FEED_URL,
+  UPDATE_RELEASE_URL,
+  getUpdateManifestUrl,
+  getUpdatePlatformPolicy,
+  isManifestVersionNewer,
+  withManualRecovery,
+  type UpdatePlatform,
+  type UpdatePlatformPolicy,
+} from './auto-update-policy'
 
 // Platform detection
 const PLATFORM = platform()
 const IS_MAC = PLATFORM === 'darwin'
 const IS_WINDOWS = PLATFORM === 'win32'
+
+function getPlatformPolicy(): UpdatePlatformPolicy {
+  return getUpdatePlatformPolicy(
+    PLATFORM as UpdatePlatform,
+    process.env.APPIMAGE,
+    (candidate) => {
+      if (!path.isAbsolute(candidate) || !fs.existsSync(candidate)) return false
+      try {
+        fs.accessSync(candidate, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)
+        return fs.statSync(candidate).isFile()
+      } catch {
+        return false
+      }
+    },
+  )
+}
 
 // Get the update cache directory path (for file watcher fallback on macOS)
 // electron-updater uses these paths:
@@ -60,6 +86,8 @@ let updateInfo: UpdateInfo = {
   latestVersion: null,
   downloadState: 'idle',
   downloadProgress: 0,
+  installMode: getPlatformPolicy().installMode,
+  releaseUrl: UPDATE_RELEASE_URL,
 }
 
 let eventSink: EventSink | null = null
@@ -124,8 +152,14 @@ function broadcastDownloadProgress(progress: number): void {
 
 // ─── Configure electron-updater ───────────────────────────────────────────────
 
-// Auto-download updates in the background after detection
-autoUpdater.autoDownload = true
+// Release tags may be vX.Y.Z-local. The generic provider uses the plain SemVer
+// in the selected YAML manifest, not the GitHub tag, for version comparison.
+autoUpdater.channel = 'latest'
+autoUpdater.allowPrerelease = false
+
+// macOS local builds are unsigned, and Linux can only replace a real AppImage.
+// Those cases still check for updates but fall back to the GitHub Release.
+autoUpdater.autoDownload = getPlatformPolicy().installMode === 'automatic'
 
 // Install on app quit (if update is downloaded but user hasn't clicked "Restart")
 autoUpdater.autoInstallOnAppQuit = true
@@ -141,11 +175,52 @@ autoUpdater.logger = {
 // ─── Event handlers ───────────────────────────────────────────────────────────
 
 autoUpdater.on('checking-for-update', () => {
-  autoUpdateLog.info('[auto-update] Checking for updates...')
+  autoUpdateLog.info('[auto-update] Checking GitHub Release update feed', {
+    feedUrl: UPDATE_FEED_URL,
+    manifestUrl: getUpdateManifestUrl(PLATFORM as UpdatePlatform),
+    installMode: getPlatformPolicy().installMode,
+  })
 })
 
 autoUpdater.on('update-available', (info) => {
-  autoUpdateLog.info(`Update available: ${updateInfo.currentVersion} → ${info.version}`)
+  const policy = getPlatformPolicy()
+  autoUpdateLog.info(`Update available from YAML manifest: ${updateInfo.currentVersion} → ${info.version}`, {
+    manifestUrl: getUpdateManifestUrl(PLATFORM as UpdatePlatform),
+    installMode: policy.installMode,
+    policyReason: policy.reason ?? null,
+  })
+
+  if (!isManifestVersionNewer(updateInfo.currentVersion, info.version)) {
+    autoUpdateLog.warn('[auto-update] Ignoring update event with invalid or non-newer YAML version', {
+      currentVersion: updateInfo.currentVersion,
+      manifestVersion: info.version,
+    })
+    updateInfo = {
+      ...updateInfo,
+      available: false,
+      latestVersion: info.version,
+      downloadState: 'idle',
+      downloadProgress: 0,
+      error: undefined,
+    }
+    broadcastUpdateInfo()
+    return
+  }
+
+  if (policy.installMode === 'manual') {
+    updateInfo = {
+      ...updateInfo,
+      available: true,
+      latestVersion: info.version,
+      downloadState: 'manual',
+      downloadProgress: 0,
+      installMode: 'manual',
+      releaseUrl: UPDATE_RELEASE_URL,
+      error: undefined,
+    }
+    broadcastUpdateInfo()
+    return
+  }
 
   // First, check electron-updater's internal state (most reliable)
   const internalState = checkElectronUpdaterState()
@@ -157,6 +232,8 @@ autoUpdater.on('update-available', (info) => {
       latestVersion: info.version,
       downloadState: 'ready',
       downloadProgress: 100,
+      installMode: 'automatic',
+      error: undefined,
     }
     broadcastUpdateInfo()
     return
@@ -172,6 +249,8 @@ autoUpdater.on('update-available', (info) => {
       latestVersion: info.version,
       downloadState: 'ready',
       downloadProgress: 100,
+      installMode: 'automatic',
+      error: undefined,
     }
     broadcastUpdateInfo()
     return
@@ -183,6 +262,8 @@ autoUpdater.on('update-available', (info) => {
     latestVersion: info.version,
     downloadState: 'downloading',
     downloadProgress: 0,
+    installMode: 'automatic',
+    error: undefined,
   }
   broadcastUpdateInfo()
 })
@@ -195,6 +276,9 @@ autoUpdater.on('update-not-available', (info) => {
     available: false,
     latestVersion: info.version,
     downloadState: 'idle',
+    downloadProgress: 0,
+    installMode: getPlatformPolicy().installMode,
+    error: undefined,
   }
   broadcastUpdateInfo()
 })
@@ -208,12 +292,32 @@ autoUpdater.on('download-progress', (progress) => {
 autoUpdater.on('update-downloaded', async (info) => {
   autoUpdateLog.info(`Update downloaded: v${info.version}`)
 
+  // An unsigned macOS build may still have a stale cached download from an
+  // older feed/configuration. Never turn that into an automatic install offer.
+  const policy = getPlatformPolicy()
+  if (policy.installMode === 'manual') {
+    updateInfo = {
+      ...updateInfo,
+      available: true,
+      latestVersion: info.version,
+      downloadState: 'manual',
+      downloadProgress: 100,
+      installMode: 'manual',
+      releaseUrl: UPDATE_RELEASE_URL,
+      error: undefined,
+    }
+    broadcastUpdateInfo()
+    return
+  }
+
   updateInfo = {
     ...updateInfo,
     available: true,
     latestVersion: info.version,
     downloadState: 'ready',
     downloadProgress: 100,
+    installMode: 'automatic',
+    error: undefined,
   }
   broadcastUpdateInfo()
 
@@ -224,12 +328,7 @@ autoUpdater.on('update-downloaded', async (info) => {
 
 autoUpdater.on('error', (error) => {
   autoUpdateLog.error('electron-updater error', error)
-
-  updateInfo = {
-    ...updateInfo,
-    downloadState: 'error',
-    error: error.message,
-  }
+  updateInfo = withManualRecovery(updateInfo, error)
   broadcastUpdateInfo()
 })
 
@@ -328,11 +427,13 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
  */
 export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
   const { autoDownload = true } = options
+  const policy = getPlatformPolicy()
+  const shouldAutoDownload = autoDownload && policy.installMode === 'automatic'
 
   // Temporarily override autoDownload for this check if needed
   // (e.g., manual check from settings shouldn't auto-download on metered connections)
   const previousAutoDownload = autoUpdater.autoDownload
-  autoUpdater.autoDownload = autoDownload
+  autoUpdater.autoDownload = shouldAutoDownload
 
   try {
     // Check for updates - this returns a promise that resolves with the check result
@@ -360,11 +461,8 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
     }
   } catch (error) {
     autoUpdateLog.error('Update check failed', error)
-    updateInfo = {
-      ...updateInfo,
-      downloadState: 'error',
-      error: error instanceof Error ? error.message : 'Check failed',
-    }
+    updateInfo = withManualRecovery(updateInfo, error)
+    broadcastUpdateInfo()
   } finally {
     // Restore previous autoDownload setting
     autoUpdater.autoDownload = previousAutoDownload
@@ -384,6 +482,18 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
 export async function installUpdate(): Promise<void> {
   if (updateInfo.downloadState !== 'ready') {
     throw new Error('No update ready to install')
+  }
+
+  const policy = getPlatformPolicy()
+  if (policy.installMode !== 'automatic') {
+    const error = new Error(
+      policy.reason === 'unsigned-macos'
+        ? 'This unsigned macOS build must be updated manually from GitHub Release.'
+        : 'The current Linux process is not running from a valid APPIMAGE; update manually from GitHub Release.',
+    )
+    updateInfo = withManualRecovery(updateInfo, error)
+    broadcastUpdateInfo()
+    throw error
   }
 
   autoUpdateLog.info('Installing update and restarting...')
@@ -422,7 +532,7 @@ export async function installUpdate(): Promise<void> {
   } catch (error) {
     __isUpdating = false
     autoUpdateLog.error('quitAndInstall failed', error)
-    updateInfo = { ...updateInfo, downloadState: 'error' }
+    updateInfo = withManualRecovery(updateInfo, error)
     broadcastUpdateInfo()
     throw error
   }
@@ -432,7 +542,7 @@ export async function installUpdate(): Promise<void> {
  * Result of update check on launch
  */
 export interface UpdateOnLaunchResult {
-  action: 'none' | 'skipped' | 'ready' | 'downloading'
+  action: 'none' | 'skipped' | 'ready' | 'downloading' | 'manual' | 'error'
   reason?: string
   version?: string | null
 }
@@ -449,7 +559,9 @@ export async function checkForUpdatesOnLaunch(): Promise<UpdateOnLaunchResult> {
   const info = await checkForUpdates({ autoDownload: true })
 
   if (!info.available) {
-    return { action: 'none' }
+    return info.downloadState === 'error'
+      ? { action: 'error', reason: info.error }
+      : { action: 'none' }
   }
 
   // Check if this version was dismissed by user
@@ -461,6 +573,10 @@ export async function checkForUpdatesOnLaunch(): Promise<UpdateOnLaunchResult> {
 
   if (info.downloadState === 'ready') {
     return { action: 'ready', version: info.latestVersion }
+  }
+
+  if (info.downloadState === 'manual' || info.downloadState === 'error') {
+    return { action: info.downloadState, reason: info.error, version: info.latestVersion }
   }
 
   // Download in progress — will notify when ready via update-downloaded event

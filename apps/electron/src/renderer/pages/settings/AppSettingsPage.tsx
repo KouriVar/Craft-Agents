@@ -394,6 +394,20 @@ export default function AppSettingsPage() {
                       </Button>
                     </SettingsRow>
                   )}
+                  {isElectron && updateChecker.updateInfo?.downloadState === 'manual' && updateChecker.updateInfo.latestVersion && (
+                    <SettingsRow label={t("settings.about.updateAvailable", { version: updateChecker.updateInfo.latestVersion })}>
+                      <Button size="sm" onClick={updateChecker.openRelease}>
+                        {t("settings.about.openRelease")}
+                      </Button>
+                    </SettingsRow>
+                  )}
+                  {isElectron && updateChecker.updateInfo?.downloadState === 'error' && (
+                    <SettingsRow label={t("settings.about.updateFailed")}>
+                      <Button variant="outline" size="sm" onClick={updateChecker.openRelease}>
+                        {t("settings.about.openRelease")}
+                      </Button>
+                    </SettingsRow>
+                  )}
                 </SettingsCard>
               </SettingsSection>
             </div>

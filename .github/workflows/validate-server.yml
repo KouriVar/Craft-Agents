@@ -1,7 +1,14 @@
 name: Validate Server (Integration)
 
 on:
+  push:
+    branches:
+      - my-changes
   workflow_dispatch:
+
+concurrency:
+  group: validate-server-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-server:

@@ -920,7 +920,7 @@ describe('BrowserPaneManager', () => {
     manager.createInstance('h-explicit-destroy')
     const instance = (manager as any).instances.get('h-explicit-destroy')
 
-    ;(manager as any).destroyingIds.add('h-explicit-destroy')
+    ;(manager as any).tabLifecycle.beginClose('h-explicit-destroy')
 
     const closeEvent = { preventDefault: mock(() => {}) }
     instance.window._emit('close', closeEvent)
