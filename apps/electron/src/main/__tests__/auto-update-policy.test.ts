@@ -8,7 +8,9 @@ import {
   getUpdateManifestName,
   getUpdateManifestUrl,
   getUpdatePlatformPolicy,
+  isDownloadedUpdateEligible,
   isManifestVersionNewer,
+  parseUpdaterCacheDirName,
   withManualRecovery,
 } from '../auto-update-policy'
 
@@ -39,6 +41,30 @@ describe('local auto-update policy', () => {
     expect(isManifestVersionNewer('0.11.7', '0.11.7')).toBe(false)
     expect(isManifestVersionNewer('0.11.8', '0.11.7')).toBe(false)
     expect(isManifestVersionNewer('0.11.6', 'not-semver')).toBe(false)
+  })
+
+  it('rejects stale, downgraded, and unexpected downloaded installers', () => {
+    expect(isDownloadedUpdateEligible('0.11.7', '0.11.8', '0.11.8')).toBe(true)
+    expect(isDownloadedUpdateEligible('0.11.7', '0.11.6', '0.11.8')).toBe(false)
+    expect(isDownloadedUpdateEligible('0.11.7', '0.11.7', '0.11.7')).toBe(false)
+    expect(isDownloadedUpdateEligible('0.11.7', '0.11.9', '0.11.8')).toBe(false)
+    expect(isDownloadedUpdateEligible('0.11.7', '0.11.8', null)).toBe(false)
+  })
+
+  it('reads the packaged updater cache name without allowing path escape', () => {
+    expect(parseUpdaterCacheDirName("updaterCacheDirName: '@craft-agentelectron-updater'\n"))
+      .toBe('@craft-agentelectron-updater')
+    expect(parseUpdaterCacheDirName('updaterCacheDirName: ../../other\n')).toBeNull()
+    expect(parseUpdaterCacheDirName('provider: generic\n')).toBeNull()
+  })
+
+  it('keeps downgrade and install-on-quit disabled after assigning the channel', () => {
+    const source = readFileSync(join(import.meta.dir, '../auto-update.ts'), 'utf8')
+    const channelIndex = source.indexOf("autoUpdater.channel = 'latest'")
+    const downgradeIndex = source.indexOf('autoUpdater.allowDowngrade = false')
+    expect(channelIndex).toBeGreaterThanOrEqual(0)
+    expect(downgradeIndex).toBeGreaterThan(channelIndex)
+    expect(source).toContain('autoUpdater.autoInstallOnAppQuit = false')
   })
 
   it('uses manual macOS updates while retaining Windows and valid AppImage automation', () => {

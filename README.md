@@ -6,7 +6,7 @@
 <p>
   <a href="./CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-查看更新-7c3aed?style=flat-square"></a>
   <a href="../../releases"><img alt="Releases" src="https://img.shields.io/badge/releases-下载构建-2563eb?style=flat-square"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.11.7-111827?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.11.8-111827?style=flat-square">
   <img alt="Branch" src="https://img.shields.io/badge/branch-my--changes-64748b?style=flat-square">
 </p>
 
@@ -17,13 +17,19 @@
 - 🌱 [原始上游项目](https://github.com/craft-ai-agents/craft-agents-oss)
 - 🧭 当前开发分支：`my-changes`
 
+## v0.11.8 更新防回退修复
+
+- 自动清理 0.11.6 遗留的 updater pending 缓存，用户无需手动删除隐藏目录。
+- 显式禁止版本降级，关闭普通退出自动安装，并在下载完成与安装前双重校验版本。
+- Windows/Linux 仍保留用户确认后的自动安装与重新启动；未签名 macOS 继续提供 GitHub Release 手动下载。
+
 ## v0.11.7 更新渠道与维护基础设施
 
 - 本地版自动更新改用个人仓库 GitHub Latest Release 的 generic feed；Windows x64 和 Linux AppImage 保留自动安装，未签名 macOS 构建提供手动下载入口。
 - `BrowserPaneManager` 保持 Facade，对实例注册、关闭顺序、迟到事件和连续崩溃恢复提取可测试的 `BrowserTabLifecycle`。
 - `my-changes` push/PR 接入 Ubuntu 快速检查和 Windows/macOS 关键矩阵，恢复版本、i18n、IPC 与工具命名检查，并为文档工具 smoke 设置超时。
 
-升级说明：已安装的 0.11.6 仍指向旧更新地址，必须手动安装一次 0.11.7；从 0.11.8 起再验证 Windows/Linux 自动升级。不要用同版本覆盖包测试更新。
+升级说明：0.11.7 已完成新更新地址迁移，但可能误装旧的 0.11.6 缓存。受影响用户直接手动安装 0.11.8 即可自动清理，无需自行删除缓存；后续升级继续使用递增版本验证。
 
 ## v0.11.6 稳定性优化
 

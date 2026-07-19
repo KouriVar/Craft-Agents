@@ -33,6 +33,23 @@ export function isManifestVersionNewer(currentVersion: string, manifestVersion: 
   return Boolean(current && candidate && semver.gt(candidate, current))
 }
 
+export function isDownloadedUpdateEligible(
+  currentVersion: string,
+  downloadedVersion: string,
+  expectedVersion: string | null,
+): boolean {
+  return expectedVersion === downloadedVersion
+    && isManifestVersionNewer(currentVersion, downloadedVersion)
+}
+
+export function parseUpdaterCacheDirName(config: string): string | null {
+  const rawName = config.match(/^updaterCacheDirName:\s*['"]?([^'"\r\n]+)['"]?\s*$/m)?.[1]?.trim()
+  if (!rawName || rawName === '.' || rawName === '..' || rawName.includes('/') || rawName.includes('\\')) {
+    return null
+  }
+  return rawName
+}
+
 export function getUpdatePlatformPolicy(
   platform: UpdatePlatform,
   appImagePath: string | undefined,
