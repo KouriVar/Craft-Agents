@@ -5,7 +5,7 @@
  * - WebSocket handshake succeeds with valid token
  * - WebSocket handshake fails with invalid token
  * - /health endpoint returns 200
- * - Clean shutdown on SIGTERM
+ * - Shutdown completes without leaving the server process running
  */
 
 import { describe, it, expect, afterEach } from 'bun:test'
@@ -181,7 +181,7 @@ describe('headless server smoke test', () => {
     expect(exitCode).not.toBe(0)
   }, TEST_TIMEOUT)
 
-  it('shuts down cleanly on SIGTERM', async () => {
+  it('terminates without hanging on shutdown signal', async () => {
     server = await spawnTestServer()
     const ws = await connectWs(server.url, server.token)
 
@@ -191,7 +191,10 @@ describe('headless server smoke test', () => {
     // Send SIGTERM
     server.proc.kill('SIGTERM')
     const exitCode = await server.proc.exited
-    expect(exitCode).toBe(0)
+    // Windows has no POSIX SIGTERM. Bun maps this request to a forced process
+    // termination and reports 128 + SIGTERM (143); Unix reaches the server's
+    // signal handler and exits cleanly with 0. Both prove the child is gone.
+    expect(exitCode).toBe(process.platform === 'win32' ? 143 : 0)
 
     // Mark as stopped so afterEach doesn't double-kill
     server = null
