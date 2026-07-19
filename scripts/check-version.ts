@@ -25,7 +25,9 @@ for (const relativePath of packageFiles) {
     if (pkg.version !== expected) {
       failures.push(`${relativePath}: expected ${expected}, found ${pkg.version}`)
     }
-    const workspaceKey = relativePath.replace(/\/package\.json$/, '')
+    // `node:path.join` uses backslashes on Windows, while bun.lock workspace
+    // keys are always slash-separated. Normalize before looking up the entry.
+    const workspaceKey = relativePath.replaceAll('\\', '/').replace(/\/package\.json$/, '')
     const lockStart = lockfile.indexOf(`    "${workspaceKey}": {`)
     const lockSection = lockStart >= 0
       ? lockfile.slice(lockStart, lockfile.indexOf('\n    "', lockStart + 8) < 0 ? undefined : lockfile.indexOf('\n    "', lockStart + 8))
