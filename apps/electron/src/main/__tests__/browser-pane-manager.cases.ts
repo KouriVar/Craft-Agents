@@ -228,6 +228,7 @@ mock.module('electron', () => ({
   },
   session: {
     fromPartition: mock(() => ({
+      flushStorageData: mock(async () => {}),
       setPermissionCheckHandler: mock(() => {}),
       setPermissionRequestHandler: mock(() => {}),
       webRequest: {
@@ -668,6 +669,22 @@ describe('BrowserPaneManager', () => {
 
     expect(removed).toEqual(['d-removed-once'])
     expect(manager.listInstances()).toHaveLength(0)
+  })
+
+  it('persists live workspace tabs and suppresses removal broadcasts during shutdown', async () => {
+    const removed: string[] = []
+    manager.onRemoved((id) => removed.push(id))
+    manager.createInstance('shutdown-tab', {
+      workspaceId: 'shutdown-workspace',
+      initialUrl: 'https://example.com/',
+    })
+
+    await manager.prepareForShutdown()
+    manager.destroyAll()
+
+    const snapshot = manager.loadWorkspaceState('shutdown-workspace')
+    expect(snapshot.tabs.map((tab) => tab.id)).toEqual(['shutdown-tab'])
+    expect(removed).toEqual([])
   })
 
   it('ignores late state events after instance was removed', () => {

@@ -8,6 +8,7 @@
 
 import {
   Building2,
+  Compass,
   Keyboard,
   KeyRound,
   MessageSquare,
@@ -27,6 +28,7 @@ export const AppSettingsIcon = ({ className }: IconProps) => <ToggleRight classN
 export const AiSettingsIcon = ({ className }: IconProps) => <Sparkles className={className} />
 export const AccountsSettingsIcon = ({ className }: IconProps) => <KeyRound className={className} />
 export const AppearanceIcon = ({ className }: IconProps) => <Palette className={className} />
+export const ExploreSettingsIcon = ({ className }: IconProps) => <Compass className={className} />
 export const InputIcon = ({ className }: IconProps) => <Keyboard className={className} />
 export const WorkspaceIcon = ({ className }: IconProps) => <Building2 className={className} />
 export const PermissionsIcon = ({ className }: IconProps) => <ShieldCheck className={className} />
@@ -45,6 +47,7 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   ai: AiSettingsIcon,
   accounts: AccountsSettingsIcon,
   appearance: AppearanceIcon,
+  explore: ExploreSettingsIcon,
   input: InputIcon,
   workspace: WorkspaceIcon,
   permissions: PermissionsIcon,

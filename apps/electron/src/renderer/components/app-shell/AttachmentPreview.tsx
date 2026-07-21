@@ -1,5 +1,6 @@
 import * as React from "react"
-import { X, Image as ImageIcon } from "lucide-react"
+import { X, Image as ImageIcon, Folder } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Spinner, FileTypeIcon, getFileTypeLabel } from "@craft-agent/ui"
 import { cn } from "@/lib/utils"
 import type { FileAttachment } from "../../../shared/types"
@@ -60,7 +61,9 @@ interface AttachmentBubbleProps {
 }
 
 function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubbleProps) {
+  const { t } = useTranslation()
   const isImage = attachment.type === 'image'
+  const isFolder = attachment.kind === 'folder'
   const hasThumbnail = !!attachment.thumbnailBase64
   const hasImageBase64 = isImage && attachment.base64
 
@@ -76,7 +79,9 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
       {/* Remove button - appears on hover */}
       {!disabled && (
         <button
+          type="button"
           onClick={onRemove}
+          aria-label={t('chat.removeAttachment', { name: attachment.name })}
           data-touch-reveal="true"
           className={cn(
             "absolute -top-1.5 -right-1.5 z-10",
@@ -107,7 +112,9 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
         <div className="h-16 flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3">
           {/* A4-like preview */}
           <div className="h-12 w-9 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
-            {hasThumbnail ? (
+            {isFolder ? (
+              <Folder className="h-5 w-5 text-accent" />
+            ) : hasThumbnail ? (
               <img
                 src={`data:image/png;base64,${attachment.thumbnailBase64}`}
                 alt={attachment.name}
@@ -119,11 +126,13 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
           </div>
           {/* 2-line filename + type */}
           <div className="flex flex-col min-w-0 max-w-[120px]">
-            <span className="text-xs font-medium line-clamp-2 break-all" title={attachment.name}>
+            <span className="text-xs font-medium line-clamp-2 break-all" title={isFolder ? attachment.path : attachment.name}>
               {attachment.name}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {getFileTypeLabel(attachment.type, attachment.mimeType, attachment.name)}
+              {isFolder
+                ? t('chat.folderReference')
+                : getFileTypeLabel(attachment.type, attachment.mimeType, attachment.name)}
             </span>
           </div>
         </div>

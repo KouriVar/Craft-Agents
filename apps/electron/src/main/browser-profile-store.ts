@@ -274,7 +274,15 @@ export class BrowserProfileStore {
       if (!tab || typeof tab.id !== 'string' || typeof tab.url !== 'string' || seen.has(tab.id)) return false
       seen.add(tab.id)
       return true
-    }).map((tab) => ({ id: tab.id, url: tab.url, title: typeof tab.title === 'string' ? tab.title : tab.url }))
+    }).map((tab) => ({
+      id: tab.id,
+      url: tab.url,
+      title: typeof tab.title === 'string' ? tab.title : tab.url,
+      favicon: tab.favicon ?? null,
+      createdAt: tab.createdAt,
+      lastAccessedAt: tab.lastAccessedAt,
+      pageState: tab.pageState ?? null,
+    }))
     const activeTabId = snapshot.activeTabId && seen.has(snapshot.activeTabId)
       ? snapshot.activeTabId
       : (tabs[0]?.id ?? null)

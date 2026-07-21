@@ -19,7 +19,7 @@ export function PluginListToggle({ value, onChange, className }: PluginListToggl
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-foreground/[0.02] p-0.5',
+        'inline-flex items-center gap-0.5 rounded-surface border border-border/60 bg-foreground/[0.02] p-0.5',
         className,
       )}
       role="group"
@@ -58,7 +58,7 @@ function ToggleButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+        'inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium transition-colors',
         active ? 'bg-card text-foreground shadow-minimal' : 'text-foreground/50 hover:text-foreground/80',
       )}
     >

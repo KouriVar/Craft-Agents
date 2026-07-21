@@ -27,7 +27,7 @@ import { useSession } from '@/hooks/useSession'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { navigate, routes } from './lib/navigate'
-import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
+import { attachmentFromContentRef, folderAttachmentFromRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
 import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
@@ -1512,6 +1512,8 @@ export default function App() {
     if (refs.length === 0) return []
     const results = await Promise.all(
       refs.map(async (ref) => {
+        const folderAttachment = folderAttachmentFromRef(ref)
+        if (folderAttachment) return folderAttachment
         if (ref.content) {
           return attachmentFromContentRef(ref)
         }

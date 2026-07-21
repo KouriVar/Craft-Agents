@@ -18,6 +18,7 @@ import AppSettingsPage from './AppSettingsPage'
 import AiSettingsPage from './AiSettingsPage'
 import AccountsSettingsPage from './AccountsSettingsPage'
 import AppearanceSettingsPage from './AppearanceSettingsPage'
+import ExploreSettingsPage from './ExploreSettingsPage'
 import InputSettingsPage from './InputSettingsPage'
 import WorkspaceSettingsPage from './WorkspaceSettingsPage'
 import PermissionsSettingsPage from './PermissionsSettingsPage'
@@ -36,6 +37,7 @@ export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = 
   ai: AiSettingsPage,
   accounts: AccountsSettingsPage,
   appearance: AppearanceSettingsPage,
+  explore: ExploreSettingsPage,
   input: InputSettingsPage,
   workspace: WorkspaceSettingsPage,
   permissions: PermissionsSettingsPage,

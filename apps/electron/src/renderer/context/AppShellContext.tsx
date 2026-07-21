@@ -73,6 +73,8 @@ export interface AppShellContextType {
   enabledModes?: PermissionMode[]
   /** Dynamic todo states from workspace config (provided by AppShell, defaults to empty) */
   sessionStatuses?: SessionStatusConfig[]
+  /** Whether the focused route currently belongs to the unified Explore surface. */
+  isUnifiedExploreNavigation?: boolean
 
   // Unified session options map
   /** All session-scoped options in one map. Use useSessionOptionsFor() hook for easy access. */
@@ -112,6 +114,8 @@ export interface AppShellContextType {
   // File/URL handlers - these can open in tabs or external apps
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  /** Open a URL as a persistent tab inside Explore's Web mode. */
+  onOpenBrowserUrl?: (url: string) => void
 
   // Workspace
   onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void | Promise<void>

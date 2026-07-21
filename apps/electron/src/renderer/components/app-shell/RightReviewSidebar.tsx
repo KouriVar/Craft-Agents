@@ -9,7 +9,7 @@
 import { useCallback } from 'react'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, ListTree, LoaderCircle, Plus, RotateCcw, Terminal, X } from 'lucide-react'
+import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, Keyboard, ListTree, LoaderCircle, Plus, RotateCcw, Terminal, X } from 'lucide-react'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { EmbeddedTerminal } from './EmbeddedTerminal'
 import { WorkspaceFileBrowser } from './WorkspaceFileBrowser'
@@ -27,6 +27,7 @@ import {
 import type { McpAppWidgetDescriptor } from '../../../shared/widget-runtime'
 import { McpAppWidget } from '../widgets/McpAppWidget'
 import * as storage from '@/lib/local-storage'
+import { ShortcutsContent } from '@/pages/settings/ShortcutsPage'
 
 // --- Toolbar button (matches HeaderIconButton styling) ---
 function ToolMenuItem({
@@ -80,7 +81,7 @@ function EmptySidebarAction({
   )
 }
 
-type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'widget'
+type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'shortcuts' | 'widget'
 interface RightSidebarTab {
   id: string
   type: RightSidebarTool
@@ -133,6 +134,7 @@ function getToolIcon(type: RightSidebarTool, className = 'h-4 w-4 shrink-0') {
   if (type === 'files') return <FolderOpen className={className} />
   if (type === 'cowart') return <Brush className={className} />
   if (type === 'sources') return <ListTree className={className} />
+  if (type === 'shortcuts') return <Keyboard className={className} />
   if (type === 'widget') return <AppWindow className={className} />
   return <Globe className={className} />
 }
@@ -152,10 +154,6 @@ function SourcesReviewPanel({
       return
     }
     if (!item.path) return
-    if (item.kind === 'folder') {
-      void window.electronAPI.openFile(item.path)
-      return
-    }
     onOpenFile(item.path)
   }, [onOpenFile, onOpenUrl])
 
@@ -294,6 +292,19 @@ export function RightReviewSidebar() {
     addTab('browser', newTabLabel)
   }, [addTab, newTabLabel])
 
+  const handleOpenShortcuts = useCallback(() => {
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.type === 'shortcuts')
+      if (existing) {
+        setActiveTabId(existing.id)
+        return current
+      }
+      const tab = createSidebarTab('shortcuts', t('settings.shortcuts.title'))
+      setActiveTabId(tab.id)
+      return [...current, tab]
+    })
+  }, [t])
+
   const handleOpenCowart = useCallback(async (projectDirOverride?: string, pageId?: string, sessionId?: string) => {
     const existingTab = tabs.find((tab) => tab.type === 'cowart')
     const tabId = existingTab?.id
@@ -383,18 +394,20 @@ export function RightReviewSidebar() {
     }
 
     window.addEventListener('craft:right-sidebar-open-sources', handleOpenSources)
+    window.addEventListener('craft:right-sidebar-open-shortcuts', handleOpenShortcuts)
     window.addEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
     window.addEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
     window.addEventListener('craft:widget-runtime-status', handleWidgetStatus)
     window.addEventListener('craft:session-deleted', handleSessionDeleted)
     return () => {
       window.removeEventListener('craft:right-sidebar-open-sources', handleOpenSources)
+      window.removeEventListener('craft:right-sidebar-open-shortcuts', handleOpenShortcuts)
       window.removeEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
       window.removeEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
       window.removeEventListener('craft:widget-runtime-status', handleWidgetStatus)
       window.removeEventListener('craft:session-deleted', handleSessionDeleted)
     }
-  }, [handleOpenCowart, newTabLabel, t])
+  }, [handleOpenCowart, handleOpenShortcuts, newTabLabel, t])
 
   const noWorkspace = !rootPath
 
@@ -479,6 +492,12 @@ export function RightReviewSidebar() {
               disabled={noWorkspace}
               active={activeTab?.type === 'files'}
             />
+            <ToolMenuItem
+              icon={<Keyboard className="h-4 w-4" />}
+              label={t('settings.shortcuts.title')}
+              onClick={handleOpenShortcuts}
+              active={activeTab?.type === 'shortcuts'}
+            />
             <StyledDropdownMenuSeparator />
             <ToolMenuItem
               icon={<Brush className="h-4 w-4" />}
@@ -513,6 +532,11 @@ export function RightReviewSidebar() {
                 disabled={noWorkspace}
               />
               <EmptySidebarAction
+                icon={<Keyboard className="h-5 w-5" />}
+                label={t('settings.shortcuts.title')}
+                onClick={handleOpenShortcuts}
+              />
+              <EmptySidebarAction
                 icon={<Brush className="h-5 w-5" />}
                 label={t('rightSidebar.openCowart', { defaultValue: 'Cowart 画布' })}
                 onClick={() => { void handleOpenCowart(undefined, undefined, session.selected ?? undefined) }}
@@ -531,6 +555,13 @@ export function RightReviewSidebar() {
           }
           if (tab.type === 'sources') {
             return <SourcesReviewPanel key={tab.id} items={tab.resources ?? []} className={className} />
+          }
+          if (tab.type === 'shortcuts') {
+            return (
+              <div key={tab.id} className={cn(className, 'overflow-y-auto')}>
+                <ShortcutsContent compact />
+              </div>
+            )
           }
           if (tab.type === 'widget' && tab.widget && tab.sessionId && tab.restored) {
             return (

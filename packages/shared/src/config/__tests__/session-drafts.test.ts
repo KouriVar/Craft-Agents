@@ -67,6 +67,16 @@ describe('session draft storage', () => {
     })
   })
 
+  it('round-trips a folder reference without attachment content', () => {
+    const configDir = makeConfigDir()
+    runEval(configDir, "setSessionDraft('s1', { text: '', attachments: [{ path: '/tmp/project', name: 'project', kind: 'folder' }] })")
+    const output = runEval(configDir, "console.log(JSON.stringify(getSessionDraft('s1')))")
+    expect(JSON.parse(output)).toEqual({
+      text: '',
+      attachments: [{ path: '/tmp/project', name: 'project', kind: 'folder' }],
+    })
+  })
+
   it('removes the entry when draft is fully empty', () => {
     const configDir = makeConfigDir()
     runEval(configDir, "setSessionDraft('s1', { text: 'typed' })")

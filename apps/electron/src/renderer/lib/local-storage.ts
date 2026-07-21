@@ -24,6 +24,7 @@ export const KEYS = {
   collapsedSidebarItems: 'collapsed-sidebar-items',
   chatGroupingMode: 'chat-grouping-mode', // How to group chats: 'date' | 'status'
   collapsedSessionGroups: 'collapsed-session-groups', // Collapsed group keys in session list
+  collapsedExploreGroups: 'collapsed-explore-groups', // Collapsed group keys in the Explore (browser tabs) list
 
   // Focus mode (legacy key retained only so AppShell can remove persisted state)
   focusModeEnabled: 'focus-mode-enabled',
@@ -42,6 +43,7 @@ export const KEYS = {
   rightSidebarWidgetTabs: 'right-sidebar-widget-tabs',
   browserWorkspace: 'browser-workspace',
   browserIntentCorrections: 'browser-intent-corrections',
+  exploreBrief: 'explore-brief',
 
   // Working directory
   recentWorkingDirs: 'recent-working-dirs',

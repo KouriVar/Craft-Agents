@@ -3,6 +3,7 @@ import type { FileAttachment } from '@craft-agent/shared/protocol'
 import {
   CONTENT_PERSIST_CAP,
   attachmentFromContentRef,
+  folderAttachmentFromRef,
   isAbsolutePath,
   toDraftRef,
 } from '../drafts'
@@ -40,6 +41,20 @@ describe('isAbsolutePath', () => {
 })
 
 describe('toDraftRef', () => {
+  it('emits a lightweight path-only ref for folders', () => {
+    const ref = toDraftRef(makeAttachment({
+      type: 'unknown',
+      kind: 'folder',
+      path: '/Users/me/project',
+      name: 'project',
+      mimeType: 'inode/directory',
+      size: 0,
+      base64: undefined,
+      thumbnailBase64: undefined,
+    }))
+    expect(ref).toEqual({ path: '/Users/me/project', name: 'project', kind: 'folder' })
+  })
+
   it('emits path-only ref for attachments with absolute paths (Track P)', () => {
     const ref = toDraftRef(makeAttachment({ path: '/Users/me/pic.png', name: 'pic.png' }))
     expect(ref).toEqual({ path: '/Users/me/pic.png', name: 'pic.png' })
@@ -103,6 +118,27 @@ describe('toDraftRef', () => {
     }))
     // Track P: just path+name, content never inlined — cap doesn't apply
     expect(ref).toEqual({ path: '/Users/me/huge.png', name: 'huge.png' })
+  })
+})
+
+describe('folderAttachmentFromRef', () => {
+  it('hydrates a folder ref without reading directory contents', () => {
+    expect(folderAttachmentFromRef({
+      path: '/Users/me/project',
+      name: 'project',
+      kind: 'folder',
+    })).toEqual({
+      type: 'unknown',
+      kind: 'folder',
+      path: '/Users/me/project',
+      name: 'project',
+      mimeType: 'inode/directory',
+      size: 0,
+    })
+  })
+
+  it('ignores normal file refs', () => {
+    expect(folderAttachmentFromRef({ path: '/Users/me/a.png', name: 'a.png' })).toBeNull()
   })
 })
 

@@ -8,7 +8,10 @@ function createResources(overrides: Partial<ShutdownResources> = {}) {
       flushAllSessions: async () => { calls.push('session-flush') },
       cleanup: async () => { calls.push('session-cleanup') },
     },
-    browserPaneManager: { destroyAll: () => { calls.push('browser') } },
+    browserPaneManager: {
+      prepareForShutdown: async () => { calls.push('browser-flush') },
+      destroyAll: () => { calls.push('browser') },
+    },
     oauthFlowStore: { dispose: () => { calls.push('oauth') } },
     stopModelRefresh: () => { calls.push('models') },
     messagingHandle: { dispose: async () => { calls.push('messaging') } },
@@ -26,7 +29,7 @@ describe('cleanupApplicationResources', () => {
 
     const results = await cleanupApplicationResources(resources)
 
-    expect(calls).toEqual(['browser', 'oauth', 'models', 'messaging', 'power', 'lock'])
+    expect(calls).toEqual(['browser-flush', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock'])
     expect(results.every((result) => result.ok)).toBe(true)
   })
 
@@ -50,7 +53,7 @@ describe('cleanupApplicationResources', () => {
     const results = await cleanupApplicationResources(resources)
 
     expect(calls).toEqual([
-      'session-flush', 'session-cleanup', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock',
+      'session-flush', 'session-cleanup', 'browser-flush', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock',
     ])
     expect(results.filter((result) => !result.ok).map((result) => result.phase)).toEqual([
       'session-flush', 'messaging-dispose',
@@ -62,7 +65,7 @@ describe('cleanupApplicationResources', () => {
     const { resources, calls } = createResources()
     await cleanupApplicationResources(resources)
     expect(calls).toEqual([
-      'session-flush', 'session-cleanup', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock',
+      'session-flush', 'session-cleanup', 'browser-flush', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock',
     ])
   })
 })

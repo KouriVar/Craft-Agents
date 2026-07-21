@@ -289,6 +289,7 @@ export interface ElectronAPI {
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
+  generateExploreBrief(request: import('@craft-agent/shared/protocol').ExploreBriefRequest): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>

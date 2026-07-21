@@ -4,6 +4,10 @@ export interface PersistedBrowserTab {
   id: string
   url: string
   title: string
+  favicon?: string | null
+  createdAt?: number
+  lastAccessedAt?: number
+  pageState?: string | null
 }
 
 export interface PersistedBrowserWorkspace {

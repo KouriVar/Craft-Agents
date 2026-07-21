@@ -126,43 +126,49 @@ function ActionShortcutRow({ actionId }: { actionId: ActionId }) {
 
 export default function ShortcutsPage() {
   const { t } = useTranslation()
-  const componentSpecificSections = useComponentSpecificSections()
   return (
     <div className="h-full flex flex-col">
       <PanelHeader title={t("settings.shortcuts.title")} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto space-y-8">
-            {/* Registry-driven sections */}
-            {Object.entries(actionsByCategory).map(([category, actions]) => (
-              <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
-                <SettingsCard>
-                  {actions.map(action => (
-                    <ActionShortcutRow key={action.id} actionId={action.id as ActionId} />
-                  ))}
-                </SettingsCard>
-              </SettingsSection>
-            ))}
-
-            {/* Component-specific sections */}
-            {componentSpecificSections.map((section) => (
-              <SettingsSection key={section.title} title={section.title}>
-                <SettingsCard>
-                  {section.shortcuts.map((shortcut, index) => (
-                    <SettingsRow key={index} label={shortcut.description}>
-                      <div className="flex items-center gap-1">
-                        {shortcut.keys.map((key, keyIndex) => (
-                          <Kbd key={keyIndex}>{key}</Kbd>
-                        ))}
-                      </div>
-                    </SettingsRow>
-                  ))}
-                </SettingsCard>
-              </SettingsSection>
-            ))}
-          </div>
+          <ShortcutsContent />
         </ScrollArea>
       </div>
+    </div>
+  )
+}
+
+export function ShortcutsContent({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation()
+  const componentSpecificSections = useComponentSpecificSections()
+
+  return (
+    <div className={compact ? 'space-y-6 px-4 py-4' : 'mx-auto max-w-3xl space-y-8 px-5 py-7'}>
+      {Object.entries(actionsByCategory).map(([category, actions]) => (
+        <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
+          <SettingsCard>
+            {actions.map(action => (
+              <ActionShortcutRow key={action.id} actionId={action.id as ActionId} />
+            ))}
+          </SettingsCard>
+        </SettingsSection>
+      ))}
+
+      {componentSpecificSections.map((section) => (
+        <SettingsSection key={section.title} title={section.title}>
+          <SettingsCard>
+            {section.shortcuts.map((shortcut, index) => (
+              <SettingsRow key={index} label={shortcut.description}>
+                <div className="flex items-center gap-1">
+                  {shortcut.keys.map((key, keyIndex) => (
+                    <Kbd key={keyIndex}>{key}</Kbd>
+                  ))}
+                </div>
+              </SettingsRow>
+            ))}
+          </SettingsCard>
+        </SettingsSection>
+      ))}
     </div>
   )
 }

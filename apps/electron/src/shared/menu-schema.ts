@@ -393,6 +393,7 @@ const SETTINGS_ICONS: Record<SettingsSubpage, string> = {
   ai: 'Sparkles',
   accounts: 'KeyRound',
   appearance: 'Palette',
+  explore: 'Compass',
   input: 'Keyboard',
   workspace: 'Building2',
   permissions: 'ShieldCheck',
@@ -415,6 +416,14 @@ export const SETTINGS_ITEMS: SettingsMenuItem[] = SETTINGS_PAGES
     icon: SETTINGS_ICONS[page.id],
     descriptionKey: page.descriptionKey,
   }))
+
+/**
+ * Context-owned settings stay routable but do not occupy permanent settings
+ * navigation space. Their contextual entry points live in the relevant view.
+ */
+export const SETTINGS_MENU_ITEMS = SETTINGS_ITEMS.filter(
+  (item) => item.id !== 'shortcuts' && item.id !== 'explore',
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

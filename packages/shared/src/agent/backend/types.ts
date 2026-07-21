@@ -22,6 +22,7 @@ import type { McpClientPool } from '../../mcp/mcp-pool.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
 import type { SourceManager } from '../core/source-manager.ts';
+import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 
 // Import AbortReason and RecoveryMessage from core module (single source of truth)
 import { AbortReason, type RecoveryMessage } from '../core/index.ts';
@@ -409,6 +410,9 @@ export interface AgentBackend {
    * Used for connection testing, title generation, and summarization.
    */
   runMiniCompletion(prompt: string): Promise<string | null>;
+
+  /** Run a one-shot model-aware completion without opening a visible session. */
+  queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult>;
 
   /**
    * Clean up resources (MCP connections, watchers, etc.)

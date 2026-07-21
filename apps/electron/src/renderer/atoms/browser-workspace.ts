@@ -4,6 +4,15 @@ import type { BrowserInstanceInfo } from '../../shared/types'
 export type BrowserWorkspaceTab = BrowserInstanceInfo
 export type BrowserNavigatorKind = 'tabs' | 'bookmarks' | 'history' | 'downloads'
 
+/**
+ * Explore is the unified work entry. It hosts two perspectives over the same
+ * workspace: a sessions view (reusing SessionList) and a browser view (reusing
+ * the browser tabs/collections). The mode switch in the navigator header swaps
+ * between them without splitting Explore into separate modules.
+ */
+export type ExploreMode = 'sessions' | 'browser'
+export const exploreModeAtom = atom<ExploreMode>('sessions')
+
 export const BROWSER_NEW_TAB_URL = 'about:blank'
 
 /** Runtime-backed browser tabs visible in the active workspace. */

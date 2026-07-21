@@ -22,7 +22,7 @@ import {
   EDIT_MENU,
   VIEW_MENU,
   WINDOW_MENU,
-  SETTINGS_ITEMS,
+  SETTINGS_MENU_ITEMS,
   ROOT_MENU,
   HELP_LINKS,
   DEBUG_MENU,
@@ -210,7 +210,7 @@ export function DesktopAppMenu({
               {settingsHotkey && <DropdownMenuShortcut className="pl-6">{settingsHotkey}</DropdownMenuShortcut>}
             </StyledDropdownMenuItem>
             <StyledDropdownMenuSeparator />
-            {SETTINGS_ITEMS.map((item) => {
+            {SETTINGS_MENU_ITEMS.map((item) => {
               const Icon = SETTINGS_ICONS[item.id]
               return (
                 <StyledDropdownMenuItem

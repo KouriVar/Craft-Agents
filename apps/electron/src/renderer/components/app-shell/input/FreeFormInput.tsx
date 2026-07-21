@@ -11,6 +11,7 @@ import {
   ChevronUp,
   AlertCircle,
   Image as ImageIcon,
+  FolderPlus,
 } from 'lucide-react'
 import { Icon_Home, Spinner } from '@craft-agent/ui'
 
@@ -91,6 +92,12 @@ import {
   stripPiPrefixForDisplay,
 } from './model-picker-helpers'
 import { useModelVisionToggle } from './useModelVisionToggle'
+import {
+  appendUniqueAttachments,
+  createFolderAttachment,
+  getDroppedFolderPath,
+  prepareComposerSubmission,
+} from './folder-attachments'
 
 function formatFollowUpChipText(text: string, fallback: string, maxLength = 50): string {
   const normalized = text.replace(/\s+/g, ' ').trim()
@@ -482,7 +489,8 @@ export function FreeFormInput({
     return attachmentsValue.map(a => a.path).join('|')
   }, [attachmentsValue])
   const prevAttachmentsRefsKey = React.useRef(attachmentsRefsKey)
-  const skipPersistRef = React.useRef(true) // treat initial mount as a prop-seed
+  const skipPersistRef = React.useRef(false)
+  const didMountAttachmentsRef = React.useRef(false)
   React.useEffect(() => {
     if (attachmentsValue === undefined) return
     if (attachmentsRefsKey === prevAttachmentsRefsKey.current) return
@@ -497,6 +505,10 @@ export function FreeFormInput({
   const onAttachmentsChangeRef = React.useRef(onAttachmentsChange)
   onAttachmentsChangeRef.current = onAttachmentsChange
   React.useEffect(() => {
+    if (!didMountAttachmentsRef.current) {
+      didMountAttachmentsRef.current = true
+      return
+    }
     if (skipPersistRef.current) {
       skipPersistRef.current = false
       return
@@ -1081,7 +1093,7 @@ export function FreeFormInput({
     try {
       const attachment = await readFileAsAttachment(file, overrideName)
       if (attachment) {
-        setAttachments(prev => [...prev, attachment])
+        setAttachments(prev => appendUniqueAttachments(prev, [attachment]))
       }
     } catch (error) {
       console.error('[FreeFormInput] Failed to read file:', error)
@@ -1093,6 +1105,26 @@ export function FreeFormInput({
   const handleAttachClick = () => {
     if (disabled) return
     fileInputRef.current?.click()
+  }
+
+  const handleAttachFolderClick = async () => {
+    if (disabled || !window.electronAPI) return
+
+    try {
+      const paths = await window.electronAPI.openFileDialog({
+        mode: 'directory',
+        title: t('chat.attachFolder'),
+      })
+      if (!paths?.length) return
+
+      setAttachments((previous) => {
+        const folders = paths.filter(Boolean).map(createFolderAttachment)
+        return appendUniqueAttachments(previous, folders)
+      })
+      richInputRef.current?.focus()
+    } catch (error) {
+      console.error('[FreeFormInput] Failed to choose folder:', error)
+    }
   }
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1252,8 +1284,31 @@ export function FreeFormInput({
     setIsDraggingOver(false)
     if (disabled) return
 
-    const files = Array.from(e.dataTransfer.files)
-    setLoadingCount(files.length)
+    const items = Array.from(e.dataTransfer.items).filter((item) => item.kind === 'file')
+    const droppedFiles = items.length > 0
+      ? items.map((item) => ({
+          file: item.getAsFile(),
+          entry: item.webkitGetAsEntry?.(),
+        })).filter((item): item is { file: File; entry: FileSystemEntry | null } => !!item.file)
+      : Array.from(e.dataTransfer.files).map((file) => ({ file, entry: null }))
+
+    const folders: FileAttachment[] = []
+    const files: File[] = []
+
+    for (const dropped of droppedFiles) {
+      const path = hasElectronAPI ? window.electronAPI.getFilePath?.(dropped.file) ?? null : null
+      const folderPath = getDroppedFolderPath(dropped.entry, path)
+      if (folderPath) {
+        folders.push(createFolderAttachment(folderPath))
+      } else {
+        files.push(dropped.file)
+      }
+    }
+
+    if (folders.length > 0) {
+      setAttachments((previous) => appendUniqueAttachments(previous, folders))
+    }
+    setLoadingCount((previous) => previous + files.length)
 
     for (const file of files) {
       await processFileAttachment(file)
@@ -1282,11 +1337,11 @@ export function FreeFormInput({
       }
     }
 
-    const attachmentSnapshot = attachments
+    const submission = prepareComposerSubmission(input, attachments)
 
     onSubmit(
-      input.trim(),
-      attachmentSnapshot.length > 0 ? attachmentSnapshot : undefined,
+      submission.message,
+      submission.fileAttachments,
       mentions.skills.length > 0 ? mentions.skills : undefined
     )
     setInput('')
@@ -1816,15 +1871,25 @@ export function FreeFormInput({
           )}
           <FreeFormInputContextBadge
             icon={<Paperclip className="h-4 w-4" />}
-            label={attachments.length > 0
-              ? t("chat.filesCount", { count: attachments.length })
+            label={attachments.some((attachment) => attachment.kind !== 'folder')
+              ? t("chat.filesCount", { count: attachments.filter((attachment) => attachment.kind !== 'folder').length })
               : t("chat.attach")
             }
             isExpanded={false}
-            hasSelection={attachments.length > 0}
+            hasSelection={attachments.some((attachment) => attachment.kind !== 'folder')}
             showChevron={false}
             onClick={handleAttachClick}
             tooltip={t("chat.attachFilesTooltip")}
+            disabled={disabled}
+          />
+          <FreeFormInputContextBadge
+            icon={<FolderPlus className="h-4 w-4" />}
+            label={t('chat.attachFolder')}
+            isExpanded={false}
+            hasSelection={attachments.some((attachment) => attachment.kind === 'folder')}
+            showChevron={false}
+            onClick={handleAttachFolderClick}
+            tooltip={t('chat.attachFolderTooltip')}
             disabled={disabled}
           />
           {onSourcesChange && (
@@ -1916,15 +1981,25 @@ export function FreeFormInput({
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
             icon={<Paperclip className="h-4 w-4" />}
-            label={attachments.length > 0
-              ? t("chat.filesCount", { count: attachments.length })
+            label={attachments.some((attachment) => attachment.kind !== 'folder')
+              ? t("chat.filesCount", { count: attachments.filter((attachment) => attachment.kind !== 'folder').length })
               : t("chat.attachFiles")
             }
             isExpanded={isEmptySession}
-            hasSelection={attachments.length > 0}
+            hasSelection={attachments.some((attachment) => attachment.kind !== 'folder')}
             showChevron={false}
             onClick={handleAttachClick}
             tooltip={t("chat.attachFilesTooltip")}
+            disabled={disabled}
+          />
+          <FreeFormInputContextBadge
+            icon={<FolderPlus className="h-4 w-4" />}
+            label={t('chat.attachFolder')}
+            isExpanded={isEmptySession}
+            hasSelection={attachments.some((attachment) => attachment.kind === 'folder')}
+            showChevron={false}
+            onClick={handleAttachFolderClick}
+            tooltip={t('chat.attachFolderTooltip')}
             disabled={disabled}
           />
 

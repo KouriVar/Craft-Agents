@@ -1096,7 +1096,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.browser())
+      navigate(routes.view.browser(), { skipAutoSelect: true })
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)
@@ -1180,10 +1180,15 @@ export function NavigationProvider({
 
   useEffect(() => {
     const handleNavigateEvent = (event: Event) => {
-      const customEvent = event as CustomEvent<{ route: Route; newPanel?: boolean; targetLaneId?: 'main' }>
+      const customEvent = event as CustomEvent<{
+        route: Route
+        newPanel?: boolean
+        targetLaneId?: 'main'
+        skipAutoSelect?: boolean
+      }>
       if (customEvent.detail?.route) {
-        const { route: r, newPanel, targetLaneId } = customEvent.detail
-        navigate(r, newPanel ? { newPanel, targetLaneId } : undefined)
+        const { route: r, newPanel, targetLaneId, skipAutoSelect } = customEvent.detail
+        navigate(r, { newPanel, targetLaneId, skipAutoSelect })
       }
     }
 

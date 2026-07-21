@@ -8,7 +8,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Pencil } from 'lucide-react'
+import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Keyboard, Pencil } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
@@ -31,6 +31,7 @@ import { kanbanEditorTargetAtom } from '@/atoms/kanban'
 import { getSessionTitle } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
+import { useNavigation } from '@/contexts/NavigationContext'
 
 export interface ChatPageProps {
   sessionId: string
@@ -38,6 +39,7 @@ export interface ChatPageProps {
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
+  const { updateRightSidebar } = useNavigation()
   const [inputContainerElement, setInputContainerElement] = React.useState<HTMLDivElement | null>(null)
   const inputContainerRef = React.useCallback((element: HTMLDivElement | null) => {
     setInputContainerElement(element)
@@ -639,6 +641,22 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [isTaskOrchestrator, handleEditTask, t])
 
   const primaryHeaderAction = isCompactMode ? compactInfoButton : shareButton
+  const shortcutsButton = React.useMemo(() => {
+    if (isCompactMode) return undefined
+    return (
+      <PanelHeaderCenterButton
+        icon={<Keyboard className="h-4 w-4" />}
+        tooltip={t('settings.shortcuts.title')}
+        aria-label={t('settings.shortcuts.title')}
+        onClick={() => {
+          updateRightSidebar({ type: 'review' })
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('craft:right-sidebar-open-shortcuts'))
+          }, 0)
+        }}
+      />
+    )
+  }, [isCompactMode, t, updateRightSidebar])
   const [resourcesPanelOpen, setResourcesPanelOpen] = React.useState(false)
   React.useEffect(() => {
     if (isCompactMode) setResourcesPanelOpen(false)
@@ -656,12 +674,13 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     )
   }, [inputContainerElement, isCompactMode, resourcesPanelOpen, session])
 
-  const headerActions = editTaskButton ? (
+  const headerActions = (
     <div className="flex items-center gap-1.5">
       {editTaskButton}
+      {shortcutsButton}
       {primaryHeaderAction}
     </div>
-  ) : primaryHeaderAction
+  )
 
   const headerRightSidebarButton = React.useMemo(() => (
     <span className="inline-flex items-center gap-1.5">

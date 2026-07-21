@@ -57,6 +57,9 @@ function buildContent(a: FileAttachment): DraftAttachmentContent {
  * cap — the caller drops it from the draft with a console warn.
  */
 export function toDraftRef(a: FileAttachment): DraftAttachmentRef | null {
+  if (a.kind === 'folder') {
+    return { path: a.path, name: a.name, kind: 'folder' }
+  }
   if (isAbsolutePath(a.path)) {
     return { path: a.path, name: a.name }
   }
@@ -64,6 +67,19 @@ export function toDraftRef(a: FileAttachment): DraftAttachmentRef | null {
     return null
   }
   return { path: a.path, name: a.name, content: buildContent(a) }
+}
+
+/** Reconstruct a lightweight folder composer reference without touching disk. */
+export function folderAttachmentFromRef(ref: DraftAttachmentRef): FileAttachment | null {
+  if (ref.kind !== 'folder') return null
+  return {
+    type: 'unknown',
+    kind: 'folder',
+    path: ref.path,
+    name: ref.name,
+    mimeType: 'inode/directory',
+    size: 0,
+  }
 }
 
 /**

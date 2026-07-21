@@ -132,22 +132,23 @@ mac:
 dmg:
   # Use predictable naming: Craft-Agents-arm64.dmg, Craft-Agents-x64.dmg
   artifactName: "Craft-Agents-${arch}.dmg"
-  # Custom background (multi-resolution TIFF with 1x+2x for retina support)
-  background: resources/dmg-background.tiff
+  # Retina Finder installer background with matching 704x464 (1x) and
+  # 1408x928 (2x) frames for the custom drag-to-install layout.
+  background: resources/dmg-background-installer.tiff
   # Use app icon as the mounted volume icon in Finder
   icon: resources/icon.icns
-  iconSize: 80
+  iconSize: 128
   title: "Craft Agents"
   contents:
-    - x: 130
+    - x: 220
       y: 200
-    - x: 410
+    - x: 423
       y: 200
       type: link
       path: /Applications
   window:
-    width: 540
-    height: 380
+    width: 640
+    height: 400
 
 win:
   icon: resources/icon.ico

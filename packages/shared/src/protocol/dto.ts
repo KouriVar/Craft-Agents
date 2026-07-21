@@ -533,6 +533,9 @@ export interface DirectoryListingResult {
 
 export interface FileAttachment {
   type: 'image' | 'text' | 'pdf' | 'office' | 'audio' | 'unknown'
+  /** Folder refs are lightweight composer-only entries. They are converted to
+   *  `[folder:/absolute/path]` mentions and never transported as attachments. */
+  kind?: 'file' | 'folder'
   path: string
   name: string
   mimeType: string
@@ -686,6 +689,53 @@ export interface RefreshTitleResult {
   success: boolean
   title?: string
   error?: string
+}
+
+export interface ExploreBriefSessionInput {
+  id: string
+  title: string
+  preview?: string
+  lastMessageAt?: number
+  isProcessing?: boolean
+  hasUnread?: boolean
+  /** Server-enriched recent user/assistant context. Never required from clients. */
+  recentContext?: string
+}
+
+export interface ExploreBriefTabInput {
+  id: string
+  title: string
+  url?: string
+}
+
+export interface ExploreBriefRequest {
+  workspaceId: string
+  locale: string
+  recommendationCount: 3 | 5
+  sessions: ExploreBriefSessionInput[]
+  tabs: ExploreBriefTabInput[]
+}
+
+export interface ExploreBriefThread {
+  title: string
+  detail: string
+}
+
+export interface ExploreBriefRecommendation {
+  kind: 'session' | 'tab' | 'prompt'
+  targetId?: string
+  title: string
+  description: string
+  prompt?: string
+}
+
+export interface ExploreBriefResult {
+  headline: string
+  summary: string
+  threads: ExploreBriefThread[]
+  recommendations: ExploreBriefRecommendation[]
+  generatedAt: number
+  model?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -910,6 +960,14 @@ export interface BrowserWorkspaceSnapshot {
     id: string
     url: string
     title: string
+    /** Tab favicon URL (data: or http), null when unknown. */
+    favicon?: string | null
+    /** Epoch ms when the tab was first created. */
+    createdAt?: number
+    /** Epoch ms when the tab was last focused/active. */
+    lastAccessedAt?: number
+    /** Serialized page state (e.g. scroll position), reserved for restore. */
+    pageState?: string | null
   }>
   updatedAt: number
 }

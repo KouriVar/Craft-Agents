@@ -18,7 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import { useAppShellContext, useActiveWorkspace } from '@/context/AppShellContext'
 import { useLabels } from '@/hooks/useLabels'
 import {
@@ -30,7 +30,12 @@ import {
   SettingsCard,
 } from '@/components/settings'
 import { routes } from '@/lib/navigate'
+import { navigate } from '@/lib/navigate'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { LabelConfig } from '@craft-agent/shared/labels'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -42,6 +47,9 @@ export default function LabelsSettingsPage() {
   const { activeWorkspaceId } = useAppShellContext()
   const activeWorkspace = useActiveWorkspace()
   const { labels, isLoading } = useLabels(activeWorkspaceId)
+  const [createParent, setCreateParent] = React.useState<LabelConfig | null | undefined>(undefined)
+  const [newLabelName, setNewLabelName] = React.useState('')
+  const [isSaving, setIsSaving] = React.useState(false)
 
   // Resolve edit configs using the workspace root path
   const rootPath = activeWorkspace?.rootPath || ''
@@ -53,6 +61,27 @@ export default function LabelsSettingsPage() {
     label: t("common.editFile"),
     filePath: `${rootPath}/labels/config.json`,
   } : undefined
+
+  const createLabel = async () => {
+    const name = newLabelName.trim()
+    if (!activeWorkspaceId || !name) return
+    setIsSaving(true)
+    try {
+      await window.electronAPI.createLabel(activeWorkspaceId, {
+        name,
+        parentId: createParent?.id,
+      })
+      setCreateParent(undefined)
+      setNewLabelName('')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const deleteLabel = async (label: LabelConfig) => {
+    if (!activeWorkspaceId || !window.confirm(`${t('sidebarMenu.deleteLabel')}: ${label.name}?`)) return
+    await window.electronAPI.deleteLabel(activeWorkspaceId, label.id)
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -98,15 +127,21 @@ export default function LabelsSettingsPage() {
                     title={t("settings.labels.labelHierarchy")}
                     description={t("settings.labels.labelHierarchyDesc")}
                     action={
-                      <EditPopover
-                        trigger={<EditButton />}
-                        context={labelsEditConfig.context}
-                        example={labelsEditConfig.example}
-                        displayLabel={labelsEditConfig.displayLabel}
-                        model={labelsEditConfig.model}
-                        systemPromptPreset={labelsEditConfig.systemPromptPreset}
-                        secondaryAction={editFileAction}
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <Button variant="ghost" size="sm" onClick={() => setCreateParent(null)}>
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          {t('sidebarMenu.addNewLabel')}
+                        </Button>
+                        <EditPopover
+                          trigger={<EditButton />}
+                          context={labelsEditConfig.context}
+                          example={labelsEditConfig.example}
+                          displayLabel={labelsEditConfig.displayLabel}
+                          model={labelsEditConfig.model}
+                          systemPromptPreset={labelsEditConfig.systemPromptPreset}
+                          secondaryAction={editFileAction}
+                        />
+                      </div>
                     }
                   >
                     <SettingsCard className="p-0">
@@ -117,6 +152,9 @@ export default function LabelsSettingsPage() {
                           maxHeight={350}
                           fullscreen
                           fullscreenTitle={t("settings.labels.labelHierarchy")}
+                          onViewSessions={(label) => navigate(routes.view.label(label.id))}
+                          onAddChild={(label) => setCreateParent(label)}
+                          onDelete={(label) => { void deleteLabel(label) }}
                         />
                       ) : (
                         <div className="p-8 text-center text-muted-foreground">
@@ -161,6 +199,37 @@ export default function LabelsSettingsPage() {
           </div>
         </ScrollArea>
       </div>
+      <Dialog open={createParent !== undefined} onOpenChange={(open) => {
+        if (!open) {
+          setCreateParent(undefined)
+          setNewLabelName('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('sidebarMenu.addNewLabel')}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); void createLabel() }} className="space-y-4">
+            <Input
+              autoFocus
+              value={newLabelName}
+              onChange={(event) => setNewLabelName(event.target.value)}
+              placeholder={t('editPopover.placeholder.addLabel')}
+            />
+            {createParent && (
+              <p className="text-xs text-muted-foreground">
+                {createParent.name}
+              </p>
+            )}
+            <DialogFooter>
+              <Button type="submit" disabled={!newLabelName.trim() || isSaving}>
+                {isSaving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {t('common.create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

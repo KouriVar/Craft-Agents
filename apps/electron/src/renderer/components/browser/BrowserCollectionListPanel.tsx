@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, ExternalLink, Folder, FolderOpen, FolderPlus, History, Pencil, Pause, Play, RotateCcw, Search, Star, Trash2, Upload, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import type { BrowserDownloadRecord, BrowserHistoryEntry, BrowserBookmarkEntry, BrowserBookmarkFolder } from '../../../shared/types'
 import type { BrowserNavigatorKind } from '@/atoms/browser-workspace'
 import { cn } from '@/lib/utils'
@@ -120,7 +121,7 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 text-center">
         <div className="flex max-w-[220px] flex-col items-center text-muted-foreground">
-          <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-[12px] bg-foreground/[0.04]">
+          <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-card bg-foreground/[0.04]">
             <Icon className="h-4 w-4" />
           </span>
           <p className="text-sm font-medium text-foreground">{t(config.emptyKey, { defaultValue: config.empty })}</p>
@@ -134,7 +135,7 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
     <div className="flex min-h-0 flex-1 flex-col">
       {(entries.length > 0 || kind === 'bookmarks') && (
         <div className="flex items-center gap-2 px-3 py-2">
-          <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[7px] bg-foreground/[0.04] px-2 py-1.5 text-muted-foreground">
+          <label className="flex min-w-0 flex-1 items-center gap-1.5 rounded-control bg-foreground/[0.04] px-2 py-1.5 text-muted-foreground">
             <Search className="h-3.5 w-3.5 shrink-0" />
             <input
               value={query}
@@ -144,47 +145,47 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
             />
           </label>
           {kind !== 'bookmarks' && (
-            <button type="button" onClick={() => void clear()} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
+            <Button type="button" variant="ghost" size="sm" onClick={() => void clear()} className="h-auto shrink-0 px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground">
               {t('browser.clearList', { defaultValue: 'Clear' })}
-            </button>
+            </Button>
           )}
           {kind === 'bookmarks' && (
             <div className="flex shrink-0 items-center">
-              <button type="button" onClick={() => void importBookmarks()} className="rounded p-1.5 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.importBookmarks', { defaultValue: 'Import bookmarks' })}>
+              <Button type="button" variant="ghost" size="icon" onClick={() => void importBookmarks()} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.importBookmarks', { defaultValue: 'Import bookmarks' })}>
                 <Upload className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" onClick={() => void exportBookmarks()} className="rounded p-1.5 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.exportBookmarks', { defaultValue: 'Export bookmarks' })}>
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => void exportBookmarks()} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.exportBookmarks', { defaultValue: 'Export bookmarks' })}>
                 <Download className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" onClick={() => void createFolder()} className="rounded p-1.5 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.newFolder', { defaultValue: 'New folder' })}>
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => void createFolder()} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.newFolder', { defaultValue: 'New folder' })}>
                 <FolderPlus className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           )}
         </div>
       )}
       {kind === 'bookmarks' && (folders.length > 0 || entries.length > 0) && (
         <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-border/40 px-2 pb-2">
-          <button type="button" onClick={() => setActiveFolderId('all')} className={cn('mb-0.5 flex w-full items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === 'all' && 'bg-foreground/[0.06] text-foreground')}>
+          <button type="button" onClick={() => setActiveFolderId('all')} className={cn('mb-0.5 flex w-full items-center gap-2 rounded-surface px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === 'all' && 'bg-foreground/[0.06] text-foreground')}>
             <Star className="h-3.5 w-3.5" />
             <span className="flex-1 truncate">{t('browser.allBookmarks', { defaultValue: 'All bookmarks' })}</span>
             <span className="text-[10px] tabular-nums">{entries.length}</span>
           </button>
-          <button type="button" onClick={() => setActiveFolderId('unfiled')} className={cn('mb-0.5 flex w-full items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === 'unfiled' && 'bg-foreground/[0.06] text-foreground')}>
+          <button type="button" onClick={() => setActiveFolderId('unfiled')} className={cn('mb-0.5 flex w-full items-center gap-2 rounded-surface px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === 'unfiled' && 'bg-foreground/[0.06] text-foreground')}>
             <Folder className="h-3.5 w-3.5" />
             <span className="flex-1 truncate">{t('browser.unfiledBookmarks', { defaultValue: 'Unfiled' })}</span>
             <span className="text-[10px] tabular-nums">{entries.filter((entry) => !(entry as BrowserBookmarkEntry).folderId).length}</span>
           </button>
           {folders.map((folder) => (
-            <div key={folder.id} className={cn('group/folder mb-0.5 flex items-center rounded-[8px] text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === folder.id && 'bg-foreground/[0.06] text-foreground')}>
+            <div key={folder.id} className={cn('group/folder mb-0.5 flex items-center rounded-surface text-xs text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground', activeFolderId === folder.id && 'bg-foreground/[0.06] text-foreground')}>
               <button type="button" onClick={() => setActiveFolderId(folder.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left">
                 <Folder className="h-3.5 w-3.5 shrink-0" />
                 <span className="flex-1 truncate">{folder.name}</span>
                 <span className="text-[10px] tabular-nums">{entries.filter((entry) => (entry as BrowserBookmarkEntry).folderId === folder.id).length}</span>
               </button>
               <div className="flex pr-1 opacity-0 group-hover/folder:opacity-100">
-                <button type="button" onClick={() => void renameFolder(folder)} className="rounded p-1 hover:bg-foreground/[0.06]" title={t('browser.renameFolder', { defaultValue: 'Rename folder' })}><Pencil className="h-3 w-3" /></button>
-                <button type="button" onClick={() => void removeFolder(folder)} className="rounded p-1 hover:bg-foreground/[0.06]" title={t('browser.removeFolder', { defaultValue: 'Delete folder' })}><Trash2 className="h-3 w-3" /></button>
+                <Button type="button" variant="ghost" size="icon" onClick={() => void renameFolder(folder)} className="size-6 rounded-control text-muted-foreground hover:text-foreground" title={t('browser.renameFolder', { defaultValue: 'Rename folder' })}><Pencil className="h-3 w-3" /></Button>
+                <Button type="button" variant="ghost" size="icon" onClick={() => void removeFolder(folder)} className="size-6 rounded-control text-muted-foreground hover:text-destructive" title={t('browser.removeFolder', { defaultValue: 'Delete folder' })}><Trash2 className="h-3 w-3" /></Button>
               </div>
             </div>
           ))}
@@ -205,7 +206,7 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
             const download = entry as BrowserDownloadRecord
             const progress = download.totalBytes > 0 ? Math.min(100, Math.round(download.bytesReceived / download.totalBytes * 100)) : 0
             return (
-              <div key={download.id} className="group mb-1 rounded-[10px] px-3 py-2 hover:bg-foreground/[0.04]">
+              <div key={download.id} className="group mb-1 rounded-touch px-3 py-2 hover:bg-foreground/[0.04]">
                 <div className="flex items-center gap-2">
                   <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
@@ -214,21 +215,21 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
                   </div>
                   <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
                     {download.state === 'started' && (
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.pauseDownload(download.id).then(refresh)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.pauseDownload', { defaultValue: 'Pause' })}><Pause className="h-3.5 w-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.pauseDownload(download.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.pauseDownload', { defaultValue: 'Pause' })}><Pause className="h-3.5 w-3.5" /></Button>
                     )}
                     {download.state === 'paused' && (
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.resumeDownload(download.id).then(refresh)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.resumeDownload', { defaultValue: 'Resume' })}><Play className="h-3.5 w-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.resumeDownload(download.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.resumeDownload', { defaultValue: 'Resume' })}><Play className="h-3.5 w-3.5" /></Button>
                     )}
                     {(download.state === 'started' || download.state === 'paused') && (
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.cancelDownload(download.id).then(refresh)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.cancelDownload', { defaultValue: 'Cancel' })}><X className="h-3.5 w-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.cancelDownload(download.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.cancelDownload', { defaultValue: 'Cancel' })}><X className="h-3.5 w-3.5" /></Button>
                     )}
                     {(download.state === 'interrupted' || download.state === 'cancelled') && (
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.retryDownload(download.id).then(refresh)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.retryDownload', { defaultValue: 'Retry' })}><RotateCcw className="h-3.5 w-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.retryDownload(download.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.retryDownload', { defaultValue: 'Retry' })}><RotateCcw className="h-3.5 w-3.5" /></Button>
                     )}
                     {download.savePath && (
                       <>
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.openDownload(download.id)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.openDownload', { defaultValue: 'Open' })}><ExternalLink className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => void window.electronAPI.browserPane.showDownload(download.id)} className="rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" title={t('browser.showInFolder', { defaultValue: 'Show in folder' })}><FolderOpen className="h-3.5 w-3.5" /></button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.openDownload(download.id)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.openDownload', { defaultValue: 'Open' })}><ExternalLink className="h-3.5 w-3.5" /></Button>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.showDownload(download.id)} className="size-control-compact rounded-control text-muted-foreground hover:text-foreground" title={t('browser.showInFolder', { defaultValue: 'Show in folder' })}><FolderOpen className="h-3.5 w-3.5" /></Button>
                       </>
                     )}
                   </div>
@@ -247,7 +248,7 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
               {currentDay && currentDay !== previousDay && (
                 <p className="px-3 pb-1 pt-2 text-[11px] font-medium text-muted-foreground">{currentDay}</p>
               )}
-              <div className="group mb-1 flex items-center gap-2 rounded-[10px] px-3 py-2 hover:bg-foreground/[0.04]">
+              <div className="group mb-1 flex items-center gap-2 rounded-touch px-3 py-2 hover:bg-foreground/[0.04]">
                 <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onOpenUrl(page.url)}>
                   {page.favicon ? <img src={page.favicon} alt="" className="h-4 w-4 shrink-0 rounded-sm" /> : <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 flex-1">
@@ -266,15 +267,15 @@ export function BrowserCollectionListPanel({ kind, onOpenUrl }: BrowserCollectio
                       <option value="">{t('browser.unfiledBookmarks', { defaultValue: 'Unfiled' })}</option>
                       {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
                     </select>
-                    <button type="button" onClick={() => void window.electronAPI.browserPane.removeBookmark(page.id).then(refresh)} className={cn('rounded p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground')} title={t('browser.removeBookmark', { defaultValue: 'Remove bookmark' })}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.removeBookmark(page.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground hover:text-destructive" title={t('browser.removeBookmark', { defaultValue: 'Remove bookmark' })}>
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </Button>
                   </div>
                 )}
                 {kind === 'history' && (
-                  <button type="button" onClick={() => void window.electronAPI.browserPane.removeHistoryEntry(page.id).then(refresh)} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground group-hover:opacity-100" title={t('browser.removeHistoryEntry', { defaultValue: 'Remove from history' })}>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => void window.electronAPI.browserPane.removeHistoryEntry(page.id).then(refresh)} className="size-control-compact rounded-control text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100" title={t('browser.removeHistoryEntry', { defaultValue: 'Remove from history' })}>
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 )}
               </div>
             </Fragment>

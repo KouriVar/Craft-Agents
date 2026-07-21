@@ -11,7 +11,7 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { ColumnDef, Row } from '@tanstack/react-table'
-import { ChevronRight, Maximize2 } from 'lucide-react'
+import { ChevronRight, Maximize2, MessageCircle, Plus, Trash2 } from 'lucide-react'
 import { Info_DataTable, SortableHeader } from './Info_DataTable'
 import { Info_Badge } from './Info_Badge'
 import { DataTableOverlay } from '@craft-agent/ui'
@@ -32,6 +32,9 @@ interface LabelsDataTableProps {
   /** Title for fullscreen overlay */
   fullscreenTitle?: string
   className?: string
+  onViewSessions?: (label: LabelConfig) => void
+  onAddChild?: (label: LabelConfig) => void
+  onDelete?: (label: LabelConfig) => void
 }
 
 /**
@@ -75,8 +78,11 @@ function ExpandableNameCell({ row }: { row: Row<LabelConfig> }) {
 }
 
 // Column definitions for the labels tree table
-function getColumns(t: TFunction): ColumnDef<LabelConfig>[] {
-  return [
+function getColumns(
+  t: TFunction,
+  actions: Pick<LabelsDataTableProps, 'onViewSessions' | 'onAddChild' | 'onDelete'>,
+): ColumnDef<LabelConfig>[] {
+  const columns: ColumnDef<LabelConfig>[] = [
     {
       id: 'color',
       header: () => <span className="p-1.5 pl-2.5">{t("common.color")}</span>,
@@ -116,6 +122,49 @@ function getColumns(t: TFunction): ColumnDef<LabelConfig>[] {
       minSize: 120,
     },
   ]
+  if (actions.onViewSessions || actions.onAddChild || actions.onDelete) {
+    columns.push({
+      id: 'actions',
+      header: () => null,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-0.5 pr-2">
+          {actions.onViewSessions && (
+            <button
+              type="button"
+              onClick={() => actions.onViewSessions?.(row.original)}
+              className="rounded-control p-1.5 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+              title={t('sidebar.allSessions')}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {actions.onAddChild && (
+            <button
+              type="button"
+              onClick={() => actions.onAddChild?.(row.original)}
+              className="rounded-control p-1.5 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+              title={t('sidebarMenu.addNewLabel')}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {actions.onDelete && (
+            <button
+              type="button"
+              onClick={() => actions.onDelete?.(row.original)}
+              className="rounded-control p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              title={t('sidebarMenu.deleteLabel')}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ),
+      minSize: 112,
+      maxSize: 112,
+    })
+  }
+  return columns
 }
 
 /**
@@ -133,18 +182,24 @@ export function LabelsDataTable({
   fullscreen = false,
   fullscreenTitle = 'Labels',
   className,
+  onViewSessions,
+  onAddChild,
+  onDelete,
 }: LabelsDataTableProps) {
   const { t } = useTranslation()
   const [isFullscreen, setIsFullscreen] = useState(false)
   const { isDark } = useTheme()
-  const columns = useMemo(() => getColumns(t), [t])
+  const columns = useMemo(
+    () => getColumns(t, { onViewSessions, onAddChild, onDelete }),
+    [onAddChild, onDelete, onViewSessions, t],
+  )
 
   // Fullscreen button (shown on hover via group class)
   const fullscreenButton = fullscreen ? (
     <button
       onClick={() => setIsFullscreen(true)}
       className={cn(
-        'p-1 rounded-[6px] transition-all',
+        'p-1 rounded-control transition-all',
         'opacity-0 group-hover:opacity-100',
         'bg-background/80 backdrop-blur-sm shadow-minimal',
         'text-muted-foreground/50 hover:text-foreground',

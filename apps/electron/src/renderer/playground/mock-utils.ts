@@ -208,9 +208,19 @@ export const mockElectronAPI = {
   // branch between Electron and web-UI rendering. Must be synchronous.
   getRuntimeEnvironment: (): 'electron' | 'web' => 'electron',
 
-  openFileDialog: async () => {
+  openFileDialog: async (options?: { mode?: 'files' | 'directory'; title?: string }) => {
     console.log('[Playground] openFileDialog called')
-    return [] // Let user use file input or drag-drop
+    return options?.mode === 'directory'
+      ? ['/Users/demo/CraftAgent']
+      : [] // Let user use file input or drag-drop for regular files
+  },
+
+  // Label APIs are used by the app-shell providers rendered around playground
+  // previews. Keep them fail-soft so unrelated component demos can mount.
+  listLabels: async () => [],
+  onLabelsChanged: (callback: (workspaceId: string) => void) => {
+    void callback
+    return () => {}
   },
 
   readFileAttachment: async (path: string) => {
@@ -298,8 +308,28 @@ export const mockElectronAPI = {
 
   // ChatDisplay required mocks
   readPreferences: async () => {
-    return { diffViewerSettings: { showFilePath: true, expandedSections: {} } }
+    return {
+      content: JSON.stringify({ explore: { aiStatusEnabled: true, aiFrequency: 'startup', aiCount: 3 } }),
+      diffViewerSettings: { showFilePath: true, expandedSections: {} },
+    }
   },
+
+  generateExploreBrief: async () => ({
+    headline: '探索体验正在收敛',
+    summary: '你正在把网页与会话整合成一个统一的工作入口，当前重点是完成默认页的信息层级和交互闭环。',
+    threads: [
+      { title: '统一入口', detail: '对齐网页与会话两种模式的默认体验。' },
+      { title: 'AI 整理', detail: '使用默认模型生成工作概览和下一步建议。' },
+      { title: '状态保持', detail: '确保会话和网页在重启后依然可继续。' },
+    ],
+    recommendations: [
+      { kind: 'session' as const, targetId: 'route-analysis', title: '继续路线分析', description: '验证两种模式下的默认页跳转。' },
+      { kind: 'session' as const, targetId: 'agent-framework', title: '收敛 Agent 框架方案', description: '把已有讨论整理成可执行的实现步骤。' },
+      { kind: 'prompt' as const, title: '完成打包前回归', description: '检查探索页的加载、失败和空状态。', prompt: '请帮我回归测试探索页的所有状态' },
+    ],
+    generatedAt: Date.now(),
+    model: 'deepseek-v4-flash',
+  }),
 
   writePreferences: async (prefs: unknown) => {
     console.log('[Playground] writePreferences called:', prefs)
@@ -796,6 +826,15 @@ export const samplePdfAttachment: FileAttachment = {
   name: 'design.pdf',
   mimeType: 'application/pdf',
   size: 1024000,
+}
+
+export const sampleFolderAttachment: FileAttachment = {
+  type: 'unknown',
+  kind: 'folder',
+  path: '/Users/demo/CraftAgent',
+  name: 'CraftAgent',
+  mimeType: 'inode/directory',
+  size: 0,
 }
 
 // ============================================================================

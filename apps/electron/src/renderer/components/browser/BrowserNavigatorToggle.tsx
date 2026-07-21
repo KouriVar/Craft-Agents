@@ -29,7 +29,7 @@ export function BrowserNavigatorToggle({
   return (
     <div
       className={cn(
-        'inline-flex min-w-0 items-center gap-0.5 rounded-lg border border-border/60 bg-foreground/[0.02] p-0.5',
+        'inline-flex min-w-0 items-center gap-0.5 rounded-surface border border-border/60 bg-foreground/[0.02] p-0.5',
         className,
       )}
       role="group"
@@ -45,7 +45,7 @@ export function BrowserNavigatorToggle({
             aria-pressed={value === item.value}
             aria-label={label}
             className={cn(
-              'inline-flex h-7 min-w-0 items-center justify-center rounded-md text-xs font-medium transition-colors',
+              'inline-flex h-7 min-w-0 items-center justify-center rounded-control text-xs font-medium transition-colors',
               compact ? 'w-7 px-0' : 'gap-1 px-1.5',
               value === item.value
                 ? 'bg-card text-foreground shadow-minimal'

@@ -429,6 +429,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly passwordVault = new BrowserPasswordVault()
   private readonly pendingCredentialPrompts = new Set<string>()
   private askAiController: BrowserAskAiController | null = null
+  private isShuttingDown = false
 
   constructor() {
     for (const entry of this.profileStore.listPermissions()) {
@@ -3082,6 +3083,52 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
+  /**
+   * Persist live tabs and Chromium-backed browser storage before teardown.
+   * Shutdown destruction must not look like user-initiated tab closure to the
+   * renderer, otherwise an empty tab list can overwrite the recovery snapshot.
+   */
+  async prepareForShutdown(): Promise<void> {
+    this.isShuttingDown = true
+
+    const tabsByWorkspace = new Map<string, BrowserInstanceInfo[]>()
+    for (const info of this.listInstances()) {
+      if (!info.workspaceId) continue
+      const tabs = tabsByWorkspace.get(info.workspaceId) ?? []
+      tabs.push(info)
+      tabsByWorkspace.set(info.workspaceId, tabs)
+    }
+
+    const now = Date.now()
+    for (const [workspaceId, tabs] of tabsByWorkspace) {
+      const previous = this.profileStore.loadWorkspaceState(workspaceId)
+      const previousById = new Map(previous.tabs.map((tab) => [tab.id, tab]))
+      const liveIds = new Set(tabs.map((tab) => tab.id))
+      const visibleTabId = tabs.find((tab) => tab.isVisible)?.id ?? null
+      this.profileStore.saveWorkspaceState(workspaceId, {
+        version: 1,
+        activeTabId: visibleTabId
+          ?? (previous.activeTabId && liveIds.has(previous.activeTabId) ? previous.activeTabId : null)
+          ?? (tabs[0]?.id ?? null),
+        tabs: tabs.map((tab) => {
+          const saved = previousById.get(tab.id)
+          return {
+            id: tab.id,
+            url: tab.url,
+            title: tab.title,
+            favicon: tab.favicon,
+            createdAt: saved?.createdAt ?? now,
+            lastAccessedAt: saved?.lastAccessedAt ?? now,
+            pageState: saved?.pageState ?? null,
+          }
+        }),
+        updatedAt: now,
+      })
+    }
+
+    await session.fromPartition(SESSION_PARTITION).flushStorageData()
+  }
+
   destroyAll(): void {
     for (const timer of this.profileChangeTimers.values()) clearTimeout(timer)
     this.profileChangeTimers.clear()
@@ -3103,7 +3150,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (!view.webContents.isDestroyed()) view.webContents.close()
     }
     if (!this.tabLifecycle.finalizeClose(instance.id, instance)) return
-    this.removedCallback?.(instance.id)
+    if (!this.isShuttingDown) this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
 

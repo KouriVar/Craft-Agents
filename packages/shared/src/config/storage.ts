@@ -1177,6 +1177,8 @@ export interface DraftAttachmentContent {
 export interface DraftAttachmentRef {
   path: string;
   name: string;
+  /** Folder refs are path-only and hydrate without reading the directory. */
+  kind?: 'file' | 'folder';
   /** Inline content for attachments without a real filesystem path (paste, web-drag).
    *  When present, hydrate reconstructs from these bytes and skips any disk read. */
   content?: DraftAttachmentContent;
@@ -1217,6 +1219,8 @@ function isDraftAttachmentRef(value: unknown): value is DraftAttachmentRef {
   if (!value || typeof value !== 'object') return false;
   const ref = value as DraftAttachmentRef;
   if (typeof ref.path !== 'string' || typeof ref.name !== 'string') return false;
+  if (ref.kind !== undefined && ref.kind !== 'file' && ref.kind !== 'folder') return false;
+  if (ref.kind === 'folder' && ref.content !== undefined) return false;
   if (ref.content !== undefined && !isDraftAttachmentContent(ref.content)) return false;
   // Post-migration guard: refs without content MUST have an absolute path. This rejects
   // the broken 0.8.11 shape (synthetic path === filename, no content) on first load —
@@ -1297,6 +1301,7 @@ export function setSessionDraft(sessionId: string, draft: SessionDraft): void {
 
 function normalizeDraftAttachment(ref: DraftAttachmentRef): DraftAttachmentRef {
   const base: DraftAttachmentRef = { path: ref.path, name: ref.name };
+  if (ref.kind === 'folder') base.kind = 'folder';
   if (ref.content && isDraftAttachmentContent(ref.content)) {
     const c = ref.content;
     base.content = {

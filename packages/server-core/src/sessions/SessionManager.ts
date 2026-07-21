@@ -102,6 +102,7 @@ import { ensureLabelsExist, ensureTaskItemLabel } from '@craft-agent/shared/labe
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { buildExploreBriefPrompt, EXPLORE_BRIEF_OUTPUT_SCHEMA, parseExploreBriefResult } from './explore-brief'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -5298,6 +5299,99 @@ export class SessionManager implements ISessionManager {
       // Signal async operation end
       managed.isAsyncOperationOngoing = false
       this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
+    }
+  }
+
+  async generateExploreBrief(
+    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
+  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult> {
+    const workspace = getWorkspaceByNameOrId(request.workspaceId)
+    if (!workspace) throw new Error(`Workspace ${request.workspaceId} not found`)
+    if (request.sessions.length === 0 && request.tabs.length === 0) {
+      throw new Error('No workspace activity to analyze')
+    }
+
+    const enrichedSessions = await Promise.all(request.sessions.slice(0, 12).map(async (summary, index) => {
+      // Full conversation context is useful only for the most recent workstreams.
+      // Keep the payload bounded and exclude tools/intermediate messages.
+      if (index >= 8) return summary
+      const managed = this.sessions.get(summary.id)
+      if (!managed || managed.workspace.id !== workspace.id) return summary
+      try {
+        await this.ensureMessagesLoaded(managed)
+        const recentContext = managed.messages
+          .filter((message) => (message.role === 'user' || message.role === 'assistant') && !message.isIntermediate)
+          .slice(-6)
+          .map((message) => {
+            const content = message.content.replace(/\s+/g, ' ').trim().slice(0, 600)
+            return content ? `${message.role}: ${content}` : ''
+          })
+          .filter(Boolean)
+          .join('\n')
+          .slice(0, 2800)
+        return recentContext ? { ...summary, recentContext } : summary
+      } catch (error) {
+        sessionLog.warn(`Explore brief could not load session ${summary.id}: ${error instanceof Error ? error.message : error}`)
+        return summary
+      }
+    }))
+    const analysisRequest = { ...request, sessions: enrichedSessions }
+
+    const wsConfig = loadWorkspaceConfig(workspace.rootPath)
+    const defaultModel = wsConfig?.defaults?.model
+    const backendContext = resolveBackendContext({
+      workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
+      managedModel: defaultModel,
+    })
+    if (!backendContext.connection) throw new Error('No default AI connection is configured')
+
+    const resolvedModel = backendContext.resolvedModel
+      ?? defaultModel
+      ?? backendContext.connection.defaultModel
+    if (!resolvedModel) throw new Error('No default AI model is configured')
+
+    const thinkingLevel = normalizeThinkingLevel(wsConfig?.defaults?.thinkingLevel)
+      ?? getDefaultThinkingLevel()
+    const miniModel = getMiniModel(backendContext.connection)
+      ?? backendContext.connection.defaultModel
+      ?? resolvedModel
+    const agent = createBackendFromResolvedContext({
+      context: backendContext,
+      hostRuntime: buildBackendHostRuntimeContext(),
+      coreConfig: {
+        workspace,
+        session: {
+          id: `explore-brief-${randomUUID()}`,
+          workspaceRootPath: workspace.rootPath,
+          createdAt: Date.now(),
+          lastUsedAt: Date.now(),
+          model: resolvedModel,
+          llmConnection: backendContext.connection.slug,
+        },
+        miniModel,
+        thinkingLevel,
+        envOverrides: {
+          CRAFT_WORKSPACE_PATH: workspace.rootPath,
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: miniModel,
+        },
+        isHeadless: true,
+      },
+      providerOptions: { piAuthProvider: backendContext.connection.piAuthProvider },
+    })
+
+    try {
+      await agent.postInit()
+      const response = await agent.queryLlm({
+        prompt: buildExploreBriefPrompt(analysisRequest),
+        systemPrompt: 'You organize recent workspace activity into a factual, concise briefing. Return only valid JSON.',
+        model: resolvedModel,
+        maxTokens: 1200,
+        temperature: 0.2,
+        outputSchema: EXPLORE_BRIEF_OUTPUT_SCHEMA,
+      })
+      return parseExploreBriefResult(response.text, analysisRequest, response.model ?? resolvedModel)
+    } finally {
+      agent.destroy()
     }
   }
 

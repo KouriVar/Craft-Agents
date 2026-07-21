@@ -13,6 +13,7 @@
 
 import * as React from 'react'
 import { ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   ContextMenu,
@@ -104,6 +105,7 @@ function CollapsibleGroupHeader({
   onCollapseAll?: () => void
   onExpandAll?: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <ContextMenu modal>
       <ContextMenuTrigger asChild>
@@ -111,28 +113,28 @@ function CollapsibleGroupHeader({
           onClick={onToggle}
           className="w-full py-2 px-4 flex items-center gap-1.5 cursor-pointer group/header relative"
         >
-          <div className="absolute inset-y-0.5 left-2 right-2 rounded-[6px] group-hover/header:bg-foreground/2 transition-colors pointer-events-none" />
+          <div className="absolute inset-y-0.5 left-2 right-2 rounded-control group-hover/header:bg-foreground/2 transition-colors pointer-events-none" />
+          <span className="flex-1 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground relative">
+            {label}{isCollapsed && <> · <span className="text-muted-foreground/50">{itemCount}</span></>}
+          </span>
           <ChevronRight
             className={cn(
               "h-3 w-3 text-muted-foreground/60 transition-transform relative",
               !isCollapsed && "rotate-90"
             )}
           />
-          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground relative">
-            {label}{isCollapsed && <> · <span className="text-muted-foreground/50">{itemCount}</span></>}
-          </span>
         </button>
       </ContextMenuTrigger>
       <StyledContextMenuContent>
         <StyledContextMenuItem onClick={onToggle}>
-          {isCollapsed ? 'Expand' : 'Collapse'}
+          {isCollapsed ? t('menu.expand', { defaultValue: 'Expand' }) : t('menu.collapse', { defaultValue: 'Collapse' })}
         </StyledContextMenuItem>
         <StyledContextMenuSeparator />
         <StyledContextMenuItem onClick={onCollapseAll}>
-          Collapse All
+          {t('menu.collapseAll', { defaultValue: 'Collapse All' })}
         </StyledContextMenuItem>
         <StyledContextMenuItem onClick={onExpandAll}>
-          Expand All
+          {t('menu.expandAll', { defaultValue: 'Expand All' })}
         </StyledContextMenuItem>
       </StyledContextMenuContent>
     </ContextMenu>

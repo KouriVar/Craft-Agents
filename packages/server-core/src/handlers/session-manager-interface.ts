@@ -120,6 +120,9 @@ export interface ISessionManager {
     onAck?: (messageId: string) => void,
     rpcContext?: { callerClientId?: string },
   ): Promise<void>
+  generateExploreBrief(
+    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
+  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>

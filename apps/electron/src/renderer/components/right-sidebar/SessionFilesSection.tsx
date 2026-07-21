@@ -25,6 +25,7 @@ import {
   StyledContextMenuContent,
   StyledContextMenuItem,
 } from '@/components/ui/styled-context-menu'
+import { Button } from '@/components/ui/button'
 import type { SessionFile } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import * as storage from '@/lib/local-storage'
@@ -297,7 +298,7 @@ function FileTreeItem({
       className={cn(
         // Base styles matching LeftSidebar exactly
         // min-w-0 and overflow-hidden required for truncation to work in grid context
-        "group flex w-full min-w-0 overflow-hidden items-center gap-2 rounded-[6px] py-[5px] text-[13px] select-none outline-none text-left",
+        "group flex w-full min-w-0 overflow-hidden items-center gap-2 rounded-control py-[5px] text-[13px] select-none outline-none text-left",
         "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
         "hover:bg-sidebar-hover transition-colors",
         // Same padding for all items - nested indentation handled by container
@@ -578,13 +579,15 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
         <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
           <span className="text-xs font-medium text-muted-foreground">{t("chat.sessionFiles")}</span>
           {sessionFolderPath && (
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="sm"
               onClick={() => window.electronAPI.showInFolder(sessionFolderPath)}
-              className="text-xs text-foreground/50 hover:text-foreground/80 hover:underline underline-offset-2 transition-colors"
+              className="h-auto px-0 text-xs text-foreground/50 hover:text-foreground/80"
             >
               {t("chat.viewInFileManager", { fileManager: fileManagerName })}
-            </button>
+            </Button>
           )}
         </div>
       )}

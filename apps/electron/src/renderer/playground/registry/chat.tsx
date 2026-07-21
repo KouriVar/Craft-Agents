@@ -12,13 +12,15 @@ import type { StructuredResponse } from '@/components/app-shell/input/structured
 import { EmptyStateHint, getHintCount, getHintTemplate } from '@/components/chat/EmptyStateHint'
 import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
-import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
+import { ArrowUp, Paperclip, ChevronDown, Circle, Keyboard, ListTree, PanelRightClose, Share2, Sparkles, X } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import type { SessionStatus } from '@/config/session-status-config'
 import type { FileAttachment, PermissionRequest, PermissionMode, Session } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
 import { ModalProvider } from '@/context/ModalContext'
+import { ShortcutsContent } from '@/pages/settings/ShortcutsPage'
+import { ActionRegistryProvider } from '@/actions/registry'
 import {
   ensureMockElectronAPI,
   mockInputCallbacks,
@@ -26,6 +28,7 @@ import {
   mockSources,
   sampleImageAttachment,
   samplePdfAttachment,
+  sampleFolderAttachment,
 } from '../mock-utils'
 import { mockAdminApprovalRequest } from '../adapters/input-adapters'
 import { getRecentDirsForScenario, type RecentDirScenario } from '../recent-working-dirs'
@@ -1025,7 +1028,58 @@ const emptyStateHintVariants = Array.from({ length: getHintCount() }, (_, i) => 
   props: { hintIndex: i },
 }))
 
+function ShortcutReviewPanelPreview() {
+  return (
+    <ActionRegistryProvider>
+      <div className="flex h-[600px] w-[800px] overflow-hidden rounded-[14px] border border-border bg-background shadow-modal-small">
+        <div className="flex min-w-0 flex-1 flex-col border-r border-border/60">
+          <div className="flex h-[42px] shrink-0 items-center justify-end gap-1.5 border-b border-border/50 px-3">
+            {[
+              { label: '快捷键', icon: Keyboard },
+              { label: '分享', icon: Share2 },
+              { label: '资源', icon: ListTree },
+              { label: '收起右侧面板', icon: PanelRightClose },
+              { label: '关闭', icon: X },
+            ].map(({ label, icon: Icon }) => (
+              <button
+                key={label}
+                type="button"
+                aria-label={label}
+                title={label}
+                className="flex size-8 items-center justify-center rounded-[8px] border border-border/60 bg-background text-muted-foreground shadow-minimal transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            当前会话
+          </div>
+        </div>
+        <div className="flex w-[430px] shrink-0 flex-col">
+          <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-border/50 px-4">
+            <Keyboard className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">快捷键</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ShortcutsContent compact />
+          </div>
+        </div>
+      </div>
+    </ActionRegistryProvider>
+  )
+}
+
 export const chatComponents: ComponentEntry[] = [
+  {
+    id: 'shortcut-review-panel',
+    name: 'Shortcut Review Panel',
+    category: 'Chat',
+    description: 'Session-context keyboard shortcut reference rendered in the right review panel.',
+    component: ShortcutReviewPanelPreview,
+    props: [],
+    layout: 'top',
+  },
   {
     id: 'session-usage-info',
     name: 'Session Usage Information',
@@ -1077,12 +1131,13 @@ export const chatComponents: ComponentEntry[] = [
       { name: 'Empty', props: { attachments: [], loadingCount: 0 } },
       { name: 'With Images', props: { attachments: [sampleImageAttachment, sampleImageAttachment] } },
       { name: 'With Documents', props: { attachments: [samplePdfAttachment, sampleCodeAttachment] } },
-      { name: 'Mixed', props: { attachments: [sampleImageAttachment, samplePdfAttachment, sampleCodeAttachment] } },
+      { name: 'With Folder', props: { attachments: [sampleFolderAttachment] } },
+      { name: 'Mixed', props: { attachments: [sampleImageAttachment, samplePdfAttachment, sampleCodeAttachment, sampleFolderAttachment] } },
       { name: 'Loading', props: { attachments: [], loadingCount: 3 } },
       { name: 'Disabled', props: { attachments: [sampleImageAttachment, samplePdfAttachment], disabled: true } },
     ],
     mockData: () => ({
-      attachments: [sampleImageAttachment, samplePdfAttachment],
+      attachments: [sampleImageAttachment, samplePdfAttachment, sampleFolderAttachment],
       onRemove: mockAttachmentCallbacks.onRemove,
     }),
   },

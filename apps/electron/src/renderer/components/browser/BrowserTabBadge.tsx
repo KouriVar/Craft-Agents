@@ -9,6 +9,7 @@ import { forwardRef, useEffect, useState, type ButtonHTMLAttributes } from 'reac
 import * as Icons from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
 import type { BrowserInstanceInfo } from '../../../shared/types'
+import { cn } from '@/lib/utils'
 import { getHostname, getThemeLuminance } from './utils'
 
 interface BrowserTabBadgeProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -43,17 +44,15 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
     <button
       ref={ref}
       type="button"
-      className={`
-        group flex items-center gap-1 h-[26px] pl-2.5 pr-1.5 rounded-lg cursor-pointer select-none titlebar-no-drag
-        text-[11px] leading-tight transition-colors max-w-[160px] shadow-minimal
-        bg-background
-        ${foregroundClass}
-        ${instance.agentControlActive ? 'border border-accent' : ''}
-        ${className ?? ''}
-      `}
+      className={cn(
+        'group flex h-[26px] max-w-[160px] cursor-pointer select-none items-center gap-1 rounded-surface pl-2.5 pr-1.5',
+        'bg-background text-[11px] leading-tight shadow-minimal transition-colors duration-200 titlebar-no-drag',
+        foregroundClass,
+        instance.agentControlActive && 'border border-accent',
+        className,
+      )}
       style={{
         backgroundColor: themedBackground,
-        transition: 'background-color 200ms ease, border-color 200ms ease',
         ...style,
       }}
       aria-label={`${displayLabel} actions`}
@@ -64,7 +63,7 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
           <Spinner className="text-[9px] leading-none" />
         ) : instance.favicon && !faviconFailed ? (
           isDarkThemeColor ? (
-            <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[4px] bg-white/90 p-[1px] leading-none">
+            <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-menu-item bg-white/90 p-[1px] leading-none">
               <img
                 src={instance.favicon}
                 alt=""

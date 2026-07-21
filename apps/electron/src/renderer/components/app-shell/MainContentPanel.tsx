@@ -46,6 +46,9 @@ import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
 import { PluginInfoPage } from '../plugins/PluginInfoPage'
 import { BrowserWorkspacePage } from '../browser/BrowserWorkspacePage'
+import { ExploreHome } from '../explore/ExploreHome'
+import { browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
+import { navigate, routes } from '@/lib/navigate'
 import { BrowserExtensionInfoPage } from '../plugins/BrowserExtensionInfoPage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
@@ -90,6 +93,10 @@ export function MainContentPanel({
     automationTestResults,
     getAutomationHistory,
     activeSessionWorkingDirectory,
+    onOpenUrl,
+    onOpenBrowserUrl,
+    openNewChat,
+    isUnifiedExploreNavigation,
   } = useAppShellContext()
 
   // Session multi-select state
@@ -98,8 +105,19 @@ export function MainContentPanel({
   const selectionCount = useSelectionCount()
   const { clearMultiSelect } = useSessionSelection()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const browserTabs = useAtomValue(browserWorkspaceTabsAtom)
   const automations = useAtomValue(automationsAtom)
   const pluginListKind = useAtomValue(pluginListKindAtom)
+
+  // Recent items for the Explore home: most-recent sessions (by last message)
+  // and the current browser tabs. Derived from existing data — no extra store.
+  const recentSessions = useMemo(() => {
+    return [...sessionMetaMap.values()]
+      .filter((meta) => meta.workspaceId === activeWorkspaceId && !meta.isArchived)
+      .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))
+      .slice(0, 12)
+  }, [activeWorkspaceId, sessionMetaMap])
+  const recentTabs = useMemo(() => browserTabs.slice(0, 8), [browserTabs])
 
   // Execution history for the selected automation
   const selectedAutomationId = isAutomationsNavigation(navState) ? navState.details?.automationId : undefined
@@ -240,6 +258,20 @@ export function MainContentPanel({
     </StoplightProvider>
   )
 
+  const renderExploreHome = () => wrapWithStoplight(
+    <Panel variant="grow" className={className}>
+      <ExploreHome
+        workspaceId={activeWorkspaceId || ''}
+        recentSessions={recentSessions}
+        recentTabs={recentTabs}
+        onOpenSession={(sessionId) => navigate(routes.view.allSessions(sessionId))}
+        onOpenTab={(tabId) => navigate(routes.view.browser(tabId))}
+        onOpenUrl={onOpenBrowserUrl ?? onOpenUrl}
+        onNewSession={(prompt) => { void openNewChat?.({ input: prompt }) }}
+      />
+    </Panel>
+  )
+
   // Settings navigator - uses component map from settings-pages.ts.
   // Bare `settings` route (subpage === null) means navigator-only view in compact mode;
   // PanelStackContainer hides the content panel entirely. On desktop the panel still
@@ -348,6 +380,7 @@ export function MainContentPanel({
   }
 
   if (isBrowserNavigation(navState)) {
+    if (!navState.details) return renderExploreHome()
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <BrowserWorkspacePage activeTabId={navState.details?.tabId ?? null} />
@@ -452,7 +485,9 @@ export function MainContentPanel({
         </Panel>
       )
     }
-    // No session selected - empty state
+    if (isUnifiedExploreNavigation) return renderExploreHome()
+
+    // No session selected outside Explore - keep the regular navigator empty state.
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">

@@ -4,7 +4,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtom, useAtomValue, useStore } from "jotai"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  Archive,
   Settings,
   ChevronRight,
   ChevronDown,
@@ -35,6 +34,12 @@ import {
   Info,
   MailOpen,
   FolderKanban,
+  List,
+  LayoutGrid,
+  Star,
+  History,
+  Download,
+  MessageSquarePlus,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -74,7 +79,6 @@ import {
 } from "@/components/ui/collapsible"
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
-import { BoardListToggle } from "./kanban/BoardListToggle"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { CompactSessionListFilter } from "./CompactSessionListFilter"
 import type { ChatDisplayHandle } from "./ChatDisplay"
@@ -88,14 +92,13 @@ import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useAction, useActionLabel } from "@/actions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
-import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter, WidgetDescriptor, BrowserInstanceInfo } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { pluginListKindAtom, pluginsAtom } from "@/atoms/plugins"
-import { browserNavigatorKindAtom, browserWorkspaceTabsAtom, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
+import { browserNavigatorKindAtom, browserWorkspaceTabsAtom, exploreModeAtom, type ExploreMode, type BrowserWorkspaceTab } from "@/atoms/browser-workspace"
 import { filterInstancesForWorkspace } from "@/atoms/browser-pane"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -103,11 +106,11 @@ import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
-import { LabelIcon, LabelValueTypeIcon } from "@/components/ui/label-icon"
+import { LabelIcon } from "@/components/ui/label-icon"
 import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
-import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay, matchesLabelFilter } from "@craft-agent/shared/labels"
-import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
+import { getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay, matchesLabelFilter } from "@craft-agent/shared/labels"
+import type { LabelConfig } from "@craft-agent/shared/labels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { loadBrowserWorkspace } from "@/lib/browser-workspace-storage"
@@ -136,7 +139,6 @@ import { BrowserExtensionInstallMenu } from "../plugins/BrowserExtensionInstallM
 import { PluginListToggle } from "../plugins/PluginListToggle"
 import { BrowserExtensionsListPanel } from "../plugins/BrowserExtensionsListPanel"
 import { BrowserTabsListPanel } from "../browser/BrowserTabsListPanel"
-import { BrowserNavigatorToggle } from "../browser/BrowserNavigatorToggle"
 import { BrowserCollectionListPanel } from "../browser/BrowserCollectionListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
@@ -680,6 +682,7 @@ function AppShellContent({
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
   const [unifiedExploreActive, setUnifiedExploreActive] = React.useState(() => isBrowserNavigation(navState))
+  const [exploreMode, setExploreMode] = useAtom(exploreModeAtom)
 
   const store = useStore()
   const panelStack = useAtomValue(panelStackAtom)
@@ -719,10 +722,21 @@ function AppShellContent({
   // their navigation list is composed together.
   const isUnifiedExploreNavigation = isBrowserNavigation(navState)
     || (unifiedExploreActive && isSessionsNavigation(navState) && sessionFilter?.kind === 'allSessions')
+  const isUnifiedExploreHome = isUnifiedExploreNavigation && (
+    (isBrowserNavigation(navState) && !navState.details)
+    || (isSessionsNavigation(navState) && !navState.details)
+  )
 
   React.useEffect(() => {
-    if (isBrowserNavigation(navState)) setUnifiedExploreActive(true)
-  }, [navState])
+    if (isBrowserNavigation(navState)) {
+      setUnifiedExploreActive(true)
+      setExploreMode('browser')
+      return
+    }
+    if (unifiedExploreActive && isSessionsNavigation(navState) && sessionFilter?.kind === 'allSessions') {
+      setExploreMode('sessions')
+    }
+  }, [navState, sessionFilter?.kind, setExploreMode, unifiedExploreActive])
 
   // Board view replaces the session-list navigator with the full-width Kanban panel,
   // so the navigator (and its resize handle) collapse to zero width while it's active.
@@ -1056,9 +1070,12 @@ function AppShellContent({
   const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
   const blankBrowserTabCreationGateRef = React.useRef(new BrowserWorkspaceRequestGate<string | null>())
   const browserTabCloseGuardRef = React.useRef(new BrowserWorkspaceTabCloseGuard())
+  // Per-tab persistence metadata not carried by BrowserInstanceInfo: creation
+  // time and last-focused time. Keyed by runtime tab id; written into the
+  // workspace snapshot so tabs restore with their history intact (Arc-like).
+  const browserTabMetaRef = React.useRef<Map<string, { createdAt: number; lastAccessedAt: number }>>(new Map())
   const browserTabsRef = React.useRef(browserTabs)
   const lastActiveBrowserTabIdRef = React.useRef(lastActiveBrowserTabId)
-  const needsBrowserReplacementRef = React.useRef(false)
   browserTabsRef.current = browserTabs
   lastActiveBrowserTabIdRef.current = lastActiveBrowserTabId
   // Native page focus emits `browser-pane:interacted`. Keep the current route
@@ -1145,6 +1162,17 @@ function AppShellContent({
 
         }
 
+        // Restore per-tab persistence metadata (creation / last access). Tabs
+        // that pre-date these fields fall back to "now" so ordering still works.
+        const hydrateNow = Date.now()
+        for (const savedTab of persisted.tabs) {
+          const runtimeId = idMap.get(savedTab.id) ?? savedTab.id
+          browserTabMetaRef.current.set(runtimeId, {
+            createdAt: savedTab.createdAt ?? hydrateNow,
+            lastAccessedAt: savedTab.lastAccessedAt ?? hydrateNow,
+          })
+        }
+
         const refreshed = filterInstancesForWorkspace(
           await api.list(),
           activeWorkspaceId,
@@ -1191,6 +1219,7 @@ function AppShellContent({
     })
     const cleanupRemoved = api.onRemoved((id) => {
       if (disposed) return
+      browserTabMetaRef.current.delete(id)
       const transition = getBrowserTabRemovalTransition(
         browserTabsRef.current,
         id,
@@ -1205,7 +1234,8 @@ function AppShellContent({
         activeBrowserRouteTabIdRef.current = transition.activeTabId
         navigate(routes.view.browser(transition.activeTabId))
       } else {
-        needsBrowserReplacementRef.current = true
+        activeBrowserRouteTabIdRef.current = null
+        navigate(routes.view.browser(), { skipAutoSelect: true })
       }
     })
     const cleanupInteracted = api.onInteracted((id) => {
@@ -1249,11 +1279,29 @@ function AppShellContent({
     const activeTabId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
       ? lastActiveBrowserTabId
       : (browserTabs[0]?.id ?? null)
+    const now = Date.now()
+    // Bump last-access time for the active tab so recency survives restarts.
+    if (activeTabId) {
+      const activeMeta = browserTabMetaRef.current.get(activeTabId)
+      if (activeMeta) activeMeta.lastAccessedAt = now
+      else browserTabMetaRef.current.set(activeTabId, { createdAt: now, lastAccessedAt: now })
+    }
     void window.electronAPI.browserPane.saveWorkspaceState({
       version: 1,
       activeTabId,
-      tabs: browserTabs.map((tab) => ({ id: tab.id, url: tab.url, title: tab.title })),
-      updatedAt: Date.now(),
+      tabs: browserTabs.map((tab) => {
+        const meta = browserTabMetaRef.current.get(tab.id)
+        return {
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+          favicon: tab.favicon,
+          createdAt: meta?.createdAt ?? now,
+          lastAccessedAt: meta?.lastAccessedAt ?? now,
+          pageState: null,
+        }
+      }),
+      updatedAt: now,
     })
   }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, lastActiveBrowserTabId])
 
@@ -1424,31 +1472,7 @@ function AppShellContent({
     setSessionStatuses(statusConfigsToSessionStatuses(statusConfigs, activeWorkspace.id, isDark))
   }, [statusConfigs, activeWorkspace?.id, isDark])
 
-  // Optimistic status order: immediately reflects drag-drop order while IPC propagates.
-  // Cleared when statusConfigs changes (config watcher is source of truth).
-  const [optimisticStatusOrder, setOptimisticStatusOrder] = React.useState<string[] | null>(null)
-
-  // Clear optimistic state when the config watcher fires (statusConfigs changes)
-  React.useEffect(() => {
-    setOptimisticStatusOrder(null)
-  }, [statusConfigs])
-
-  // Derive effective todo states: apply optimistic reorder if active, otherwise use canonical order
-  const effectiveSessionStatuses = React.useMemo(() => {
-    if (!optimisticStatusOrder) return sessionStatuses
-    // Reorder sessionStatuses array to match optimistic order
-    const stateMap = new Map(sessionStatuses.map(s => [s.id, s]))
-    const reordered: SessionStatus[] = []
-    for (const id of optimisticStatusOrder) {
-      const state = stateMap.get(id)
-      if (state) reordered.push(state)
-    }
-    // Append any states not in the optimistic order (shouldn't happen, but defensive)
-    for (const state of sessionStatuses) {
-      if (!optimisticStatusOrder.includes(state.id)) reordered.push(state)
-    }
-    return reordered
-  }, [sessionStatuses, optimisticStatusOrder])
+  const effectiveSessionStatuses = sessionStatuses
 
   // Load labels from workspace config
   const { labels: labelConfigs } = useLabels(activeWorkspace?.id || null)
@@ -1456,9 +1480,6 @@ function AppShellContent({
 
   // Views: compiled once on config load, evaluated per session in list/chat
   const { evaluateSession: evaluateViews, viewConfigs } = useViews(activeWorkspace?.id || null)
-
-  // Build hierarchical label tree from the display-sorted label config structure
-  const labelTree = useMemo(() => buildLabelTree(displayLabelConfigs), [displayLabelConfigs])
 
   // Build flat LabelMenuItem[] from hierarchical labels for the filter dropdown's search mode.
   // Uses the same structure as the # inline menu so the two search surfaces stay aligned.
@@ -1882,52 +1903,6 @@ function AppShellContent({
     return cleanup
   }, [workspaces])
 
-  // Count archived sessions (scoped to workspace)
-  const archivedCount = workspaceSessionMetas.filter(s => s.isArchived).length
-
-  // Compute session counts per label (cumulative: parent includes descendants).
-  // Flatten the tree for iteration, use the tree for descendant lookups.
-  // Uses activeSessionMetas to exclude archived sessions from counts.
-  const labelCounts = useMemo(() => {
-    const allLabels = flattenLabels(labelConfigs)
-    const counts: Record<string, number> = {}
-    for (const label of allLabels) {
-      // Direct count: sessions explicitly tagged with this label (handles valued entries like "priority::3")
-      const directCount = activeSessionMetas.filter(
-        s => s.labels?.some(l => extractLabelId(l) === label.id)
-      ).length
-      counts[label.id] = directCount
-    }
-    // Add descendant counts to parents (cumulative)
-    for (const label of allLabels) {
-      const descendants = getDescendantIds(labelConfigs, label.id)
-      if (descendants.length > 0) {
-        const descendantCount = activeSessionMetas.filter(
-          s => s.labels?.some(l => descendants.includes(extractLabelId(l)))
-        ).length
-        counts[label.id] = (counts[label.id] || 0) + descendantCount
-      }
-    }
-    return counts
-  }, [activeSessionMetas, labelConfigs])
-
-  // Count sessions by individual todo state (dynamic based on effectiveSessionStatuses)
-  // Uses activeSessionMetas to exclude archived sessions from counts.
-  const sessionStatusCounts = useMemo(() => {
-    const counts: Record<SessionStatusId, number> = {}
-    // Initialize counts for all dynamic statuses
-    for (const state of effectiveSessionStatuses) {
-      counts[state.id] = 0
-    }
-    // Count sessions
-    for (const s of activeSessionMetas) {
-      const state = (s.sessionStatus || 'todo') as SessionStatusId
-      // Increment count (initialize to 0 if status not in effectiveSessionStatuses yet)
-      counts[state] = (counts[state] || 0) + 1
-    }
-    return counts
-  }, [activeSessionMetas, effectiveSessionStatuses])
-
   // Count sources by type for the Sources dropdown subcategories
   const sourceTypeCounts = useMemo(() => {
     const counts = { api: 0, mcp: 0, local: 0 }
@@ -2101,6 +2076,8 @@ function AppShellContent({
     return onDeleteSession(sessionId, skipConfirmation)
   }, [session.selected, setSession, onDeleteSession])
 
+  const openBrowserUrlRef = React.useRef<(url: string) => void>(() => {})
+
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
@@ -2112,6 +2089,8 @@ function AppShellContent({
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
     sessionStatuses: effectiveSessionStatuses,
+    isUnifiedExploreNavigation,
+    onOpenBrowserUrl: (url) => openBrowserUrlRef.current(url),
     onSessionSourcesChange: handleSessionSourcesChange,
     onJumpToTaskSessions: handleJumpToTaskSessions,
     rightSidebarButton: null,
@@ -2128,7 +2107,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, isUnifiedExploreNavigation, handleSessionSourcesChange, handleJumpToTaskSessions, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -2200,40 +2179,10 @@ function AppShellContent({
     storage.set(storage.KEYS.collapsedSidebarItems, [...collapsedItems], activeWorkspaceId)
   }, [collapsedItems, activeWorkspaceId])
 
-  const handleAllSessionsClick = useCallback(() => {
-    setUnifiedExploreActive(false)
-    navigate(routes.view.allSessions())
-  }, [])
-
-  const handleArchivedClick = useCallback(() => {
-    setUnifiedExploreActive(false)
-    navigate(routes.view.archived())
-  }, [])
-
-  // Handler for individual todo state views
-  const handleSessionStatusClick = useCallback((stateId: SessionStatusId) => {
-    setUnifiedExploreActive(false)
-    navigate(routes.view.state(stateId))
-  }, [])
-
-  // Handler for label filter views (hierarchical — includes descendant labels)
-  const handleLabelClick = useCallback((labelId: string) => {
-    setUnifiedExploreActive(false)
-    navigate(routes.view.label(labelId))
-  }, [])
-
   const handleViewClick = useCallback((viewId: string) => {
     setUnifiedExploreActive(false)
     navigate(routes.view.view(viewId))
   }, [])
-
-  // DnD handler: reorder statuses (flat list drag-and-drop)
-  // Sets optimistic order immediately for instant UI feedback, then fires IPC.
-  const handleStatusReorder = useCallback((orderedIds: string[]) => {
-    if (!activeWorkspaceId) return
-    setOptimisticStatusOrder(orderedIds)
-    window.electronAPI.reorderStatuses(activeWorkspaceId, orderedIds)
-  }, [activeWorkspaceId])
 
   // Handler for sources view (all sources)
   const handleSourcesClick = useCallback(() => {
@@ -2278,6 +2227,8 @@ function AppShellContent({
           return null
         }
         setBrowserTabs(filterInstancesForWorkspace(instances, activeWorkspaceId, remoteBrowserWorkspaceId))
+        const createdNow = Date.now()
+        browserTabMetaRef.current.set(id, { createdAt: createdNow, lastAccessedAt: createdNow })
         return id
       } catch (error) {
         console.warn('[AppShell] Failed to create embedded browser tab:', error)
@@ -2291,75 +2242,57 @@ function AppShellContent({
     return create()
   }, [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs])
 
-  React.useEffect(() => {
-    if (!needsBrowserReplacementRef.current || browserHydratedWorkspaceId !== activeWorkspaceId) return
-    needsBrowserReplacementRef.current = false
-    void createRuntimeBrowserTab().then((id) => {
-      if (!id) return
-      setLastActiveBrowserTabId(id)
-      activeBrowserRouteTabIdRef.current = id
-      navigate(routes.view.browser(id))
-    })
-  }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, createRuntimeBrowserTab])
-
   const handleBrowserClick = useCallback(() => {
     setUnifiedExploreActive(true)
-    const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
-      ? lastActiveBrowserTabId
-      : browserTabs[0]?.id
-    if (existingId) {
-      navigate(routes.view.browser(existingId))
-      return
-    }
-    void createRuntimeBrowserTab().then((id) => {
-      if (id) navigate(routes.view.browser(id))
-    })
-  }, [browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId])
+    const route = exploreMode === 'browser'
+      ? routes.view.browser()
+      : routes.view.allSessions()
+    navigate(route, { skipAutoSelect: true })
+  }, [exploreMode])
 
-  // A bare browser route is the app's default entry. Resolve it only after
-  // workspace tab restoration finishes so cold start cannot create a duplicate.
-  React.useEffect(() => {
-    // NavigationContext has not restored the URL yet while the stack is empty.
-    // Waiting here preserves explicit deep links and restored session routes.
-    if (panelStack.length === 0) return
-    if (!isBrowserNavigation(navState) || navState.details) return
-    if (!activeWorkspaceId || browserHydratedWorkspaceId !== activeWorkspaceId) return
-
-    const existingId = lastActiveBrowserTabId && browserTabs.some((tab) => tab.id === lastActiveBrowserTabId)
-      ? lastActiveBrowserTabId
-      : browserTabs[0]?.id
-    if (existingId) {
-      navigate(routes.view.browser(existingId))
-      return
-    }
-
-    void createRuntimeBrowserTab().then((id) => {
-      if (id) navigate(routes.view.browser(id))
-    })
-  }, [activeWorkspaceId, browserHydratedWorkspaceId, browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId, navState, panelStack.length])
+  // Explore mode switch: swap the navigator between the sessions perspective
+  // (reusing SessionList) and the browser perspective (reusing browser tabs).
+  // Both stay inside unified Explore; the atom also records the last mode for
+  // the Explore home (M3).
+  const handleExploreModeChange = useCallback((mode: ExploreMode) => {
+    setExploreMode(mode)
+    setUnifiedExploreActive(true)
+    const route = mode === 'browser'
+      ? routes.view.browser()
+      : routes.view.allSessions()
+    navigate(route, { skipAutoSelect: true })
+  }, [setExploreMode])
 
   const handleBrowserTabSelect = useCallback((tabId: string) => {
+    setUnifiedExploreActive(true)
+    setExploreMode('browser')
     setLastActiveBrowserTabId(tabId)
     navigate(routes.view.browser(tabId))
-  }, [])
+  }, [setExploreMode])
 
   const handleAddBrowserTab = useCallback(() => {
+    setUnifiedExploreActive(true)
+    setExploreMode('browser')
+    setBrowserNavigatorKind('tabs')
     void createRuntimeBrowserTab().then((id) => {
       if (id) {
         setLastActiveBrowserTabId(id)
         navigate(routes.view.browser(id))
       }
     })
-  }, [createRuntimeBrowserTab])
+  }, [createRuntimeBrowserTab, setBrowserNavigatorKind, setExploreMode])
 
   const handleOpenBrowserUrl = useCallback((url: string) => {
+    setUnifiedExploreActive(true)
+    setExploreMode('browser')
     setBrowserNavigatorKind('tabs')
     void createRuntimeBrowserTab(url).then((id) => {
       if (!id) return
       setLastActiveBrowserTabId(id)
       navigate(routes.view.browser(id))
     })
-  }, [createRuntimeBrowserTab, setBrowserNavigatorKind])
+  }, [createRuntimeBrowserTab, setBrowserNavigatorKind, setExploreMode])
+  openBrowserUrlRef.current = handleOpenBrowserUrl
 
   const handleCloseBrowserTab = useCallback((tabId: string) => {
     const activeTabId = isBrowserNavigation(navState) ? (navState.details?.tabId ?? lastActiveBrowserTabId) : lastActiveBrowserTabId
@@ -2385,14 +2318,9 @@ function AppShellContent({
       navigate(routes.view.browser(transition.activeTabId))
       return
     }
-    void createRuntimeBrowserTab().then((id) => {
-      if (id) {
-        setLastActiveBrowserTabId(id)
-        activeBrowserRouteTabIdRef.current = id
-        navigate(routes.view.browser(id))
-      }
-    })
-  }, [activeWorkspaceId, browserTabs, createRuntimeBrowserTab, lastActiveBrowserTabId, navState, remoteBrowserWorkspaceId, setBrowserTabs, t])
+    activeBrowserRouteTabIdRef.current = null
+    navigate(routes.view.browser(), { skipAutoSelect: true })
+  }, [activeWorkspaceId, browserTabs, lastActiveBrowserTabId, navState, remoteBrowserWorkspaceId, setBrowserTabs, t])
 
   const handleCopyBrowserTabLink = useCallback(async (tab: BrowserWorkspaceTab) => {
     if (!tab.url || tab.url === 'about:blank') return
@@ -2473,16 +2401,12 @@ function AppShellContent({
   // We use controlled popovers instead of deep links so the user can type
   // their request in the popover UI before opening a new chat window.
   // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
-  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | 'add-project' | null>(null)
+  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'automation-config' | 'add-project' | null>(null)
 
   // Stores the Y position of the last right-clicked sidebar item so the EditPopover
   // appears near it rather than at a fixed location. Updated synchronously before
   // the setTimeout that opens the popover, ensuring the ref is set before render.
   const editPopoverAnchorY = useRef<number>(120)
-  // Tracks which label was right-clicked when opening label EditPopovers,
-  // so the agent knows the target for commands like "make this red" or "add below this"
-  const editLabelTargetId = useRef<string | undefined>(undefined)
-
   // Stores the trigger element (button) so we can keep it highlighted while the
   // EditPopover is open (after Radix removes data-state="open" on context menu close).
   const editPopoverTriggerRef = useRef<Element | null>(null)
@@ -2513,23 +2437,6 @@ function AppShellContent({
     }
   }, [editPopoverOpen])
 
-  // Handler for "Configure Statuses" context menu action
-  // Opens the EditPopover for status configuration
-  // Uses setTimeout to delay opening until after context menu closes,
-  // preventing the popover from immediately closing due to focus shift
-  const openConfigureStatuses = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('statuses'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Configure Labels" context menu action
-  // Opens the EditPopover for label configuration, storing which label was right-clicked
-  const openConfigureLabels = useCallback((labelId?: string) => {
-    editLabelTargetId.current = labelId
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('labels'), 50)
-  }, [captureContextMenuPosition])
-
   // Handler for "Edit Views" context menu action
   // Opens the EditPopover for view configuration
   const openConfigureViews = useCallback(() => {
@@ -2548,26 +2455,6 @@ function AppShellContent({
       console.error('[AppShell] Failed to delete view:', err)
     }
   }, [activeWorkspace?.id, viewConfigs])
-
-  // Handler for "Add New Label" context menu action
-  // Opens the EditPopover with 'add-label' context, storing which label was right-clicked
-  // so the agent knows to add the new label relative to it
-  const handleAddLabel = useCallback((parentId?: string) => {
-    editLabelTargetId.current = parentId
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('add-label'), 50)
-  }, [captureContextMenuPosition])
-
-  // Handler for "Delete Label" context menu action
-  // Deletes the label and all its descendants, stripping from sessions
-  const handleDeleteLabel = useCallback(async (labelId: string) => {
-    if (!activeWorkspace?.id) return
-    try {
-      await window.electronAPI.deleteLabel(activeWorkspace.id, labelId)
-    } catch (err) {
-      console.error('[AppShell] Failed to delete label:', err)
-    }
-  }, [activeWorkspace?.id])
 
   // Handler for "Add Source" context menu action
   // Opens the EditPopover for adding a new source
@@ -2643,7 +2530,10 @@ function AppShellContent({
   const handleNewChat = useCallback(() => {
     if (!activeWorkspace) return
 
-    // Exit search mode and switch to All Sessions
+    setUnifiedExploreActive(true)
+    setExploreMode('sessions')
+
+    // Exit search mode and enter Explore's sessions perspective.
     setSearchActive(false)
     setSearchQuery('')
 
@@ -2657,7 +2547,15 @@ function AppShellContent({
 
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
-  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
+  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams, setExploreMode])
+
+  const handlePrimaryCreate = useCallback(() => {
+    if (exploreMode === 'browser') {
+      handleAddBrowserTab()
+      return
+    }
+    handleNewChat()
+  }, [exploreMode, handleAddBrowserTab, handleNewChat])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
@@ -2705,27 +2603,7 @@ function AppShellContent({
     // 1. Explore is the primary app entry.
     result.push({ id: 'nav:browser', type: 'nav', action: handleBrowserClick })
 
-    // 2. Sessions section: All Sessions (expandable) with status items and Archived as children
-    result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
-    for (const state of effectiveSessionStatuses) {
-      result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleSessionStatusClick(state.id) })
-    }
-    result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
-
-    // 3. Labels section header + regular label tree for keyboard nav
-    result.push({ id: 'nav:labels', type: 'nav', action: () => handleLabelClick('__all__') })
-    // Flatten regular label tree for keyboard navigation (depth-first)
-    const flattenTree = (nodes: LabelTreeNode[]) => {
-      for (const node of nodes) {
-        if (node.label) {
-          result.push({ id: `nav:label:${node.fullId}`, type: 'nav', action: () => handleLabelClick(node.fullId) })
-        }
-        if (node.children.length > 0) flattenTree(node.children)
-      }
-    }
-    flattenTree(labelTree)
-
-    // 4. Sources, Skills, Settings
+    // 2. Sources, Skills, Settings
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:plugins', type: 'nav', action: handlePluginsClick })
@@ -2734,7 +2612,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleBrowserClick, handleSourcesClick, handleSkillsClick, handlePluginsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleBrowserClick, handleSourcesClick, handleSkillsClick, handlePluginsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2897,62 +2775,6 @@ function AppShellContent({
     }
   }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses, pluginListKind])
 
-  // Build recursive sidebar items from the shared display-sorted label tree.
-  // Each node renders with condensed height (compact: true) since many labels expected.
-  // Clicking any label navigates to its filter view; the chevron toggles expand/collapse.
-  const buildLabelSidebarItems = useCallback((nodes: LabelTreeNode[]): any[] => {
-    return nodes.map(node => {
-      const hasChildren = node.children.length > 0
-      const isActive = sessionFilter?.kind === 'label' && sessionFilter.labelId === node.fullId
-      const count = labelCounts[node.fullId] || 0
-
-      const item: any = {
-        id: `nav:label:${node.fullId}`,
-        title: node.label?.name || node.segment.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        label: count > 0 ? String(count) : undefined,
-        // Show label type icon (Hash/Calendar/Type) right-aligned before count, with tooltip explaining the type
-        afterTitle: node.label?.valueType ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex items-center"><LabelValueTypeIcon valueType={node.label.valueType} size={10} /></span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              {t("sidebar.labelValueTypeTooltip", { valueType: t(`sidebar.labelValueType.${node.label.valueType}`) })}
-            </TooltipContent>
-          </Tooltip>
-        ) : undefined,
-        icon: node.label && activeWorkspace?.id ? (
-          <LabelIcon
-            label={node.label}
-            size="sm"
-            hasChildren={hasChildren}
-          />
-        ) : <Tag className="h-3.5 w-3.5" />,
-        variant: isActive ? "default" : "ghost",
-        compact: true, // Reduced height for label items (many labels expected)
-        // All labels navigate on click — parent and leaf alike
-        onClick: () => handleLabelClick(node.fullId),
-        contextMenu: {
-          type: 'labels' as const,
-          labelId: node.fullId,
-          onConfigureLabels: openConfigureLabels,
-          onAddLabel: handleAddLabel,
-          onDeleteLabel: handleDeleteLabel,
-        },
-      }
-
-      if (hasChildren) {
-        item.expandable = true
-        item.expanded = isExpanded(`nav:label:${node.fullId}`)
-        // Chevron toggles expand/collapse independently of navigation
-        item.onToggle = () => toggleExpanded(`nav:label:${node.fullId}`)
-        item.items = buildLabelSidebarItems(node.children)
-      }
-
-      return item
-    })
-  }, [sessionFilter, labelCounts, activeWorkspace?.id, handleLabelClick, isExpanded, toggleExpanded, openConfigureLabels, handleAddLabel, handleDeleteLabel])
-
   return (
     <AppShellProvider value={appShellContextValue}>
         {/* === TOP BAR === */}
@@ -3007,7 +2829,7 @@ function AppShellContent({
             <div className="flex h-full flex-col select-none">
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                {/* New Session Button - Gmail-style, with context menu for "Open in New Window" */}
+                {/* Primary create action follows the last Explore mode. */}
                 <div className="px-2 pb-2 shrink-0">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -3016,26 +2838,34 @@ function AppShellContent({
                           <ContextMenuTrigger asChild>
                             <Button
                               variant="ghost"
-                              onClick={() => handleNewChat()}
+                              onClick={handlePrimaryCreate}
                               className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
                               data-tutorial="new-chat-button"
                             >
                               <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
-                              {t("session.newSession")}
+                              {exploreMode === 'browser'
+                                ? t("browser.newPage", { defaultValue: "New Page" })
+                                : t("session.newSession")}
                             </Button>
                           </ContextMenuTrigger>
-                          <StyledContextMenuContent>
-                            <ContextMenuProvider>
-                              <SidebarMenu type="newSession" />
-                            </ContextMenuProvider>
-                          </StyledContextMenuContent>
+                          {exploreMode === 'sessions' && (
+                            <StyledContextMenuContent>
+                              <ContextMenuProvider>
+                                <SidebarMenu type="newSession" />
+                              </ContextMenuProvider>
+                            </StyledContextMenuContent>
+                          )}
                         </ContextMenu>
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent side="right">{newChatHotkey}</TooltipContent>
+                    <TooltipContent side="right">
+                      {exploreMode === 'browser'
+                        ? t("browser.newPage", { defaultValue: "New Page" })
+                        : newChatHotkey}
+                    </TooltipContent>
                   </Tooltip>
                 </div>
-                {/* Primary Nav: All Sessions (▸ Statuses, Flagged, Archived), Labels | Sources, Skills | Settings */}
+                {/* Primary Nav: Explore | Sources, Skills | Settings */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
                 <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
                 <LeftSidebar
@@ -3043,7 +2873,7 @@ function AppShellContent({
                   getItemProps={getSidebarItemProps}
                   focusedItemId={focusedSidebarItemId}
                   links={[
-                    // --- Primary Entry ---
+                    // --- Primary Entry: Explore (Browser) ---
                     {
                       id: "nav:browser",
                       title: t("sidebar.browser", { defaultValue: "Explore" }),
@@ -3052,90 +2882,7 @@ function AppShellContent({
                       variant: isUnifiedExploreNavigation ? "default" : "ghost",
                       onClick: handleBrowserClick,
                     },
-                    { id: "separator:explore-sessions", type: "separator" },
-                    // --- Sessions Section ---
-                    // All Sessions: expandable with status children (sortable) + Flagged & Archived as trailing items
-                    {
-                      id: "nav:allSessions",
-                      title: t("sidebar.allSessions"),
-                      label: String(workspaceSessionMetas.length),
-                      icon: Inbox,
-                      variant: sessionFilter?.kind === 'allSessions' && !isUnifiedExploreNavigation ? "default" : "ghost",
-                      onClick: handleAllSessionsClick,
-                      expandable: true,
-                      expanded: isExpanded('nav:allSessions'),
-                      onToggle: () => toggleExpanded('nav:allSessions'),
-                      contextMenu: {
-                        type: 'allSessions',
-                        onConfigureStatuses: openConfigureStatuses,
-                        onMarkAllRead: () => {
-                          if (!activeWorkspaceId) return
-                          // Optimistic: clear hasUnread on all workspace session metas
-                          setSessionMetaMap(prev => {
-                            const next = new Map(prev)
-                            for (const [id, meta] of next) {
-                              if (meta.workspaceId === activeWorkspaceId && meta.hasUnread) {
-                                next.set(id, { ...meta, hasUnread: false })
-                              }
-                            }
-                            return next
-                          })
-                          window.electronAPI.markAllSessionsRead(activeWorkspaceId)
-                        },
-                      },
-                      // Enable flat DnD reorder for status items
-                      sortable: { onReorder: handleStatusReorder },
-                      items: [
-                        // Status items (sortable via SortableStatusList)
-                        ...effectiveSessionStatuses.map(state => ({
-                          id: `nav:state:${state.id}`,
-                          title: t(`status.${state.id}`, state.label),
-                          label: String(sessionStatusCounts[state.id] || 0),
-                          icon: state.icon,
-                          iconColor: state.resolvedColor,
-                          iconColorable: state.iconColorable,
-                          variant: (sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
-                          onClick: () => handleSessionStatusClick(state.id),
-                          contextMenu: {
-                            type: 'status' as const,
-                            statusId: state.id,
-                            onConfigureStatuses: openConfigureStatuses,
-                          },
-                        })),
-                        // Separator: SortableStatusList splits here — items after become non-sortable trailingItems
-                        { id: 'separator:states-archived', type: 'separator' as const },
-                        // Archived (trailing, non-sortable)
-                        {
-                          id: "nav:archived",
-                          title: t("sidebar.archived"),
-                          label: archivedCount > 0 ? String(archivedCount) : undefined,
-                          icon: Archive,
-                          variant: (sessionFilter?.kind === 'archived' ? "default" : "ghost") as "default" | "ghost",
-                          onClick: handleArchivedClick,
-                        },
-                      ],
-                    },
-                    // Labels: navigable header (shows all labeled sessions) + hierarchical tree (drag-and-drop reorder + re-parent)
-                    {
-                      id: "nav:labels",
-                      title: t("sidebar.labels"),
-                      icon: Tag,
-                      // Only highlighted when "Labels" itself is selected (not sub-labels)
-                      variant: (sessionFilter?.kind === 'label' && sessionFilter.labelId === '__all__') ? "default" as const : "ghost" as const,
-                      // Clicking navigates to "all labeled sessions" view
-                      onClick: () => handleLabelClick('__all__'),
-                      expandable: true,
-                      expanded: isExpanded('nav:labels'),
-                      onToggle: () => toggleExpanded('nav:labels'),
-                      contextMenu: {
-                        type: 'labels' as const,
-                        onConfigureLabels: openConfigureLabels,
-                        onAddLabel: handleAddLabel,
-                      },
-                      items: buildLabelSidebarItems(labelTree),
-                    },
-                    // --- Separator ---
-                    { id: "separator:chats-sources", type: "separator" },
+                    { id: "separator:explore-resources", type: "separator" },
                     // --- Sources & Skills Section ---
                     {
                       id: "nav:sources",
@@ -3322,9 +3069,36 @@ function AppShellContent({
               className="h-full flex flex-col min-w-0 relative z-panel"
             >
               <PanelHeader
+              titleAlign="left"
+              titleMenuBare
               title={isSidebarVisible
-                ? (isUnifiedExploreNavigation ? t('sidebar.browser', { defaultValue: 'Explore' }) : listTitle)
+                ? (isUnifiedExploreNavigation
+                    ? (isBrowserNavigation(navState) ? t('explore.modeBrowser', { defaultValue: 'Web' }) : t('explore.modeSessions', { defaultValue: 'Sessions' }))
+                    : listTitle)
                 : undefined}
+              titleMenu={isSidebarVisible && isUnifiedExploreNavigation ? (
+                <>
+                  {([
+                    { mode: 'sessions' as const, label: t('explore.modeSessions', { defaultValue: 'Sessions' }), desc: t('explore.sessionsDesc', { defaultValue: 'Create, learn and explore' }) },
+                    { mode: 'browser' as const, label: t('explore.modeBrowser', { defaultValue: 'Web' }), desc: t('explore.browserDesc', { defaultValue: 'Browse the web' }) },
+                  ]).map((option) => {
+                    const isActive = (isBrowserNavigation(navState) ? 'browser' : 'sessions') === option.mode
+                    return (
+                      <StyledDropdownMenuItem
+                        key={option.mode}
+                        onSelect={() => handleExploreModeChange(option.mode)}
+                        className="gap-3 py-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium">{option.label}</div>
+                          <div className="text-xs text-muted-foreground">{option.desc}</div>
+                        </div>
+                        {isActive && <Check className="h-4 w-4 text-foreground shrink-0" />}
+                      </StyledDropdownMenuItem>
+                    )
+                  })}
+                </>
+              ) : undefined}
               compensateForStoplight={!isSidebarVisible}
               badge={automationFilter?.automationType === 'scheduled' ? (
                 <Tooltip>
@@ -3340,36 +3114,53 @@ function AppShellContent({
               ) : undefined}
               actions={
                 <>
-                  {/* List ⇄ Board view switch (sessions mode, desktop widths only).
-                      In board view the navigator is collapsed, so the board hosts its own copy. */}
-                  {!isAutoCompact && isSessionsNavigation(navState) && !isUnifiedExploreNavigation && (
-                    <BoardListToggle
-                      value="list"
-                      onChange={view => {
-                        if (view === 'board') navigate(routes.view.board())
-                      }}
-                    />
-                  )}
                   {isPluginsNavigation(navState) && (
                     <PluginListToggle
                       value={pluginListKind}
                       onChange={setPluginListKind}
                     />
                   )}
+                  {/* Browser mode filter menu — tabs/bookmarks/history/downloads + new tab/session */}
                   {isBrowserNavigation(navState) && (
-                    <BrowserNavigatorToggle
-                      value={browserNavigatorKind}
-                      onChange={setBrowserNavigatorKind}
-                      compact={sessionListWidth < 284}
-                    />
-                  )}
-                  {isUnifiedExploreNavigation && browserNavigatorKind === 'tabs' && (
-                    <HeaderIconButton
-                      icon={<Plus className="h-4 w-4" />}
-                      tooltip={t('browser.newTab', { defaultValue: 'New Tab' })}
-                      aria-label={t('browser.newTab', { defaultValue: 'New Tab' })}
-                      onClick={handleAddBrowserTab}
-                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <HeaderIconButton
+                          icon={<ListFilter className="h-4 w-4" />}
+                          tooltip={t('sidebar.filterChats', { defaultValue: 'Filter' })}
+                        />
+                      </DropdownMenuTrigger>
+                      <StyledDropdownMenuContent align="end" light minWidth="min-w-[180px]">
+                        <StyledDropdownMenuItem onClick={handleNewChat}>
+                          <MessageSquarePlus className="h-3.5 w-3.5" />
+                          <span className="flex-1">{t('session.newSession', { defaultValue: 'New Session' })}</span>
+                        </StyledDropdownMenuItem>
+                        <StyledDropdownMenuItem onClick={handleAddBrowserTab}>
+                          <Plus className="h-3.5 w-3.5" />
+                          <span className="flex-1">{t('browser.newTab', { defaultValue: 'New Tab' })}</span>
+                        </StyledDropdownMenuItem>
+                        <StyledDropdownMenuSeparator />
+                        {([
+                          { kind: 'tabs' as const, icon: List, key: 'browser.navigatorTabs', fallback: 'Tabs' },
+                          { kind: 'bookmarks' as const, icon: Star, key: 'browser.bookmarks', fallback: 'Bookmarks' },
+                          { kind: 'history' as const, icon: History, key: 'browser.history', fallback: 'History' },
+                          { kind: 'downloads' as const, icon: Download, key: 'browser.downloads', fallback: 'Downloads' },
+                        ]).map((item) => {
+                          const ItemIcon = item.icon
+                          const isActive = browserNavigatorKind === item.kind
+                          return (
+                            <StyledDropdownMenuItem
+                              key={item.kind}
+                              onClick={() => setBrowserNavigatorKind(item.kind)}
+                              className={cn('gap-2', isActive && 'bg-foreground/[0.05]')}
+                            >
+                              <ItemIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                              <span className="flex-1">{t(item.key, { defaultValue: item.fallback })}</span>
+                              {isActive && <Check className="h-3.5 w-3.5 text-foreground" />}
+                            </StyledDropdownMenuItem>
+                          )
+                        })}
+                      </StyledDropdownMenuContent>
+                    </DropdownMenu>
                   )}
                   {/* Filter dropdown - available in ALL chat views.
                       Shows user-added filters (removable) and pinned filters (non-removable, derived from route).
@@ -3437,6 +3228,34 @@ function AppShellContent({
                             </button>
                           )}
                         </div>
+
+                        {/* View mode: List / Board — shown near the top when not in compact mode */}
+                        {!isAutoCompact && (
+                          <div className="flex items-center gap-1 px-2 pb-1.5">
+                            <button
+                              type="button"
+                              onClick={() => { /* already in list view */ }}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium transition-colors',
+                                'bg-card text-foreground shadow-minimal',
+                              )}
+                            >
+                              <List className="h-3.5 w-3.5" strokeWidth={2} />
+                              {t('kanban.list', { defaultValue: 'List' })}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate(routes.view.board())}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium transition-colors',
+                                'text-foreground/50 hover:text-foreground/80',
+                              )}
+                            >
+                              <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} />
+                              {t('kanban.board', { defaultValue: 'Board' })}
+                            </button>
+                          </div>
+                        )}
 
                         {/* Search input — typing switches from hierarchical submenus to a flat filtered list.
                             stopPropagation prevents Radix from intercepting keys. Arrow/Enter handled for navigation. */}
@@ -4158,17 +3977,11 @@ function AppShellContent({
             {isPluginsNavigation(navState) && pluginListKind === 'extensions' && (
               <BrowserExtensionsListPanel />
             )}
-            {isUnifiedExploreNavigation && browserNavigatorKind === 'tabs' && (
+            {isUnifiedExploreNavigation && isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
               <BrowserTabsListPanel
                 tabs={browserTabs}
-                sessions={activeSessionMetas}
                 selectedTabId={isBrowserNavigation(navState) ? (navState.details?.tabId ?? null) : null}
-                selectedSessionId={isSessionsNavigation(navState) ? (navState.details?.sessionId ?? null) : null}
                 onTabClick={handleBrowserTabSelect}
-                onSessionClick={(sessionId) => {
-                  setUnifiedExploreActive(true)
-                  navigate(routes.view.allSessions(sessionId))
-                }}
                 onTabClose={handleCloseBrowserTab}
                 onTabGoBack={(tabId) => { void window.electronAPI.browserPane.goBack(tabId) }}
                 onTabGoForward={(tabId) => { void window.electronAPI.browserPane.goForward(tabId) }}
@@ -4218,7 +4031,7 @@ function AppShellContent({
                 onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
               />
             )}
-            {isSessionsNavigation(navState) && !isUnifiedExploreNavigation && (
+            {isSessionsNavigation(navState) && (
               /* Sessions List */
               <>
                 {/* SessionList: Scrollable list of session cards */}
@@ -4270,7 +4083,11 @@ function AppShellContent({
                   workspaceId={activeWorkspaceId ?? undefined}
                   statusFilter={listFilter}
                   labelFilterMap={labelFilter}
-                  focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
+                  focusedSessionId={isUnifiedExploreHome || panelCount === 0
+                    ? null
+                    : panelCount > 1
+                      ? focusedSessionId
+                      : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
                   activeChatMatchInfo={chatMatchInfo}
@@ -4408,42 +4225,6 @@ function AppShellContent({
             }}
             {...getEditConfig('edit-statuses', activeWorkspace.rootPath)}
           />
-          {/* Configure Labels EditPopover - anchored near sidebar */}
-          <EditPopover
-            open={editPopoverOpen === 'labels'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'labels' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/labels/config.json`,
-            }}
-            {...(() => {
-              // Spread base config, override context to include which label was right-clicked
-              const config = getEditConfig('edit-labels', activeWorkspace.rootPath)
-              const targetLabel = editLabelTargetId.current
-                ? findLabelById(labelConfigs, editLabelTargetId.current)
-                : undefined
-              if (!targetLabel) return config
-              return {
-                ...config,
-                context: {
-                  ...config.context,
-                  context: (config.context.context || '') +
-                    ` The user right-clicked on the label "${targetLabel.name}" (id: "${targetLabel.id}"). ` +
-                    'If they refer to "this label" or "this", they mean this specific label.',
-                },
-              }
-            })()}
-          />
           {/* Edit Views EditPopover - anchored near sidebar */}
           <EditPopover
             open={editPopoverOpen === 'views'}
@@ -4516,42 +4297,6 @@ function AppShellContent({
             side="bottom"
             align="start"
             {...getEditConfig('automation-config', activeWorkspace.rootPath)}
-          />
-          {/* Add Label EditPopover - triggered from "Add New Label" context menu on labels */}
-          <EditPopover
-            open={editPopoverOpen === 'add-label'}
-            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'add-label' : null)}
-            modal={true}
-            trigger={
-              <div
-                className="fixed w-0 h-0 pointer-events-none"
-                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
-                aria-hidden="true"
-              />
-            }
-            side="bottom"
-            align="start"
-            secondaryAction={{
-              label: 'Edit File',
-              filePath: `${activeWorkspace.rootPath}/labels/config.json`,
-            }}
-            {...(() => {
-              // Spread base config, override context to include which label was right-clicked
-              const config = getEditConfig('add-label', activeWorkspace.rootPath)
-              const targetLabel = editLabelTargetId.current
-                ? findLabelById(labelConfigs, editLabelTargetId.current)
-                : undefined
-              if (!targetLabel) return config
-              return {
-                ...config,
-                context: {
-                  ...config.context,
-                  context: (config.context.context || '') +
-                    ` The user right-clicked on the label "${targetLabel.name}" (id: "${targetLabel.id}"). ` +
-                    'The new label should be added as a sibling after this label, or as a child if the user specifies.',
-                },
-              }
-            })()}
           />
         </>
       )}

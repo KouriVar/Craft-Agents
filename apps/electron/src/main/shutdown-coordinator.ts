@@ -8,7 +8,7 @@ export interface ShutdownResources {
     flushAllSessions(): Promise<void>
     cleanup(): Promise<void>
   } | null
-  browserPaneManager?: { destroyAll(): void } | null
+  browserPaneManager?: { prepareForShutdown?(): Promise<void>; destroyAll(): void } | null
   oauthFlowStore?: { dispose(): void } | null
   stopModelRefresh(): void
   messagingHandle?: { dispose(): Promise<void> } | null
@@ -49,6 +49,9 @@ export async function cleanupApplicationResources(resources: ShutdownResources):
     : null)
   await run('session-cleanup', resources.sessionManager
     ? () => resources.sessionManager!.cleanup()
+    : null)
+  await run('browser-flush', resources.browserPaneManager?.prepareForShutdown
+    ? () => resources.browserPaneManager!.prepareForShutdown!()
     : null)
   await run('browser-destroy-all', resources.browserPaneManager
     ? () => resources.browserPaneManager!.destroyAll()

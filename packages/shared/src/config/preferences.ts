@@ -23,6 +23,12 @@ export interface DiffViewerPreferences {
   disableBackground?: boolean;
 }
 
+export interface ExplorePreferences {
+  aiStatusEnabled?: boolean;
+  aiFrequency?: 'startup' | '6h' | '12h' | '24h';
+  aiCount?: 3 | 5;
+}
+
 export interface UserPreferences {
   name?: string;
   timezone?: string;
@@ -31,6 +37,8 @@ export interface UserPreferences {
   notes?: string;
   // Diff viewer display preferences
   diffViewer?: DiffViewerPreferences;
+  // Explore landing-page preferences
+  explore?: ExplorePreferences;
   // Whether to include Co-Authored-By trailer on git commits (default: true)
   includeCoAuthoredBy?: boolean;
   /**

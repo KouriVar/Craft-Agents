@@ -96,6 +96,10 @@ export interface PanelHeaderProps {
   className?: string
   /** Whether title is being regenerated (shows shimmer effect) */
   isRegeneratingTitle?: boolean
+  /** Title horizontal alignment (default 'center' — centered in the header; 'left' pins it to the leading edge) */
+  titleAlign?: 'left' | 'center'
+  /** When true, the titleMenu trigger renders as bare text + chevron (no padding/background hot-zone), so it aligns exactly like a plain title */
+  titleMenuBare?: boolean
 }
 
 /**
@@ -114,6 +118,8 @@ export function PanelHeader({
   paddingLeft,
   className,
   isRegeneratingTitle,
+  titleAlign = 'center',
+  titleMenuBare = false,
 }: PanelHeaderProps) {
   // Fall back to AppShellContext.leadingAction so per-panel back buttons (set by
   // PanelSlot in compact mode) propagate to every page's PanelHeader without each
@@ -166,10 +172,10 @@ export function PanelHeader({
       <button
         onClick={() => setDropdownOpen(true)}
         className={cn(
-          "flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0",
-          "hover:bg-foreground/[0.03] transition-colors",
+          "flex items-center gap-1 titlebar-no-drag min-w-0",
           "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          dropdownOpen && "bg-foreground/[0.03]"
+          !titleMenuBare && "px-2 py-1 rounded-md hover:bg-foreground/[0.03] transition-colors",
+          !titleMenuBare && dropdownOpen && "bg-foreground/[0.03]"
         )}
       >
         {titleContent}
@@ -240,7 +246,7 @@ export function PanelHeader({
         </div>
       )}
       <div className="flex-1 min-w-0 flex items-center select-none">
-        <div className={cn("max-w-full overflow-hidden", !leadingAction && "mx-auto")}>
+        <div className={cn("max-w-full overflow-hidden", !leadingAction && titleAlign === 'center' && "mx-auto")}>
           {titleNode}
         </div>
       </div>
