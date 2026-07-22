@@ -833,6 +833,34 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     setExpandedActivityGroups,
   } = useTurnCardExpansion(session?.id)
 
+  // Auto-expand thinking/reasoning turns so users can watch the step-by-step
+  // progress. Once the final response arrives (turn is complete), it auto-collapses
+  // so the output is clean and only expanded if the user clicks.
+  const prevThinkingTurnIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const turns = groupMessagesByTurn(session?.messages || [], { isSessionProcessing: session?.isProcessing ?? false })
+    const currentThinkingIds = new Set<string>()
+    for (let i = 0; i < turns.length; i++) {
+      const turn = turns[i]
+      if (turn.type !== 'assistant') continue
+      const key = getAssistantTurnUiKey(turn, i)
+      // A turn is "thinking" when it has activities but hasn't delivered the final response yet
+      const isThinking = (turn.isStreaming || turn.activities?.length) && !turn.isComplete
+      if (isThinking) {
+        currentThinkingIds.add(key)
+        if (!expandedTurns.has(key)) {
+          toggleTurn(key, true)
+        }
+      }
+    }
+    // Collapse turns that were thinking but now have a response (output mode)
+    for (const key of prevThinkingTurnIdsRef.current) {
+      if (!currentThinkingIds.has(key) && expandedTurns.has(key)) {
+        toggleTurn(key, false)
+      }
+    }
+    prevThinkingTurnIdsRef.current = currentThinkingIds
+  }, [session?.messages, session?.isProcessing])
 
   // ============================================================================
   // Search Highlighting (from session list search)
