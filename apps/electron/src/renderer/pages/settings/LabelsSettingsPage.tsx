@@ -53,7 +53,6 @@ export default function LabelsSettingsPage() {
 
   // Resolve edit configs using the workspace root path
   const rootPath = activeWorkspace?.rootPath || ''
-  const labelsEditConfig = getEditConfig('edit-labels', rootPath)
   const autoRulesEditConfig = getEditConfig('edit-auto-rules', rootPath)
 
   // Secondary action: open the labels config file directly in system editor
@@ -127,21 +126,10 @@ export default function LabelsSettingsPage() {
                     title={t("settings.labels.labelHierarchy")}
                     description={t("settings.labels.labelHierarchyDesc")}
                     action={
-                      <div className="flex items-center gap-1.5">
-                        <Button variant="ghost" size="sm" onClick={() => setCreateParent(null)}>
-                          <Plus className="mr-1.5 h-3.5 w-3.5" />
-                          {t('sidebarMenu.addNewLabel')}
-                        </Button>
-                        <EditPopover
-                          trigger={<EditButton />}
-                          context={labelsEditConfig.context}
-                          example={labelsEditConfig.example}
-                          displayLabel={labelsEditConfig.displayLabel}
-                          model={labelsEditConfig.model}
-                          systemPromptPreset={labelsEditConfig.systemPromptPreset}
-                          secondaryAction={editFileAction}
-                        />
-                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setCreateParent(null)}>
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        {t('sidebarMenu.addNewLabel')}
+                      </Button>
                     }
                   >
                     <SettingsCard className="p-0">
