@@ -70,6 +70,8 @@ export interface PanelHeaderProps {
   badge?: React.ReactNode
   /** Optional dropdown menu content for interactive title (renders chevron when provided) */
   titleMenu?: React.ReactNode
+  /** Horizontal alignment of the title dropdown relative to its trigger (default 'center') */
+  titleMenuAlign?: 'start' | 'center' | 'end'
   /**
    * Compact-mode replacement for the interactive title. When provided AND
    * `isCompactMode === true`, this node is rendered in place of the desktop
@@ -109,6 +111,7 @@ export function PanelHeader({
   title,
   badge,
   titleMenu,
+  titleMenuAlign = 'center',
   compactTitleMenu,
   leadingAction: explicitLeadingAction,
   centerButton,
@@ -168,25 +171,24 @@ export function PanelHeader({
   // would otherwise get clipped by the panel container query.
   const desktopTitleNode = titleMenu ? (
     <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-      {/* Wrapper button for the whole clickable area */}
-      <button
-        onClick={() => setDropdownOpen(true)}
-        className={cn(
-          "flex items-center gap-1 titlebar-no-drag min-w-0",
-          "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          !titleMenuBare && "px-2 py-1 rounded-md hover:bg-foreground/[0.03] transition-colors",
-          !titleMenuBare && dropdownOpen && "bg-foreground/[0.03]"
-        )}
-      >
-        {titleContent}
-        {/* Chevron is the actual trigger anchor point */}
-        <DropdownMenuTrigger asChild>
+      {/* Anchor the menu to the whole title control so start/end alignment uses
+          the title bounds instead of the trailing chevron's bounds. */}
+      <DropdownMenuTrigger asChild>
+        <button
+          className={cn(
+            "flex items-center gap-1 titlebar-no-drag min-w-0",
+            "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            !titleMenuBare && "px-2 py-1 rounded-md hover:bg-foreground/[0.03] transition-colors",
+            !titleMenuBare && dropdownOpen && "bg-foreground/[0.03]"
+          )}
+        >
+          {titleContent}
           <span className="shrink-0 flex items-center justify-center">
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
           </span>
-        </DropdownMenuTrigger>
-      </button>
-      <StyledDropdownMenuContent align="center" sideOffset={8}>
+        </button>
+      </DropdownMenuTrigger>
+      <StyledDropdownMenuContent align={titleMenuAlign} sideOffset={8}>
         {titleMenu}
       </StyledDropdownMenuContent>
     </DropdownMenu>

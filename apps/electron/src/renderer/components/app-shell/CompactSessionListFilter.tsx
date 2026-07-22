@@ -26,6 +26,7 @@ import {
   Check,
   Inbox,
   Layers,
+  LayoutGrid,
   ListFilter,
   MailOpen,
   Search,
@@ -83,6 +84,7 @@ interface CompactSessionListFilterProps {
   setChatGroupingMode: (mode: ChatGroupingMode) => void
   isStateSubView: boolean
   onOpenSearch: () => void
+  onOpenBoard: () => void
 }
 
 export function CompactSessionListFilter({
@@ -98,6 +100,7 @@ export function CompactSessionListFilter({
   setChatGroupingMode,
   isStateSubView,
   onOpenSearch,
+  onOpenBoard,
 }: CompactSessionListFilterProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
@@ -333,6 +336,16 @@ export function CompactSessionListFilter({
                 >
                   <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                   <span className="text-sm font-medium">{t('sidebar.search')}</span>
+                </button>
+              </DrawerClose>
+              <DrawerClose asChild>
+                <button
+                  type="button"
+                  onClick={onOpenBoard}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-[10px] hover:bg-foreground/5 active:bg-foreground/10 transition-colors text-left"
+                >
+                  <LayoutGrid className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm font-medium">{t('kanban.board', { defaultValue: 'Board' })}</span>
                 </button>
               </DrawerClose>
             </div>

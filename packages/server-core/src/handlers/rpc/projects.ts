@@ -12,6 +12,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.projects.LIST_ASSETS,
   RPC_CHANNELS.projects.UPLOAD_ASSET,
   RPC_CHANNELS.projects.DELETE_ASSET,
+  RPC_CHANNELS.projects.GET_MEMORY,
+  RPC_CHANNELS.projects.SET_MEMORY,
 ] as const
 
 export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -73,6 +75,21 @@ export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): 
     const updated = updateProject(workspace.rootPath, projectSlug, patch)
     await broadcastChanged(workspaceId, workspace.rootPath)
     return updated
+  })
+
+  server.handle(RPC_CHANNELS.projects.GET_MEMORY, async (_ctx, workspaceId: string, projectSlug: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) return ''
+    const { loadProjectMemory } = await import('@craft-agent/shared/projects')
+    return loadProjectMemory(workspace.rootPath, projectSlug, Number.MAX_SAFE_INTEGER) ?? ''
+  })
+
+  server.handle(RPC_CHANNELS.projects.SET_MEMORY, async (_ctx, workspaceId: string, projectSlug: string, content: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const { saveProjectMemory } = await import('@craft-agent/shared/projects')
+    saveProjectMemory(workspace.rootPath, projectSlug, content)
+    await broadcastChanged(workspaceId, workspace.rootPath)
   })
 
   // Delete a project; unbinds projectId from any sessions that referenced it.

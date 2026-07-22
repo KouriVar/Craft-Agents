@@ -259,6 +259,9 @@ import type {
   OAuthResult,
   McpToolsResult,
   GitBashStatus,
+  GitRepositoryStatus,
+  GitAction,
+  GitActionResult,
   ClaudeOAuthResult,
   UpdateInfo,
   WorkspaceSettings,
@@ -712,6 +715,8 @@ export interface ElectronAPI {
 
   // Git operations
   getGitBranch(dirPath: string): Promise<string | null>
+  getGitStatus(dirPath: string): Promise<GitRepositoryStatus>
+  runGitAction(dirPath: string, action: GitAction): Promise<GitActionResult>
 
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>
@@ -805,6 +810,8 @@ export interface ElectronAPI {
   getProject(workspaceId: string, projectIdOrSlug: string): Promise<unknown | null>
   createProject(workspaceId: string, input: import('@craft-agent/shared/projects/types').CreateProjectInput): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
   updateProject(workspaceId: string, projectSlug: string, patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  getProjectMemory(workspaceId: string, projectSlug: string): Promise<string>
+  setProjectMemory(workspaceId: string, projectSlug: string, content: string): Promise<void>
   deleteProject(workspaceId: string, projectSlug: string): Promise<void>
   listProjectAssets(workspaceId: string, projectSlug: string): Promise<unknown>
   uploadProjectAsset(workspaceId: string, projectSlug: string, input: { filename: string; base64?: string; text?: string; sourcePath?: string }): Promise<import('@craft-agent/shared/projects/types').ProjectAsset>

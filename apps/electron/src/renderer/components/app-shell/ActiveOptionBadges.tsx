@@ -425,7 +425,7 @@ function FilesPopoverButton({ sessionId, sessionFolderPath }: { sessionId?: stri
           )}
         >
           <Info className="h-3.5 w-3.5 shrink-0" />
-          <span className="whitespace-nowrap">{t("common.info")}</span>
+          <span className="whitespace-nowrap">{t('chat.sessionStatus')}</span>
         </button>
       )}
     />

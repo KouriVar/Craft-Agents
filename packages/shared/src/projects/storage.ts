@@ -184,6 +184,13 @@ export function loadProjectMemory(
   return `${head}${marker}`;
 }
 
+/** Persist the user-editable long-term project memory. */
+export function saveProjectMemory(workspaceRootPath: string, projectSlug: string, content: string): void {
+  const project = loadProject(workspaceRootPath, projectSlug)
+  if (!project) throw new Error(`Project not found: ${projectSlug}`)
+  atomicWriteFileSync(getProjectMemoryPath(workspaceRootPath, projectSlug), content)
+}
+
 // ============================================================
 // Load Operations
 // ============================================================

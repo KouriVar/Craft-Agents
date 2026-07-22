@@ -9,7 +9,7 @@
 import { useCallback } from 'react'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, Keyboard, ListTree, LoaderCircle, Plus, RotateCcw, Terminal, X } from 'lucide-react'
+import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, Keyboard, ListTree, LoaderCircle, MessageSquare, Plus, RotateCcw, Terminal, X } from 'lucide-react'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { EmbeddedTerminal } from './EmbeddedTerminal'
 import { WorkspaceFileBrowser } from './WorkspaceFileBrowser'
@@ -28,6 +28,9 @@ import type { McpAppWidgetDescriptor } from '../../../shared/widget-runtime'
 import { McpAppWidget } from '../widgets/McpAppWidget'
 import * as storage from '@/lib/local-storage'
 import { ShortcutsContent } from '@/pages/settings/ShortcutsPage'
+import { ChatPage } from '@/pages'
+import { sessionMetaMapAtom } from '@/atoms/sessions'
+import { useAtomValue } from 'jotai'
 
 // --- Toolbar button (matches HeaderIconButton styling) ---
 function ToolMenuItem({
@@ -81,7 +84,7 @@ function EmptySidebarAction({
   )
 }
 
-type RightSidebarTool = 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'shortcuts' | 'widget'
+type RightSidebarTool = 'chat' | 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'shortcuts' | 'widget'
 interface RightSidebarTab {
   id: string
   type: RightSidebarTool
@@ -130,6 +133,7 @@ function createSidebarTab(type: RightSidebarTool, label: string, url?: string, r
 }
 
 function getToolIcon(type: RightSidebarTool, className = 'h-4 w-4 shrink-0') {
+  if (type === 'chat') return <MessageSquare className={className} />
   if (type === 'terminal') return <Terminal className={className} />
   if (type === 'files') return <FolderOpen className={className} />
   if (type === 'cowart') return <Brush className={className} />
@@ -171,7 +175,9 @@ function SourcesReviewPanel({
 export function RightReviewSidebar() {
   const { t } = useTranslation()
   const [session] = useSession()
+  const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const activeWorkspace = useActiveWorkspace()
+  const { onCreateSession } = useAppShellContext()
   const rootPath = activeWorkspace?.rootPath
   const newTabLabel = t('browser.newTab', { defaultValue: '新标签页' })
   const [tabs, setTabs] = React.useState<RightSidebarTab[]>([])
@@ -292,6 +298,34 @@ export function RightReviewSidebar() {
     addTab('browser', newTabLabel)
   }, [addTab, newTabLabel])
 
+  const handleOpenChat = useCallback(async (requestedSessionId?: string) => {
+    const selectedMeta = session.selected ? sessionMetaMap.get(session.selected) : undefined
+    let sessionId = requestedSessionId
+      ?? (selectedMeta?.workspaceId === activeWorkspace?.id ? session.selected ?? undefined : undefined)
+    if (!sessionId) {
+      sessionId = [...sessionMetaMap.values()]
+        .filter((item) => item.workspaceId === activeWorkspace?.id && !item.isArchived)
+        .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))[0]?.id
+    }
+    if (!sessionId && activeWorkspace?.id) {
+      const created = await onCreateSession(activeWorkspace.id)
+      sessionId = created.id
+    }
+    if (!sessionId) return
+    const meta = sessionMetaMap.get(sessionId)
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.type === 'chat' && tab.sessionId === sessionId)
+      if (existing) {
+        setActiveTabId(existing.id)
+        return current
+      }
+      const tab = createSidebarTab('chat', meta?.name || t('chat.session', { defaultValue: 'Session' }))
+      tab.sessionId = sessionId
+      setActiveTabId(tab.id)
+      return [...current, tab]
+    })
+  }, [activeWorkspace?.id, onCreateSession, session.selected, sessionMetaMap, t])
+
   const handleOpenShortcuts = useCallback(() => {
     setTabs((current) => {
       const existing = current.find((tab) => tab.type === 'shortcuts')
@@ -340,6 +374,11 @@ export function RightReviewSidebar() {
         setActiveTabId(tab.id)
         return [...current, tab]
       })
+    }
+
+    const handleOpenChatEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string }>).detail
+      void handleOpenChat(detail?.sessionId)
     }
 
     const handleCowartWidget = (event: Event) => {
@@ -394,6 +433,7 @@ export function RightReviewSidebar() {
     }
 
     window.addEventListener('craft:right-sidebar-open-sources', handleOpenSources)
+    window.addEventListener('craft:right-sidebar-open-chat', handleOpenChatEvent)
     window.addEventListener('craft:right-sidebar-open-shortcuts', handleOpenShortcuts)
     window.addEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
     window.addEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
@@ -401,13 +441,14 @@ export function RightReviewSidebar() {
     window.addEventListener('craft:session-deleted', handleSessionDeleted)
     return () => {
       window.removeEventListener('craft:right-sidebar-open-sources', handleOpenSources)
+      window.removeEventListener('craft:right-sidebar-open-chat', handleOpenChatEvent)
       window.removeEventListener('craft:right-sidebar-open-shortcuts', handleOpenShortcuts)
       window.removeEventListener('craft:right-sidebar-open-cowart', handleCowartWidget)
       window.removeEventListener('craft:right-sidebar-open-widget', handleMcpWidget)
       window.removeEventListener('craft:widget-runtime-status', handleWidgetStatus)
       window.removeEventListener('craft:session-deleted', handleSessionDeleted)
     }
-  }, [handleOpenCowart, handleOpenShortcuts, newTabLabel, t])
+  }, [handleOpenChat, handleOpenCowart, handleOpenShortcuts, newTabLabel, t])
 
   const noWorkspace = !rootPath
 
@@ -473,6 +514,12 @@ export function RightReviewSidebar() {
           </DropdownMenuTrigger>
           <StyledDropdownMenuContent align="end" minWidth="min-w-[220px]">
             <ToolMenuItem
+              icon={<MessageSquare className="h-4 w-4" />}
+              label={t('chat.session', { defaultValue: 'Session' })}
+              onClick={() => { void handleOpenChat() }}
+              active={activeTab?.type === 'chat'}
+            />
+            <ToolMenuItem
               icon={<Globe className="h-4 w-4" />}
               label={t('rightSidebar.openBrowser')}
               onClick={handleOpenBrowser}
@@ -515,6 +562,11 @@ export function RightReviewSidebar() {
           <div className="flex h-full items-center justify-center px-8">
             <div className="w-full max-w-[240px]">
               <EmptySidebarAction
+                icon={<MessageSquare className="h-5 w-5" />}
+                label={t('chat.session', { defaultValue: 'Session' })}
+                onClick={() => { void handleOpenChat() }}
+              />
+              <EmptySidebarAction
                 icon={<Globe className="h-5 w-5" />}
                 label={t('rightSidebar.openBrowser')}
                 onClick={handleOpenBrowser}
@@ -549,6 +601,13 @@ export function RightReviewSidebar() {
           const className = cn('h-full min-h-0', !isActive && 'hidden')
           if (tab.type === 'terminal') {
             return <EmbeddedTerminal key={tab.id} cwd={rootPath} className={className} />
+          }
+          if (tab.type === 'chat' && tab.sessionId) {
+            return (
+              <div key={tab.id} className={cn(className, 'bg-background')}>
+                <ChatPage sessionId={tab.sessionId} />
+              </div>
+            )
           }
           if (tab.type === 'files') {
             return <WorkspaceFileBrowser key={tab.id} rootPath={rootPath} className={className} />

@@ -390,6 +390,8 @@ export const RPC_CHANNELS = {
   },
   git: {
     GET_BRANCH: 'git:getBranch',
+    GET_STATUS: 'git:getStatus',
+    RUN_ACTION: 'git:runAction',
   },
   gitbash: {
     CHECK: 'gitbash:check',
@@ -478,6 +480,8 @@ export const RPC_CHANNELS = {
     LIST_ASSETS: 'projects:listAssets',
     UPLOAD_ASSET: 'projects:uploadAsset',
     DELETE_ASSET: 'projects:deleteAsset',
+    GET_MEMORY: 'projects:getMemory',
+    SET_MEMORY: 'projects:setMemory',
     CHANGED: 'projects:changed',
   },
   messaging: {

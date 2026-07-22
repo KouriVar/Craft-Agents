@@ -968,6 +968,8 @@ export interface BrowserWorkspaceSnapshot {
     lastAccessedAt?: number
     /** Serialized page state (e.g. scroll position), reserved for restore. */
     pageState?: string | null
+    /** Task that owns this tab. Restored tabs re-bind to the same task. */
+    ownerSessionId?: string | null
   }>
   updatedAt: number
 }
@@ -1115,4 +1117,45 @@ export interface DiagnosticBundle {
 export interface DiagnosticExportResult {
   canceled: boolean
   path?: string
+}
+
+export interface GitChangedFile {
+  path: string
+  indexStatus: string
+  worktreeStatus: string
+  staged: boolean
+}
+
+export interface GitRepositoryStatus {
+  isRepository: boolean
+  root?: string
+  branch?: string
+  detached?: boolean
+  upstream?: string
+  ahead: number
+  behind: number
+  files: GitChangedFile[]
+  branches: string[]
+  remotes: Array<{ name: string; url: string }>
+  pullRequest?: { url: string; title?: string; state?: string }
+  error?: string
+}
+
+export type GitAction =
+  | { type: 'stageAll' }
+  | { type: 'unstageAll' }
+  | { type: 'commit'; message: string }
+  | { type: 'checkout'; branch: string }
+  | { type: 'createBranch'; branch: string }
+  | { type: 'pull' }
+  | { type: 'push' }
+  | { type: 'sync' }
+  | { type: 'diff'; path?: string; staged?: boolean; base?: string }
+  | { type: 'createPullRequest' }
+
+export interface GitActionResult {
+  ok: boolean
+  output?: string
+  url?: string
+  error?: string
 }

@@ -121,6 +121,37 @@ export function setSessionPlatform(platform: PlatformServices): void {
   sessionLog = createScopedLogger(platform.logger, 'session')
 }
 
+async function persistDirectAttachments(
+  workspaceRootPath: string,
+  sessionId: string,
+  attachments: FileAttachment[],
+): Promise<StoredAttachment[]> {
+  const attachmentsDir = getSessionAttachmentsPath(workspaceRootPath, sessionId)
+  await mkdir(attachmentsDir, { recursive: true })
+  const stored: StoredAttachment[] = []
+  for (const attachment of attachments) {
+    const id = randomUUID()
+    const safeName = basename(attachment.name).replace(/[^\p{L}\p{N}._ -]/gu, '_') || 'attachment'
+    const storedPath = join(attachmentsDir, `${id}_${safeName}`)
+    if (attachment.base64) {
+      await writeFile(storedPath, Buffer.from(attachment.base64, 'base64'))
+    } else if (attachment.text !== undefined) {
+      await writeFile(storedPath, attachment.text, 'utf8')
+    } else {
+      continue
+    }
+    stored.push({
+      id,
+      type: attachment.type,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      storedPath,
+    })
+  }
+  return stored
+}
+
 interface SessionRuntimeHooks {
   updateBadgeCount: (count: number) => void
   captureException: (error: unknown, context?: { errorSource?: string; sessionId?: string }) => void
@@ -5817,6 +5848,18 @@ export class SessionManager implements ISessionManager {
 
     // Ensure messages are loaded before we try to add new ones
     await this.ensureMessagesLoaded(managed)
+
+    // Non-renderer entry points (messaging gateways, automations, task runners)
+    // can supply runtime FileAttachments without first calling file:storeAttachment.
+    // Materialize them here so the transcript remains identical after restart and
+    // on every connected client instead of showing an attachment for one turn only.
+    if ((!storedAttachments || storedAttachments.length === 0) && attachments?.length) {
+      storedAttachments = await persistDirectAttachments(
+        managed.workspace.rootPath,
+        sessionId,
+        attachments,
+      )
+    }
 
     // If currently processing, behavior depends on the connection's
     // `midStreamBehavior` (resolved via {@link resolveMidStreamBehavior},

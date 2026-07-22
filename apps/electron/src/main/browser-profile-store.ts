@@ -282,6 +282,7 @@ export class BrowserProfileStore {
       createdAt: tab.createdAt,
       lastAccessedAt: tab.lastAccessedAt,
       pageState: tab.pageState ?? null,
+      ownerSessionId: typeof tab.ownerSessionId === 'string' ? tab.ownerSessionId : null,
     }))
     const activeTabId = snapshot.activeTabId && seen.has(snapshot.activeTabId)
       ? snapshot.activeTabId

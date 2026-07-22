@@ -1,15 +1,14 @@
 /**
  * ProjectInfoPage
  *
- * Workspace-project detail page with three tabs: Sessions, Assets, Settings.
- * v1 scope only — no memory tab, no provider selection, no plugin marketplace.
+ * Workspace-project detail page with sessions, assets, memory, and settings.
  */
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAtomValue } from 'jotai'
-import { FolderKanban, FolderOpen, Plus, Trash2, Upload } from 'lucide-react'
+import { Brain, FolderKanban, FolderOpen, Plus, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { navigate, routes } from '@/lib/navigate'
@@ -32,14 +31,14 @@ interface ProjectInfoPageProps {
   projectSlug: string
 }
 
-type TabKey = 'sessions' | 'assets' | 'settings'
+type TabKey = 'sessions' | 'assets' | 'memory' | 'settings'
 
 export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const { t } = useTranslation()
   const workspace = useActiveWorkspace()
   const workspaceId = workspace?.id
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const { onCreateSession } = useAppShellContext()
+  const { onCreateSession, onOpenFile } = useAppShellContext()
 
   const [project, setProject] = useState<LoadedProject | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,6 +51,9 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const [editDetails, setEditDetails] = useState('')
   const [editColor, setEditColor] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [memory, setMemory] = useState('')
+  const [memoryLoaded, setMemoryLoaded] = useState(false)
+  const [memorySaving, setMemorySaving] = useState(false)
 
   // Load project (and re-load on broadcast)
   const loadProject = useCallback(async () => {
@@ -108,6 +110,26 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   useEffect(() => {
     if (tab === 'assets') refreshAssets()
   }, [tab, refreshAssets])
+
+  useEffect(() => {
+    if (tab !== 'memory' || !workspaceId || memoryLoaded) return
+    void window.electronAPI.getProjectMemory(workspaceId, projectSlug)
+      .then((value) => { setMemory(value); setMemoryLoaded(true) })
+      .catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
+  }, [memoryLoaded, projectSlug, tab, workspaceId])
+
+  const handleSaveMemory = useCallback(async () => {
+    if (!workspaceId) return
+    setMemorySaving(true)
+    try {
+      await window.electronAPI.setProjectMemory(workspaceId, projectSlug, memory)
+      toast.success(t('projectInfo.saved'))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setMemorySaving(false)
+    }
+  }, [memory, projectSlug, t, workspaceId])
 
   const projectSessions = useMemo(() => {
     if (!project) return []
@@ -228,6 +250,9 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             <TabButton active={tab === 'assets'} onClick={() => setTab('assets')}>
               {t('projectInfo.tabAssets')}
             </TabButton>
+            <TabButton active={tab === 'memory'} onClick={() => setTab('memory')}>
+              {t('projectInfo.tabMemory', { defaultValue: 'Memory' })}
+            </TabButton>
             <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
               {t('projectInfo.tabSettings')}
             </TabButton>
@@ -318,6 +343,28 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             </Info_Section>
           )}
 
+          {tab === 'memory' && (
+            <Info_Section
+              title={t('projectInfo.tabMemory', { defaultValue: 'Long-term memory' })}
+              actions={<Button size="sm" onClick={() => void handleSaveMemory()} disabled={memorySaving}>{memorySaving ? t('common.saving') : t('common.save')}</Button>}
+            >
+              <div className="space-y-3 px-4 py-3">
+                <div className="flex items-start gap-2 rounded-lg bg-foreground-2 p-3 text-xs leading-5 text-muted-foreground">
+                  <Brain className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{t('projectInfo.memoryHelp', { defaultValue: 'CA retrieves this memory for every task in the project. Keep stable decisions, conventions, unresolved questions, and important context here; put newest or most important items first.' })}</p>
+                </div>
+                <Textarea
+                  value={memory}
+                  onChange={(event) => setMemory(event.target.value)}
+                  rows={18}
+                  className="min-h-[320px] font-mono text-xs leading-5"
+                  placeholder={t('projectInfo.memoryPlaceholder', { defaultValue: '# Project memory\n\n- Decisions\n- Conventions\n- Open questions' })}
+                />
+                <div className="text-xs text-muted-foreground">MEMORY.md · {memory.length.toLocaleString()} characters</div>
+              </div>
+            </Info_Section>
+          )}
+
           {/* Settings tab */}
           {tab === 'settings' && (
             <Info_Section title={t('projectInfo.tabSettings')}>
@@ -402,7 +449,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => window.electronAPI.openFile(project.folderPath)}
+                        onClick={() => onOpenFile(project.folderPath)}
                         className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-foreground/5 transition-colors"
                         aria-label={t('projectInfo.openLocation')}
                       >

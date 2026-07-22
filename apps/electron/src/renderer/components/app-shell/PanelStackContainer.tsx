@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils'
 import { panelStackAtom, focusedPanelIdAtom, focusedPanelRouteAtom } from '@/atoms/panel-stack'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { isDetailNavState } from '@/lib/nav-helpers'
-import { isSessionsNavigation } from '../../../shared/types'
+import { isBrowserNavigation, isSessionsNavigation } from '../../../shared/types'
 import { PanelSlot } from './PanelSlot'
 import { RightReviewSidebar } from './RightReviewSidebar'
 import { CompactPanelTransition } from './CompactPanelTransition'
@@ -98,7 +98,10 @@ export function PanelStackContainer({
   const focusedNavState = focusedRoute ? parseRouteToNavigationState(focusedRoute) : null
   const isDetailFocused = isDetailNavState(focusedNavState)
   const hasSelectedContent = isCompact && isDetailFocused
-  const canShowRightSidebar = !!focusedNavState && isSessionsNavigation(focusedNavState) && !!focusedNavState.details
+  const canShowRightSidebar = !!focusedNavState && (
+    (isSessionsNavigation(focusedNavState) && !!focusedNavState.details)
+    || (isBrowserNavigation(focusedNavState) && !!focusedNavState.details)
+  )
   const effectiveRightSidebarVisible = !!isRightSidebarVisible && canShowRightSidebar
 
   const visiblePanels = isCompact

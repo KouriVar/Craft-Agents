@@ -39,7 +39,6 @@ import {
   Star,
   History,
   Download,
-  MessageSquarePlus,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -1155,6 +1154,7 @@ function AppShellContent({
             embedded: true,
             show: false,
             initialUrl: savedTab.url && savedTab.url !== 'about:blank' ? savedTab.url : undefined,
+            bindToSessionId: savedTab.ownerSessionId ?? undefined,
           })
           restoredIds.push(restoredId)
           idMap.set(savedTab.id, restoredId)
@@ -1299,6 +1299,7 @@ function AppShellContent({
           createdAt: meta?.createdAt ?? now,
           lastAccessedAt: meta?.lastAccessedAt ?? now,
           pageState: null,
+          ownerSessionId: tab.ownerSessionId,
         }
       }),
       updatedAt: now,
@@ -3071,12 +3072,11 @@ function AppShellContent({
               <PanelHeader
               titleAlign="left"
               titleMenuBare
-              title={isSidebarVisible
-                ? (isUnifiedExploreNavigation
-                    ? (isBrowserNavigation(navState) ? t('explore.modeBrowser', { defaultValue: 'Web' }) : t('explore.modeSessions', { defaultValue: 'Sessions' }))
-                    : listTitle)
-                : undefined}
-              titleMenu={isSidebarVisible && isUnifiedExploreNavigation ? (
+              titleMenuAlign="start"
+              title={isUnifiedExploreNavigation
+                ? (isBrowserNavigation(navState) ? t('explore.modeBrowser', { defaultValue: 'Web' }) : t('explore.modeSessions', { defaultValue: 'Sessions' }))
+                : (isSidebarVisible ? listTitle : undefined)}
+              titleMenu={isUnifiedExploreNavigation ? (
                 <>
                   {([
                     { mode: 'sessions' as const, label: t('explore.modeSessions', { defaultValue: 'Sessions' }), desc: t('explore.sessionsDesc', { defaultValue: 'Create, learn and explore' }) },
@@ -3120,7 +3120,7 @@ function AppShellContent({
                       onChange={setPluginListKind}
                     />
                   )}
-                  {/* Browser mode filter menu — tabs/bookmarks/history/downloads + new tab/session */}
+                  {/* Browser mode filter menu — tabs/bookmarks/history/downloads */}
                   {isBrowserNavigation(navState) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -3130,15 +3130,6 @@ function AppShellContent({
                         />
                       </DropdownMenuTrigger>
                       <StyledDropdownMenuContent align="end" light minWidth="min-w-[180px]">
-                        <StyledDropdownMenuItem onClick={handleNewChat}>
-                          <MessageSquarePlus className="h-3.5 w-3.5" />
-                          <span className="flex-1">{t('session.newSession', { defaultValue: 'New Session' })}</span>
-                        </StyledDropdownMenuItem>
-                        <StyledDropdownMenuItem onClick={handleAddBrowserTab}>
-                          <Plus className="h-3.5 w-3.5" />
-                          <span className="flex-1">{t('browser.newTab', { defaultValue: 'New Tab' })}</span>
-                        </StyledDropdownMenuItem>
-                        <StyledDropdownMenuSeparator />
                         {([
                           { kind: 'tabs' as const, icon: List, key: 'browser.navigatorTabs', fallback: 'Tabs' },
                           { kind: 'bookmarks' as const, icon: Star, key: 'browser.bookmarks', fallback: 'Bookmarks' },
@@ -3180,6 +3171,7 @@ function AppShellContent({
                         setChatGroupingMode={setChatGroupingMode}
                         isStateSubView={isStateSubView}
                         onOpenSearch={() => setSearchActive(true)}
+                        onOpenBoard={() => navigate(routes.view.board())}
                       />
                     ) : (
                     <DropdownMenu onOpenChange={(open) => { if (!open) { setFilterDropdownQuery(''); setFilterAltHeld(false) } }}>
@@ -3228,34 +3220,6 @@ function AppShellContent({
                             </button>
                           )}
                         </div>
-
-                        {/* View mode: List / Board — shown near the top when not in compact mode */}
-                        {!isAutoCompact && (
-                          <div className="flex items-center gap-1 px-2 pb-1.5">
-                            <button
-                              type="button"
-                              onClick={() => { /* already in list view */ }}
-                              className={cn(
-                                'inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium transition-colors',
-                                'bg-card text-foreground shadow-minimal',
-                              )}
-                            >
-                              <List className="h-3.5 w-3.5" strokeWidth={2} />
-                              {t('kanban.list', { defaultValue: 'List' })}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => navigate(routes.view.board())}
-                              className={cn(
-                                'inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium transition-colors',
-                                'text-foreground/50 hover:text-foreground/80',
-                              )}
-                            >
-                              <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} />
-                              {t('kanban.board', { defaultValue: 'Board' })}
-                            </button>
-                          </div>
-                        )}
 
                         {/* Search input — typing switches from hierarchical submenus to a flat filtered list.
                             stopPropagation prevents Radix from intercepting keys. Arrow/Enter handled for navigation. */}
@@ -3683,6 +3647,10 @@ function AppShellContent({
                             >
                               <Search className="h-3.5 w-3.5" />
                               <span className="flex-1">{t("sidebar.search")}</span>
+                            </StyledDropdownMenuItem>
+                            <StyledDropdownMenuItem onClick={() => navigate(routes.view.board())}>
+                              <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2} />
+                              <span className="flex-1">{t('kanban.board', { defaultValue: 'Board' })}</span>
                             </StyledDropdownMenuItem>
                           </>
                         ) : (

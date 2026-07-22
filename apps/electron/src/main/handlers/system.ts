@@ -7,7 +7,7 @@ import { app, dialog } from 'electron'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { classifyExternalUrl, formatBlockedUrlError } from '@craft-agent/shared/utils/url-safety'
-import { isUsableGitBashPath, validateGitBashPath } from '@craft-agent/server-core/services'
+import { getGitRepositoryStatus, isUsableGitBashPath, runGitAction, validateGitBashPath } from '@craft-agent/server-core/services'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -32,6 +32,8 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.releaseNotes.GET,
   RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
   RPC_CHANNELS.git.GET_BRANCH,
+  RPC_CHANNELS.git.GET_STATUS,
+  RPC_CHANNELS.git.RUN_ACTION,
   RPC_CHANNELS.gitbash.CHECK,
   RPC_CHANNELS.gitbash.BROWSE,
   RPC_CHANNELS.gitbash.SET_PATH,
@@ -110,10 +112,11 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Get git branch for a directory (returns null if not a git repo or git unavailable)
-  server.handle(RPC_CHANNELS.git.GET_BRANCH, async (_ctx, dirPath: string) => {
+  server.handle(RPC_CHANNELS.git.GET_BRANCH, async (ctx, dirPath: string) => {
     try {
+      const safeDir = await validateFilePath(dirPath, getWorkspaceAllowedDirs(ctx.workspaceId))
       const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd: dirPath,
+        cwd: safeDir,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 5000,
@@ -122,6 +125,16 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     } catch {
       return null
     }
+  })
+
+  server.handle(RPC_CHANNELS.git.GET_STATUS, async (ctx, dirPath: string) => {
+    const safeDir = await validateFilePath(dirPath, getWorkspaceAllowedDirs(ctx.workspaceId))
+    return getGitRepositoryStatus(safeDir)
+  })
+
+  server.handle(RPC_CHANNELS.git.RUN_ACTION, async (ctx, dirPath: string, action: import('@craft-agent/shared/protocol').GitAction) => {
+    const safeDir = await validateFilePath(dirPath, getWorkspaceAllowedDirs(ctx.workspaceId))
+    return runGitAction(safeDir, action)
   })
 
   // Git Bash detection and configuration (Windows only)

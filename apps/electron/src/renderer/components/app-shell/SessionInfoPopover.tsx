@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
+import { ContinueFromHereSection, UsageSection } from './SessionResourcesPopover'
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -18,7 +20,7 @@ interface SessionInfoPopoverProps {
   presentation?: 'popover' | 'drawer'
 }
 
-const DEFAULT_POPOVER_CONTENT_CLASS = 'w-[360px] h-[460px] min-w-[200px] max-w-[420px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small p-0'
+const DEFAULT_POPOVER_CONTENT_CLASS = 'w-[380px] h-[min(680px,calc(100vh-120px))] min-w-[280px] max-w-[420px] overflow-hidden rounded-[10px] bg-background text-foreground shadow-modal-small p-0'
 const DEFAULT_DRAWER_CONTENT_CLASS = [
   'data-[vaul-drawer-direction=bottom]:inset-x-2',
   'data-[vaul-drawer-direction=bottom]:bottom-2',
@@ -65,7 +67,7 @@ export function SessionInfoPopover({
           }}
         >
           <DrawerHeader className="border-b border-border/50 px-4 py-3 group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
-            <DrawerTitle className="text-sm font-medium">{t('chat.sessionInfo')}</DrawerTitle>
+            <DrawerTitle className="text-sm font-medium">{t('chat.sessionStatus')}</DrawerTitle>
           </DrawerHeader>
           <div className="flex-1 min-h-0 overflow-hidden">
             <SessionInfoContent sessionId={sessionId} sessionFolderPath={sessionFolderPath} />
@@ -134,28 +136,37 @@ export function SessionInfoContent({ sessionId, sessionFolderPath }: { sessionId
   }, [onRenameSession, sessionId])
 
   return (
-    <div className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 p-3 border-b border-border/50">
-        <label className="text-xs font-medium text-muted-foreground block mb-1.5 select-none">
-          {t("chat.title")}
-        </label>
-        <div className="rounded-lg bg-foreground-2 has-[:focus]:bg-background shadow-minimal transition-colors">
-          <Input
-            value={name}
-            onChange={handleNameChange}
-            placeholder={t("chat.titlePlaceholder")}
-            className="h-9 py-2 text-sm border-0 shadow-none bg-transparent focus-visible:ring-0"
+    <ScrollArea className="h-full min-h-0 [&_[data-slot=scroll-bar]]:w-1.5">
+      <div className="min-h-full">
+        <div className="shrink-0 p-3 border-b border-border/50">
+          <label className="text-xs font-medium text-muted-foreground block mb-1.5 select-none">
+            {t("chat.title")}
+          </label>
+          <div className="rounded-lg bg-foreground-2 has-[:focus]:bg-background shadow-minimal transition-colors">
+            <Input
+              value={name}
+              onChange={handleNameChange}
+              placeholder={t("chat.titlePlaceholder")}
+              className="h-9 py-2 text-sm border-0 shadow-none bg-transparent focus-visible:ring-0"
+            />
+          </div>
+        </div>
+        <div className="h-[150px] min-h-[100px] border-b border-border/50">
+          <SessionFilesSection
+            sessionId={sessionId}
+            sessionFolderPath={sessionFolderPath}
+            hideHeader={false}
+            className="h-full min-h-0"
           />
         </div>
+        {session && (
+          <div className="px-3 pb-3">
+            <ContinueFromHereSection session={session} />
+            <div className="my-3 h-px bg-border/50" />
+            <UsageSection session={session} />
+          </div>
+        )}
       </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <SessionFilesSection
-          sessionId={sessionId}
-          sessionFolderPath={sessionFolderPath}
-          hideHeader={false}
-          className="h-full min-h-0"
-        />
-      </div>
-    </div>
+    </ScrollArea>
   )
 }

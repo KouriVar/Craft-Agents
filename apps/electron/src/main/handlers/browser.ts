@@ -74,6 +74,16 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
 
     if (input?.bindToSessionId) {
+      if (input.embedded) {
+        const id = browserPaneManager.createInstance(input.id, {
+          show: input.show,
+          workspaceId,
+          embeddedHostWebContentsId: ctx.webContentsId ?? undefined,
+          initialUrl: input.initialUrl,
+        })
+        browserPaneManager.bindSession(id, input.bindToSessionId, { workspaceId })
+        return id
+      }
       return browserPaneManager.createForSession(input.bindToSessionId, {
         show: input.show ?? false,
         workspaceId,

@@ -5,10 +5,12 @@ import {
   FileCode,
   FileText,
   Folder,
+  FolderKanban,
   ExternalLink,
   Globe,
   Image,
   Info,
+  Brain,
   ListTree,
   Gauge,
   Plus,
@@ -19,6 +21,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { useAppShellContext } from '@/context/AppShellContext'
@@ -34,6 +37,8 @@ import {
   resolveModelName,
   resolvePricingKind,
 } from './session-usage'
+import { SessionGitSection } from './SessionGitSection'
+import { isCodeRelatedSession } from './session-resources-ordering'
 
 export type ResourceKind = 'context' | 'output' | 'attachment' | 'folder' | 'source' | 'skill' | 'url'
 
@@ -215,6 +220,27 @@ function collectUrls(session: Session): ResourceItem[] {
   return items
 }
 
+function collectGitDirectoryCandidates(session: Session, workspaceRoot?: string): string[] {
+  const candidates: string[] = []
+  const add = (path?: string) => {
+    const value = path?.trim()
+    if (value && !candidates.includes(value)) candidates.push(value)
+  }
+
+  // Explicit folder context in the latest task is more specific than the
+  // workspace default, so try those folders first.
+  for (const message of [...session.messages].reverse()) {
+    for (const badge of [...(message.badges ?? [])].reverse()) {
+      if (badge.type === 'folder') add(badge.filePath)
+    }
+    for (const match of message.content.matchAll(/\[folder:([^\]]+)\]/g)) add(match[1])
+  }
+
+  add(session.workingDirectory)
+  add(workspaceRoot)
+  return candidates
+}
+
 export function ResourceIcon({ item }: { item: ResourceItem }) {
   const { enabledSources, skills, activeWorkspaceId } = useAppShellContext()
 
@@ -380,6 +406,73 @@ function TitleSection({ session }: { session: Session }) {
         />
       </div>
     </section>
+  )
+}
+
+function TaskContextSection({ session }: { session: Session }) {
+  const { t } = useTranslation()
+
+  return (
+    <>
+      <div className="my-3 h-px bg-border/50" />
+      <section className="min-w-0">
+        <div className="flex items-center px-1 pb-1.5 text-xs font-semibold text-muted-foreground">
+          <h3>{t('chat.taskContext', { defaultValue: 'Task context' })}</h3>
+        </div>
+        <div className="grid gap-1.5 rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3 text-xs">
+          {session.projectId && (
+            <div className="flex min-w-0 items-center gap-2">
+              <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate text-foreground/85">{session.projectId}</span>
+              <span className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground">
+                <Brain className="h-3 w-3" />
+                MEMORY.md
+              </span>
+            </div>
+          )}
+          {session.workingDirectory && (
+            <div className="truncate font-mono text-[11px] text-muted-foreground" title={session.workingDirectory}>
+              {session.workingDirectory}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+            {session.model && <span>{session.model}</span>}
+            {!!session.enabledSourceSlugs?.length && <span>{session.enabledSourceSlugs.length} sources</span>}
+            <span>{session.messageCount ?? session.messages.length} messages</span>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+export function ContinueFromHereSection({ session }: { session: Session }) {
+  const { t } = useTranslation()
+  const latestUserMessage = React.useMemo(
+    () => [...session.messages].reverse().find((message) => message.role === 'user' && !message.hidden),
+    [session.messages],
+  )
+  const latestAssistantMessage = React.useMemo(
+    () => [...session.messages].reverse().find((message) => message.role === 'assistant' && !message.hidden),
+    [session.messages],
+  )
+
+  if (!latestUserMessage && !latestAssistantMessage) return null
+
+  return (
+    <>
+      <div className="my-3 h-px bg-border/50" />
+      <section className="min-w-0">
+        <div className="flex items-center px-1 pb-1.5 text-xs font-semibold text-muted-foreground">
+          <h3>{t('chat.continueFromHere', { defaultValue: 'Continue from here' })}</h3>
+        </div>
+        <div className="space-y-2 rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3 text-xs leading-5">
+          {latestUserMessage && <p className="line-clamp-2"><span className="mr-1 font-medium">You:</span>{latestUserMessage.content}</p>}
+          {latestAssistantMessage && <p className="line-clamp-4 text-muted-foreground"><span className="mr-1 font-medium text-foreground">CA:</span>{latestAssistantMessage.content}</p>}
+          {session.currentStatus?.message && <p className="rounded bg-background px-2 py-1 text-muted-foreground">{session.currentStatus.message}</p>}
+        </div>
+      </section>
+    </>
   )
 }
 
@@ -569,6 +662,11 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
 
   const outputs = React.useMemo(() => flattenOutputFiles(files), [files])
   const sessionFileItems = React.useMemo(() => flattenSessionFiles(files), [files])
+  const codeRelated = React.useMemo(() => isCodeRelatedSession(session), [session])
+  const gitDirectoryCandidates = React.useMemo(
+    () => codeRelated ? collectGitDirectoryCandidates(session, activeWorkspace?.rootPath) : [],
+    [activeWorkspace?.rootPath, codeRelated, session],
+  )
 
   const contextItems = React.useMemo<ResourceItem[]>(() => {
     const title = session.name || session.preview || session.id
@@ -723,26 +821,28 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
       >
         <div
           className="flex min-h-0 flex-col"
-          style={{ maxHeight: measuredMaxHeight }}
+          style={{ height: measuredMaxHeight, maxHeight: measuredMaxHeight }}
         >
-          <div
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 [scrollbar-gutter:stable]"
-            style={{ maxHeight: measuredMaxHeight }}
-          >
-            <TitleSection session={session} />
+          <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-bar]]:w-1.5">
+            <div className="px-3 py-3">
+              <TitleSection session={session} />
 
-            <div className="my-3 h-px bg-border/50" />
+              {codeRelated && <SessionGitSection workingDirectories={gitDirectoryCandidates} />}
 
-            <ResourceSection
+              <div className="my-3 h-px bg-border/50" />
+
+              <ResourceSection
               title={t('resources.title')}
               empty=""
               items={contextItems}
               onOpen={handleOpen}
-            />
+              />
 
-            <div className="my-3 h-px bg-border/50" />
+              <TaskContextSection session={session} />
 
-            <ResourceSection
+              <div className="my-3 h-px bg-border/50" />
+
+              <ResourceSection
               title={t('chat.sessionFiles')}
               empty={loadingFiles ? t('chat.sessionFilesLoading') : t('chat.sessionFilesEmpty')}
               items={sessionFileItems}
@@ -750,22 +850,22 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
               actionLabel={session.sessionFolderPath ? t('chat.viewInFileManager', { fileManager: fileManagerName }) : undefined}
               actionIcon={<ExternalLink className="h-3.5 w-3.5" />}
               onAction={session.sessionFolderPath ? handleShowSessionFolder : undefined}
-            />
+              />
 
-            <div className="my-3 h-px bg-border/50" />
+              <div className="my-3 h-px bg-border/50" />
 
-            <ResourceSection
+              <ResourceSection
               title={t('resources.outputs')}
               empty={loadingFiles ? t('chat.sessionFilesLoading') : t('resources.noOutputs')}
               items={outputs}
               onOpen={handleOpen}
               actionLabel={t('resources.createOutput')}
               onAction={handleCreateOutput}
-            />
+              />
 
-            <div className="my-3 h-px bg-border/50" />
+              <div className="my-3 h-px bg-border/50" />
 
-            <ResourceSection
+              <ResourceSection
               title={t('resources.sources')}
               empty={t('resources.noSources')}
               items={sourceItems}
@@ -775,12 +875,10 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
               onViewAll={sourceItems.length > 3 ? handleViewAllSources : undefined}
               actionLabel={t('resources.addSource')}
               onAction={handleAddSource}
-            />
+              />
 
-            <div className="my-3 h-px bg-border/50" />
-
-            <UsageSection session={session} />
-          </div>
+            </div>
+          </ScrollArea>
         </div>
       </PopoverContent>
     </Popover>

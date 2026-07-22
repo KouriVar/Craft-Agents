@@ -375,6 +375,8 @@ export const CHANNEL_MAP = {
 
   // Git
   getGitBranch: invoke(RPC_CHANNELS.git.GET_BRANCH),
+  getGitStatus: invoke(RPC_CHANNELS.git.GET_STATUS),
+  runGitAction: invoke(RPC_CHANNELS.git.RUN_ACTION),
   checkGitBash: invoke(RPC_CHANNELS.gitbash.CHECK),
   browseForGitBash: invoke(RPC_CHANNELS.gitbash.BROWSE),
   setGitBashPath: invoke(RPC_CHANNELS.gitbash.SET_PATH),
@@ -462,6 +464,8 @@ export const CHANNEL_MAP = {
   getProject: invoke(RPC_CHANNELS.projects.GET_ONE),
   createProject: invoke(RPC_CHANNELS.projects.CREATE),
   updateProject: invoke(RPC_CHANNELS.projects.UPDATE),
+  getProjectMemory: invoke(RPC_CHANNELS.projects.GET_MEMORY),
+  setProjectMemory: invoke(RPC_CHANNELS.projects.SET_MEMORY),
   deleteProject: invoke(RPC_CHANNELS.projects.DELETE),
   listProjectAssets: invoke(RPC_CHANNELS.projects.LIST_ASSETS),
   uploadProjectAsset: invoke(RPC_CHANNELS.projects.UPLOAD_ASSET),
