@@ -679,6 +679,22 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       // Tell browser to use <br> instead of <div> for line breaks.
       // This prevents div-wrapping when typing before non-editable spans (badges).
       document.execCommand('defaultParagraphSeparator', false, 'br')
+
+      // IME warmup: after switching away from Craft Agents and back, Chromium
+      // can leave the IME in a broken state where the first keypress escapes
+      // composition (e.g. "changjiang" → "c hang j iang").
+      // A selection pulse in the next frame forces the IME to re-read the
+      // editing context without touching any text.
+      requestAnimationFrame(() => {
+        const el = divRef.current
+        if (!el || el !== document.activeElement) return
+        const sel = window.getSelection()
+        if (!sel || sel.rangeCount === 0) return
+        const range = sel.getRangeAt(0).cloneRange()
+        sel.removeAllRanges()
+        sel.addRange(range)
+      })
+
       onFocus?.(e)
     }, [onFocus])
 
