@@ -205,7 +205,7 @@ export default function LabelsSettingsPage() {
           setNewLabelName('')
         }
       }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('sidebarMenu.addNewLabel')}</DialogTitle>
           </DialogHeader>
