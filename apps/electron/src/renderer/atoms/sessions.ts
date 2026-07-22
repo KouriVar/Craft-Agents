@@ -12,6 +12,7 @@ import { atom } from 'jotai'
 import type { Getter, Setter } from 'jotai/vanilla'
 import { atomFamily } from 'jotai-family'
 import type { Session, Message } from '../../shared/types'
+import type { TaskCheckpoint, TaskPriority } from '@craft-agent/shared/sessions'
 
 /**
  * Session metadata for list display (lightweight, no messages)
@@ -91,6 +92,16 @@ export interface SessionMeta {
   taskNodeCount?: number
   /** Tasks Conductor: a generate-time draft orchestrator, hidden from the board until adopted by createTask. */
   taskDraft?: boolean
+  /** Long-running task continuity metadata used by Today and resume surfaces. */
+  taskGoal?: string
+  taskPriority?: TaskPriority
+  taskDueAt?: number
+  taskReminderAt?: number
+  taskReminderAcknowledgedAt?: number
+  taskReminderLastNotifiedAt?: number
+  taskCheckpoints?: TaskCheckpoint[]
+  /** Origin metadata for sessions started by an automation. */
+  triggeredBy?: { automationName?: string; event?: string; timestamp?: number }
 }
 
 /**

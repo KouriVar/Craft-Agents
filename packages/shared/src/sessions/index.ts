@@ -18,6 +18,8 @@ export type {
   SessionMetadata,
   SessionHeader,
   SessionPersistentField,
+  TaskCheckpoint,
+  TaskPriority,
 } from './types.ts';
 
 // Field constants
@@ -126,5 +128,4 @@ export {
   validateBundle,
   MAX_BUNDLE_SIZE_BYTES,
 } from './bundle.ts';
-
 

@@ -303,9 +303,15 @@ export function validateSkillContent(
  * Valid mermaid diagram types
  */
 export const MERMAID_DIAGRAM_TYPES = [
-  'graph', 'flowchart', 'sequenceDiagram', 'classDiagram',
-  'stateDiagram', 'erDiagram', 'gantt', 'pie', 'mindmap',
-  'timeline', 'gitGraph', 'C4Context', 'sankey', 'xychart', 'xychart-beta',
+  'graph', 'flowchart', 'flowchart-elk', 'sequenceDiagram', 'classDiagram',
+  'stateDiagram', 'erDiagram', 'gantt', 'pie', 'mindmap', 'timeline',
+  'gitGraph', 'quadrantChart', 'requirement', 'requirementDiagram', 'journey',
+  'kanban', 'sankey', 'packet', 'block', 'architecture', 'treemap',
+  'swimlane-beta', 'radar-beta', 'treeView-beta', 'eventmodeling', 'ishikawa',
+  'venn-beta', 'wardley-beta', 'cynefin-beta', 'railroad-beta',
+  'railroad-ebnf-beta', 'railroad-abnf-beta', 'railroad-peg-beta',
+  'C4Context', 'C4Container', 'C4Component', 'C4Dynamic', 'C4Deployment',
+  'xychart', 'xychart-beta',
 ] as const;
 
 /** Remove Mermaid YAML frontmatter (`--- ... ---`) from the start of a diagram. */
@@ -325,7 +331,7 @@ export function stripMermaidFrontmatter(code: string): string {
 }
 
 /**
- * Normalize Mermaid before validation/rendering through native tooling.
+ * Normalize Mermaid before validation/rendering through official tooling.
  *
  * Frontmatter is metadata, not diagram syntax. Leading Mermaid comments/directives
  * are also skipped so diagram-type detection matches the renderer pipeline for

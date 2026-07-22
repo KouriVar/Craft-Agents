@@ -144,7 +144,7 @@ export const CHANNEL_MAP = {
 
   // Onboarding
   getAuthState: invoke(RPC_CHANNELS.onboarding.GET_AUTH_STATE),
-  getSetupNeeds: invoke(RPC_CHANNELS.onboarding.GET_AUTH_STATE, r => r.setupNeeds),
+  getSetupNeeds: invoke(RPC_CHANNELS.onboarding.GET_AUTH_STATE, (r) => r.setupNeeds),
   startWorkspaceMcpOAuth: invoke(RPC_CHANNELS.onboarding.START_MCP_OAUTH),
   startClaudeOAuth: invoke(RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH),
   exchangeClaudeCode: invoke(RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE),
@@ -410,6 +410,7 @@ export const CHANNEL_MAP = {
   'browserPane.setEmbeddedBounds': invoke(RPC_CHANNELS.browserPane.SET_EMBEDDED_BOUNDS),
   'browserPane.setEmbeddedVisible': invoke(RPC_CHANNELS.browserPane.SET_EMBEDDED_VISIBLE),
   'browserPane.setEmbeddedToolbarMode': invoke(RPC_CHANNELS.browserPane.SET_EMBEDDED_TOOLBAR_MODE),
+  'browserPane.setAudioMuted': invoke(RPC_CHANNELS.browserPane.SET_AUDIO_MUTED),
   'browserPane.loadWorkspaceState': invoke(RPC_CHANNELS.browserPane.LOAD_WORKSPACE_STATE),
   'browserPane.saveWorkspaceState': invoke(RPC_CHANNELS.browserPane.SAVE_WORKSPACE_STATE),
   'browserPane.listBookmarks': invoke(RPC_CHANNELS.browserPane.LIST_BOOKMARKS),

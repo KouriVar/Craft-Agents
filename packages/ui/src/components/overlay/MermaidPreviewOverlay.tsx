@@ -10,14 +10,7 @@ import { CopyButton } from './CopyButton'
 import { ZoomControls } from './ZoomControls'
 import { RICH_BLOCK_DEFAULTS } from './rich-block-interaction-spec'
 import { useRichBlockInteractions } from './useRichBlockInteractions'
-
-/** Parse width/height from an SVG string's root element attributes. */
-function parseSvgDimensions(svgString: string): { width: number; height: number } | null {
-  const widthMatch = svgString.match(/width="(\d+(?:\.\d+)?)"/)
-  const heightMatch = svgString.match(/height="(\d+(?:\.\d+)?)"/)
-  if (!widthMatch?.[1] || !heightMatch?.[1]) return null
-  return { width: parseFloat(widthMatch[1]), height: parseFloat(heightMatch[1]) }
-}
+import { parseMermaidSvgDimensions } from '../markdown/mermaid-renderer'
 
 export interface MermaidPreviewOverlayProps {
   isOpen: boolean
@@ -64,7 +57,7 @@ export function MermaidPreviewOverlay({
         onZoomIn={() => zoomByStep('in')}
         onZoomOut={() => zoomByStep('out')}
         onZoomToPreset={zoomToPreset}
-        onZoomToFit={() => zoomToFit(parseSvgDimensions(svg))}
+        onZoomToFit={() => zoomToFit(parseMermaidSvgDimensions(svg))}
         onReset={reset}
         resetDisabled={isDefaultView}
       />

@@ -3,42 +3,33 @@ import {
   BrowserWorkspaceRequestGate,
   BrowserWorkspaceTabCloseGuard,
   getBrowserTabRemovalTransition,
+  getBrowserTabsRemovalTransition,
   getBrowserWorkspaceScopeKey,
   isBrowserWorkspaceScopeCurrent,
+  orderBrowserTabsByPinned,
 } from '../browser-workspace-lifecycle'
 
 describe('browser workspace lifecycle scope', () => {
   it('keeps requests in the same local and remote workspace scope', () => {
     const request = getBrowserWorkspaceScopeKey('local-a', 'remote-a')
 
-    expect(isBrowserWorkspaceScopeCurrent(
-      request,
-      getBrowserWorkspaceScopeKey('local-a', 'remote-a'),
-    )).toBe(true)
+    expect(isBrowserWorkspaceScopeCurrent(request, getBrowserWorkspaceScopeKey('local-a', 'remote-a'))).toBe(true)
   })
 
   it('rejects a completion after the local workspace changes', () => {
     const request = getBrowserWorkspaceScopeKey('local-a', null)
 
-    expect(isBrowserWorkspaceScopeCurrent(
-      request,
-      getBrowserWorkspaceScopeKey('local-b', null),
-    )).toBe(false)
+    expect(isBrowserWorkspaceScopeCurrent(request, getBrowserWorkspaceScopeKey('local-b', null))).toBe(false)
   })
 
   it('treats a changed remote mirror as a different browser scope', () => {
     const request = getBrowserWorkspaceScopeKey('local-a', 'remote-a')
 
-    expect(isBrowserWorkspaceScopeCurrent(
-      request,
-      getBrowserWorkspaceScopeKey('local-a', 'remote-b'),
-    )).toBe(false)
+    expect(isBrowserWorkspaceScopeCurrent(request, getBrowserWorkspaceScopeKey('local-a', 'remote-b'))).toBe(false)
   })
 
   it('does not collide missing ids with literal string values', () => {
-    expect(getBrowserWorkspaceScopeKey(null, null)).not.toBe(
-      getBrowserWorkspaceScopeKey('null', null),
-    )
+    expect(getBrowserWorkspaceScopeKey(null, null)).not.toBe(getBrowserWorkspaceScopeKey('null', null))
   })
 
   it('coalesces concurrent requests only within the same workspace scope', async () => {
@@ -49,7 +40,9 @@ describe('browser workspace lifecycle scope', () => {
     const scopeB = getBrowserWorkspaceScopeKey('local-b', null)
     const first = gate.run(scopeA, () => {
       requests += 1
-      return new Promise<string>((resolve) => { resolveFirst = resolve })
+      return new Promise<string>((resolve) => {
+        resolveFirst = resolve
+      })
     })
     const duplicate = gate.run(scopeA, async () => {
       requests += 1
@@ -77,11 +70,7 @@ describe('browser workspace lifecycle scope', () => {
   })
 
   it('selects the previous neighbour when the active tab is removed', () => {
-    const transition = getBrowserTabRemovalTransition(
-      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
-      'b',
-      'b',
-    )
+    const transition = getBrowserTabRemovalTransition([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 'b', 'b')
 
     expect(transition.tabs.map((tab) => tab.id)).toEqual(['a', 'c'])
     expect(transition.activeTabId).toBe('a')
@@ -104,6 +93,20 @@ describe('browser workspace lifecycle scope', () => {
       removedActiveTab: false,
       needsReplacement: false,
     })
+  })
+
+  it('keeps pinned tabs first without changing order inside each group', () => {
+    expect(
+      orderBrowserTabsByPinned([{ id: 'a' }, { id: 'b', pinned: true }, { id: 'c' }, { id: 'd', pinned: true }]).map((tab) => tab.id),
+    ).toEqual(['b', 'd', 'a', 'c'])
+  })
+
+  it('closes several tabs and selects the nearest surviving neighbour', () => {
+    const transition = getBrowserTabsRemovalTransition([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], ['b', 'c'], 'c')
+
+    expect(transition.tabs.map((tab) => tab.id)).toEqual(['a', 'd'])
+    expect(transition.activeTabId).toBe('a')
+    expect(transition.removedActiveTab).toBe(true)
   })
 
   it('rejects late state while close is pending and accepts it after rollback', () => {

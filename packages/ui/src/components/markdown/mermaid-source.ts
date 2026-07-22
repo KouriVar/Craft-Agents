@@ -1,6 +1,7 @@
 const MERMAID_DIAGRAM_PREFIXES = [
   'graph ',
   'flowchart ',
+  'flowchart-elk',
   'sequenceDiagram',
   'classDiagram',
   'stateDiagram',
@@ -11,6 +12,39 @@ const MERMAID_DIAGRAM_PREFIXES = [
   'pie',
   'mindmap',
   'timeline',
+  'gitGraph',
+  'quadrantChart',
+  'requirement',
+  'requirementDiagram',
+  'kanban',
+  'sankey',
+  'sankey-beta',
+  'packet',
+  'packet-beta',
+  'block',
+  'block-beta',
+  'architecture',
+  'architecture-beta',
+  'treemap',
+  'treemap-beta',
+  'swimlane-beta',
+  'radar-beta',
+  'treeView-beta',
+  'eventmodeling',
+  'ishikawa',
+  'ishikawa-beta',
+  'venn-beta',
+  'wardley-beta',
+  'cynefin-beta',
+  'railroad-beta',
+  'railroad-ebnf-beta',
+  'railroad-abnf-beta',
+  'railroad-peg-beta',
+  'C4Context',
+  'C4Container',
+  'C4Component',
+  'C4Dynamic',
+  'C4Deployment',
   'xychart',
   'xychart-beta',
 ]
@@ -31,7 +65,7 @@ export function stripMermaidFrontmatter(code: string): string {
 }
 
 /**
- * Normalize Mermaid before handing it to the native renderer.
+ * Normalize Mermaid before handing it to the official renderer.
  * Frontmatter is metadata, and leading comments/directives should not control
  * diagram-type detection for renderers that route by the first meaningful line.
  */

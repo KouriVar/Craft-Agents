@@ -156,6 +156,19 @@ graph LR
     C --> E[Notify]
 \`\`\`
 
+## Official Mermaid mindmap
+
+\`\`\`mermaid
+mindmap
+  root((Coffee beans))
+    Arabica
+      Typica
+      Bourbon
+    Robusta
+      Strong body
+      High caffeine
+\`\`\`
+
 ## Image block
 
 \`\`\`image-preview

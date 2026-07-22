@@ -5,10 +5,7 @@
  * workspace, and browser instances stamped with either id belong to the same
  * visible tab set.
  */
-export function getBrowserWorkspaceScopeKey(
-  workspaceId: string | null | undefined,
-  remoteWorkspaceId: string | null | undefined,
-): string {
+export function getBrowserWorkspaceScopeKey(workspaceId: string | null | undefined, remoteWorkspaceId: string | null | undefined): string {
   return JSON.stringify([workspaceId ?? null, remoteWorkspaceId ?? null])
 }
 
@@ -16,10 +13,7 @@ export function getBrowserWorkspaceScopeKey(
  * Async browser operations may finish after the user changes workspaces. Only
  * their owning scope may update the current renderer tab list or navigation.
  */
-export function isBrowserWorkspaceScopeCurrent(
-  requestScopeKey: string,
-  currentScopeKey: string,
-): boolean {
+export function isBrowserWorkspaceScopeCurrent(requestScopeKey: string, currentScopeKey: string): boolean {
   return requestScopeKey === currentScopeKey
 }
 
@@ -48,6 +42,11 @@ export interface BrowserTabRemovalTransition<T> {
   activeTabId: string | null
   removedActiveTab: boolean
   needsReplacement: boolean
+}
+
+/** Stable partition used by the vertical tab list: pinned tabs stay first. */
+export function orderBrowserTabsByPinned<T extends { pinned?: boolean }>(tabs: T[]): T[] {
+  return [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)]
 }
 
 /**
@@ -81,6 +80,57 @@ export function getBrowserTabRemovalTransition<T extends { id: string }>(
   }
 
   const fallback = nextTabs[Math.max(0, removedIndex - 1)] ?? nextTabs[0] ?? null
+  return {
+    tabs: nextTabs,
+    activeTabId: fallback?.id ?? null,
+    removedActiveTab: true,
+    needsReplacement: fallback === null,
+  }
+}
+
+/**
+ * Batch variant used by “close other tabs” and “close tabs below”. The active
+ * tab falls back to the nearest surviving previous tab, then the next tab.
+ */
+export function getBrowserTabsRemovalTransition<T extends { id: string }>(
+  tabs: T[],
+  removedTabIds: Iterable<string>,
+  activeTabId: string | null,
+): BrowserTabRemovalTransition<T> {
+  const removedIds = new Set(removedTabIds)
+  if (removedIds.size === 0 || !tabs.some((tab) => removedIds.has(tab.id))) {
+    return {
+      tabs,
+      activeTabId,
+      removedActiveTab: false,
+      needsReplacement: false,
+    }
+  }
+
+  const nextTabs = tabs.filter((tab) => !removedIds.has(tab.id))
+  const removedActiveTab = activeTabId !== null && removedIds.has(activeTabId)
+  if (!removedActiveTab) {
+    return {
+      tabs: nextTabs,
+      activeTabId,
+      removedActiveTab: false,
+      needsReplacement: false,
+    }
+  }
+
+  const activeIndex = tabs.findIndex((tab) => tab.id === activeTabId)
+  let fallback: T | null = null
+  for (let index = activeIndex - 1; index >= 0; index -= 1) {
+    const candidate = tabs[index]
+    if (candidate && !removedIds.has(candidate.id)) {
+      fallback = candidate
+      break
+    }
+  }
+  if (!fallback) {
+    fallback = tabs.slice(activeIndex + 1).find((tab) => !removedIds.has(tab.id)) ?? null
+  }
+
   return {
     tabs: nextTabs,
     activeTabId: fallback?.id ?? null,

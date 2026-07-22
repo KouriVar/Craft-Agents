@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { ArrowUp, Check, Globe2, RefreshCw, Search, Settings2, Sparkles } from 'lucide-react'
+import { ArrowUp, Check, ChevronRight, Globe2, RefreshCw, Search, Settings2, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ExploreBriefRecommendation, ExploreBriefResult } from '@craft-agent/shared/protocol'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,8 @@ import { getOrGenerateExploreBrief } from '@/lib/explore-brief'
 import { navigate, routes } from '@/lib/navigate'
 import type { SessionMeta } from '@/atoms/sessions'
 import type { BrowserWorkspaceTab } from '@/atoms/browser-workspace'
+import { TodaySection } from './TodaySection'
+import { buildTodayTasks } from './task-today'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -21,6 +23,7 @@ import {
 interface ExploreHomeProps {
   workspaceId: string
   recentSessions: SessionMeta[]
+  taskSessions: SessionMeta[]
   recentTabs: BrowserWorkspaceTab[]
   onOpenSession: (sessionId: string) => void
   onOpenTab: (tabId: string) => void
@@ -36,6 +39,7 @@ type BriefState =
 export function ExploreHome({
   workspaceId,
   recentSessions,
+  taskSessions,
   recentTabs,
   onOpenSession,
   onOpenTab,
@@ -71,6 +75,12 @@ export function ExploreHome({
       lastMessageAt: session.lastMessageAt,
       isProcessing: session.isProcessing,
       hasUnread: session.hasUnread,
+      taskGoal: session.taskGoal,
+      taskPriority: session.taskPriority,
+      taskDueAt: session.taskDueAt,
+      taskReminderAt: session.taskReminderAt,
+      latestCheckpoint: session.taskCheckpoints?.at(-1)?.summary,
+      nextSteps: session.taskCheckpoints?.at(-1)?.nextSteps,
     })),
     tabs: recentTabs
       .filter((tab) => tab.url !== 'about:blank')
@@ -144,6 +154,14 @@ export function ExploreHome({
   const recommendations = briefState.status === 'ready'
     ? briefState.brief.recommendations
     : fallbackRecommendations
+  const todaySessionIds = useMemo(() => new Set(
+    settings.proactiveSuggestionsEnabled
+      ? buildTodayTasks(taskSessions).slice(0, 6).map((item) => item.session.id)
+      : [],
+  ), [settings.proactiveSuggestionsEnabled, taskSessions])
+  const visibleRecommendations = useMemo(() => recommendations.filter((item) => (
+    item.kind !== 'session' || !item.targetId || !todaySessionIds.has(item.targetId)
+  )), [recommendations, todaySessionIds])
 
   const submit = () => {
     const query = input.trim()
@@ -240,22 +258,24 @@ export function ExploreHome({
           </form>
         </section>
 
-        <section aria-labelledby="brief-heading" className="flex flex-col gap-3">
+        {settings.proactiveSuggestionsEnabled && (
+          <TodaySection sessions={taskSessions} onOpenSession={onOpenSession} />
+        )}
+
+        <section aria-labelledby="brief-heading" className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
-              <h2 id="brief-heading" className="text-sm font-medium text-foreground">{t('explore.workBrief')}</h2>
-            </div>
+            <h2 id="brief-heading" className="px-0.5 text-sm font-medium text-foreground">{t('explore.workBrief')}</h2>
             <div className="flex items-center gap-1">
               {settings.aiStatusEnabled && hasActivity && (
                 <button
                   type="button"
                   onClick={() => { void generateBrief(true) }}
                   disabled={briefState.status === 'loading'}
-                  className="flex items-center gap-1.5 rounded-control px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground disabled:opacity-50"
+                  aria-label={t('explore.refreshAnalysis')}
+                  title={t('explore.refreshAnalysis')}
+                  className="flex size-7 items-center justify-center rounded-control text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground disabled:opacity-50"
                 >
                   <RefreshCw className={cn('h-3.5 w-3.5', briefState.status === 'loading' && 'animate-spin')} />
-                  {t('explore.refreshAnalysis')}
                 </button>
               )}
               <button
@@ -270,7 +290,7 @@ export function ExploreHome({
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-card border border-border/60 bg-background shadow-minimal">
+          <div className="overflow-hidden rounded-[12px] border border-border/55 bg-background shadow-minimal">
             {briefState.status === 'loading' ? (
               <BriefLoading />
             ) : briefState.status === 'ready' ? (
@@ -306,32 +326,33 @@ export function ExploreHome({
           </div>
         </section>
 
-        <section aria-label={t('explore.nextSteps')}>
-          {briefState.status === 'loading' ? (
-            <RecommendationLoading count={settings.aiCount} />
-          ) : recommendations.length > 0 ? (
-            <div className="overflow-hidden rounded-card border border-border/60 bg-background shadow-minimal">
-              {recommendations.slice(0, settings.aiCount).map((item, index) => (
-                <button
-                  key={`${item.kind}:${item.targetId ?? item.prompt ?? item.title}:${index}`}
-                  type="button"
-                  onClick={() => openRecommendation(item)}
-                  className="group flex w-full items-center gap-4 border-t border-border/50 px-4 py-3.5 text-left transition-colors first:border-t-0 hover:bg-foreground/[0.025] md:px-5"
-                >
-                  <span className="w-5 shrink-0 font-mono text-[11px] text-muted-foreground/60">{String(index + 1).padStart(2, '0')}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">{item.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-card border border-dashed border-border/70 px-5 py-8 text-center text-xs text-muted-foreground">
-              {t('explore.noRecommendations')}
-            </div>
-          )}
-        </section>
+        {(briefState.status === 'loading' || visibleRecommendations.length > 0) && (
+          <section aria-labelledby="next-steps-heading" className="flex flex-col gap-2.5">
+            <h2 id="next-steps-heading" className="px-0.5 text-sm font-medium text-foreground">
+              {t('explore.nextSteps')}
+            </h2>
+            {briefState.status === 'loading' ? (
+              <RecommendationLoading count={settings.aiCount} />
+            ) : (
+              <div className="overflow-hidden rounded-[12px] border border-border/55 bg-background shadow-minimal">
+                {visibleRecommendations.slice(0, settings.aiCount).map((item, index) => (
+                  <button
+                    key={`${item.kind}:${item.targetId ?? item.prompt ?? item.title}:${index}`}
+                    type="button"
+                    onClick={() => openRecommendation(item)}
+                    className="group flex min-h-[64px] w-full items-center gap-3 border-t border-border/45 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-foreground/[0.025] focus-visible:bg-foreground/[0.025] focus-visible:outline-none md:px-5"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{item.description}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/25 opacity-0 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </main>
   )
@@ -350,10 +371,9 @@ function BriefLoading() {
 
 function RecommendationLoading({ count }: { count: number }) {
   return (
-    <div className="animate-pulse overflow-hidden rounded-card border border-border/60 bg-background shadow-minimal">
+    <div className="animate-pulse overflow-hidden rounded-[12px] border border-border/55 bg-background shadow-minimal">
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="flex items-center gap-4 border-t border-border/50 px-5 py-4 first:border-t-0">
-          <div className="h-3 w-5 rounded-control bg-foreground/[0.04]" />
+        <div key={index} className="flex min-h-[64px] items-center border-t border-border/45 px-5 py-3 first:border-t-0">
           <div className="flex-1">
             <div className="h-3 w-2/5 rounded-control bg-foreground/[0.06]" />
             <div className="mt-2 h-2.5 w-3/5 rounded-control bg-foreground/[0.035]" />

@@ -36,6 +36,25 @@ export interface ContentSearchResult {
   snippet: string
 }
 
+export function taskMetadataSearchScore(session: SessionMeta, query: string): number {
+  const values = [
+    getSessionTitle(session),
+    session.preview,
+    session.taskGoal,
+    session.workingDirectory,
+    session.projectId,
+    session.taskSlug,
+    ...(session.labels ?? []),
+    ...(session.taskCheckpoints ?? []).flatMap((checkpoint) => [
+      checkpoint.summary,
+      ...(checkpoint.nextSteps ?? []),
+      ...(checkpoint.blockers ?? []),
+      ...(checkpoint.relatedFiles ?? []),
+    ]),
+  ].filter((value): value is string => Boolean(value))
+  return values.reduce((best, value) => Math.max(best, fuzzyScore(value, query)), 0)
+}
+
 /** Metadata for a collapsed group — emitted by the data pipeline so the renderer can show header-only groups */
 export interface CollapsedGroupMeta {
   key: string
@@ -405,10 +424,10 @@ export function useSessionSearch({
     }
 
     return sortedItems
-      .filter(item => contentSearchResults.has(item.id))
+      .filter(item => contentSearchResults.has(item.id) || taskMetadataSearchScore(item, searchQuery) > 0)
       .sort((a, b) => {
-        const aScore = fuzzyScore(getSessionTitle(a), searchQuery)
-        const bScore = fuzzyScore(getSessionTitle(b), searchQuery)
+        const aScore = taskMetadataSearchScore(a, searchQuery)
+        const bScore = taskMetadataSearchScore(b, searchQuery)
 
         if (aScore > 0 && bScore === 0) return -1
         if (aScore === 0 && bScore > 0) return 1

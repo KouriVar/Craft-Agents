@@ -117,6 +117,10 @@ export function MainContentPanel({
       .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))
       .slice(0, 12)
   }, [activeWorkspaceId, sessionMetaMap])
+  const taskSessions = useMemo(() => {
+    return [...sessionMetaMap.values()]
+      .filter((meta) => meta.workspaceId === activeWorkspaceId && !meta.isArchived)
+  }, [activeWorkspaceId, sessionMetaMap])
   const recentTabs = useMemo(() => browserTabs.slice(0, 8), [browserTabs])
 
   // Execution history for the selected automation
@@ -263,6 +267,7 @@ export function MainContentPanel({
       <ExploreHome
         workspaceId={activeWorkspaceId || ''}
         recentSessions={recentSessions}
+        taskSessions={taskSessions}
         recentTabs={recentTabs}
         onOpenSession={(sessionId) => navigate(routes.view.allSessions(sessionId))}
         onOpenTab={(tabId) => navigate(routes.view.browser(tabId))}

@@ -20,7 +20,6 @@ import {
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
@@ -361,50 +360,6 @@ function ResourceSection({
           )}
         </div>
       )}
-    </section>
-  )
-}
-
-function TitleSection({ session }: { session: Session }) {
-  const { t } = useTranslation()
-  const { onRenameSession } = useAppShellContext()
-  const [name, setName] = React.useState(session.name || '')
-  const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  React.useEffect(() => {
-    setName(session.name || '')
-  }, [session.name])
-
-  React.useEffect(() => {
-    return () => {
-      if (renameTimeoutRef.current) clearTimeout(renameTimeoutRef.current)
-    }
-  }, [])
-
-  const handleNameChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextName = event.target.value
-    setName(nextName)
-
-    if (renameTimeoutRef.current) clearTimeout(renameTimeoutRef.current)
-    renameTimeoutRef.current = setTimeout(() => {
-      const trimmed = nextName.trim()
-      if (trimmed) onRenameSession(session.id, trimmed)
-    }, 500)
-  }, [onRenameSession, session.id])
-
-  return (
-    <section className="min-w-0">
-      <div className="flex items-center justify-between px-1 pb-1">
-        <h3 className="text-xs font-semibold text-muted-foreground">{t('chat.title')}</h3>
-      </div>
-      <div className="rounded-[8px] bg-foreground-2 has-[:focus]:bg-background shadow-minimal transition-colors">
-        <Input
-          value={name}
-          onChange={handleNameChange}
-          placeholder={t('chat.titlePlaceholder')}
-          className="h-9 border-0 bg-transparent px-3 py-2 text-sm shadow-none focus-visible:ring-0"
-        />
-      </div>
     </section>
   )
 }
@@ -825,11 +780,12 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
         >
           <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-bar]]:w-1.5">
             <div className="px-3 py-3">
-              <TitleSection session={session} />
-
-              {codeRelated && <SessionGitSection workingDirectories={gitDirectoryCandidates} />}
-
-              <div className="my-3 h-px bg-border/50" />
+              {codeRelated && (
+                <>
+                  <SessionGitSection workingDirectories={gitDirectoryCandidates} />
+                  <div className="my-3 h-px bg-border/50" />
+                </>
+              )}
 
               <ResourceSection
               title={t('resources.title')}

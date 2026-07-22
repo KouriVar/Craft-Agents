@@ -345,6 +345,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         return sessionManager.setSessionProjectId(sessionId, command.projectId)
       case 'setKanbanColumn':
         return sessionManager.setKanbanColumn(sessionId, command.column)
+      case 'setTaskDetails':
+        return sessionManager.setTaskDetails(sessionId, command.patch)
+      case 'createTaskCheckpoint':
+        return sessionManager.createTaskCheckpoint(sessionId, command.summary)
+      case 'deleteTaskCheckpoint':
+        return sessionManager.deleteTaskCheckpoint(sessionId, command.checkpointId)
       case 'showInFinder': {
         const sessionPath = sessionManager.getSessionPath(sessionId)
         if (sessionPath) {

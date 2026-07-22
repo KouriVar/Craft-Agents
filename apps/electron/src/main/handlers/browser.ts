@@ -1,4 +1,10 @@
-import { RPC_CHANNELS, type BrowserPaneBounds, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload, type BrowserWorkspaceSnapshot } from '../../shared/types'
+import {
+  RPC_CHANNELS,
+  type BrowserPaneBounds,
+  type BrowserPaneCreateOptions,
+  type BrowserEmptyStateLaunchPayload,
+  type BrowserWorkspaceSnapshot,
+} from '../../shared/types'
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -16,6 +22,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.browserPane.SET_EMBEDDED_BOUNDS,
   RPC_CHANNELS.browserPane.SET_EMBEDDED_VISIBLE,
   RPC_CHANNELS.browserPane.SET_EMBEDDED_TOOLBAR_MODE,
+  RPC_CHANNELS.browserPane.SET_AUDIO_MUTED,
   RPC_CHANNELS.browserPane.LOAD_WORKSPACE_STATE,
   RPC_CHANNELS.browserPane.SAVE_WORKSPACE_STATE,
   RPC_CHANNELS.browserPane.LIST_BOOKMARKS,
@@ -81,7 +88,9 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
           embeddedHostWebContentsId: ctx.webContentsId ?? undefined,
           initialUrl: input.initialUrl,
         })
-        browserPaneManager.bindSession(id, input.bindToSessionId, { workspaceId })
+        browserPaneManager.bindSession(id, input.bindToSessionId, {
+          workspaceId,
+        })
         return id
       }
       return browserPaneManager.createForSession(input.bindToSessionId, {
@@ -162,6 +171,10 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     browserPaneManager.setEmbeddedToolbarMode(id, ctx.webContentsId!, mode)
   })
 
+  server.handle(RPC_CHANNELS.browserPane.SET_AUDIO_MUTED, (_ctx, id: string, muted: boolean) => {
+    browserPaneManager.setAudioMuted(id, muted)
+  })
+
   server.handle(RPC_CHANNELS.browserPane.LOAD_WORKSPACE_STATE, (ctx) => {
     return browserPaneManager.loadWorkspaceState(ctx.workspaceId ?? '')
   })
@@ -174,9 +187,20 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     return browserPaneManager.listBookmarks(ctx.workspaceId ?? null)
   })
 
-  server.handle(RPC_CHANNELS.browserPane.ADD_BOOKMARK, (ctx, entry: { url: string; title: string; favicon?: string | null; folderId?: string | null }) => {
+  server.handle(
+    RPC_CHANNELS.browserPane.ADD_BOOKMARK,
+    (
+      ctx,
+      entry: {
+        url: string
+        title: string
+        favicon?: string | null
+        folderId?: string | null
+      },
+    ) => {
     return browserPaneManager.addBookmark(ctx.workspaceId ?? null, entry)
-  })
+    },
+  )
 
   server.handle(RPC_CHANNELS.browserPane.UPDATE_BOOKMARK, (ctx, id: string, changes: { title?: string; folderId?: string | null }) => {
     return browserPaneManager.updateBookmark(ctx.workspaceId ?? null, id, changes)
@@ -264,17 +288,25 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
   server.handle(RPC_CHANNELS.browserPane.LIST_EXTENSIONS, () => browserPaneManager.listExtensions())
   server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION, (_ctx, path: string) => browserPaneManager.installExtension(path))
-  server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE, (_ctx, urlOrId: string) => browserPaneManager.installExtensionFromStore(urlOrId))
+  server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE, (_ctx, urlOrId: string) =>
+    browserPaneManager.installExtensionFromStore(urlOrId),
+  )
   server.handle(RPC_CHANNELS.browserPane.REMOVE_EXTENSION, (_ctx, id: string) => browserPaneManager.removeExtension(id))
   server.handle(RPC_CHANNELS.browserPane.OPEN_EXTENSION_ACTION, (_ctx, extensionId: string, tabId?: string | null) => {
     return browserPaneManager.openExtensionAction(extensionId, tabId)
   })
-  server.handle(RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU, (_ctx, kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null) => {
+  server.handle(
+    RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU,
+    (_ctx, kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null) => {
     browserPaneManager.showToolbarMenu(kind, tabId, origin)
-  })
-  server.handle(RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE, (_ctx, extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }) => {
+    },
+  )
+  server.handle(
+    RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE,
+    (_ctx, extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }) => {
     browserPaneManager.setExtensionPreference(extensionId, preference)
-  })
+    },
+  )
 
   server.handle(RPC_CHANNELS.browserPane.LAUNCH, async (ctx, payload: BrowserEmptyStateLaunchPayload) => {
     try {

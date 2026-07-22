@@ -76,6 +76,8 @@ export interface SessionFilesSectionProps {
   sessionFolderPath?: string
   /** Hide section header when embedded inside compact containers (e.g. popovers) */
   hideHeader?: boolean
+  /** Let the file tree size to its contents and delegate scrolling to its parent. */
+  autoHeight?: boolean
 }
 
 /**
@@ -421,7 +423,13 @@ function FileTreeItem({
 /**
  * Section displaying session files as a tree
  */
-export function SessionFilesSection({ sessionId, className, sessionFolderPath, hideHeader = false }: SessionFilesSectionProps) {
+export function SessionFilesSection({
+  sessionId,
+  className,
+  sessionFolderPath,
+  hideHeader = false,
+  autoHeight = false,
+}: SessionFilesSectionProps) {
   const { t } = useTranslation()
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -573,7 +581,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   }
 
   return (
-    <div className={cn('flex flex-col h-full min-h-0', className)}>
+    <div className={cn('flex flex-col min-h-0', autoHeight ? 'h-auto' : 'h-full', className)}>
       {/* Header - matches sidebar styling with select-none, extra top padding for visual balance */}
       {!hideHeader && (
         <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
@@ -594,7 +602,10 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
 
       {/* File tree - px-2 is on nav to match LeftSidebar exactly (constrains grid width) */}
       {/* overflow-x-hidden prevents horizontal scroll, forcing truncation */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2 min-h-0">
+      <div className={cn(
+        'overflow-x-hidden pb-2 min-h-0',
+        autoHeight ? 'flex-none overflow-y-visible' : 'flex-1 overflow-y-auto',
+      )}>
         {files.length === 0 ? (
           <div className="px-4 text-muted-foreground select-none">
             <p className="text-xs">

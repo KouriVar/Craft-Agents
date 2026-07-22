@@ -1,6 +1,46 @@
 # Mermaid Diagram Syntax Reference
 
-Craft Agent renders Mermaid diagrams natively as beautiful themed SVGs. Use this reference for syntax details.
+Craft Agent renders diagrams with the full official Mermaid engine. Syntax validation and in-app SVG rendering use the same pinned Mermaid version, including advanced diagram families such as mindmaps, timelines, Gantt charts, Git graphs, Sankey diagrams, architecture diagrams, requirements, journeys, quadrants, packets, blocks, kanban boards, treemaps, C4 diagrams, and XY charts.
+
+Because Mermaid continues to add syntax, the bundled version is the compatibility boundary. Use `mermaid_validate` before returning a complex diagram; a successful validation means the same engine used by the UI accepted it.
+
+## Mindmaps
+
+**Header:** `mindmap`
+
+Indentation defines the hierarchy. Node shapes follow Mermaid mindmap syntax.
+
+```mermaid
+mindmap
+  root((Coffee beans))
+    Arabica
+      Typica
+      Bourbon
+    Robusta
+      Strong body
+      High caffeine
+```
+
+## Other Official Diagram Families
+
+The renderer also accepts the official syntax for these headers:
+
+- `timeline`
+- `gantt`
+- `pie`
+- `gitGraph`
+- `journey`
+- `requirementDiagram`
+- `quadrantChart`
+- `sankey-beta`
+- `architecture-beta`
+- `block-beta`
+- `packet-beta`
+- `kanban`
+- `treemap-beta`
+- `C4Context` and the other C4 variants
+
+These families evolve faster than flowcharts. Prefer their current official Mermaid syntax and verify the final source with `mermaid_validate`.
 
 ## Optional YAML Frontmatter
 

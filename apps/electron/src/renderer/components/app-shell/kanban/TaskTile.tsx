@@ -144,13 +144,15 @@ export function TaskTile({
       className={cn(
         'group relative overflow-hidden rounded-lg border border-border/60 bg-card shadow-minimal',
         'cursor-pointer transition-colors hover:border-border focus-visible:outline-none',
-        'focus-visible:ring-2 focus-visible:ring-ring/50'
+        'focus-visible:ring-2 focus-visible:ring-ring/50',
+        isLive && 'shadow-tinted',
       )}
       style={
         isLive
           ? {
-              boxShadow: `0 0 0 1px ${accent}, 0 4px 16px -4px color-mix(in srgb, ${accent} 40%, transparent)`,
-            }
+              borderColor: accent,
+              '--shadow-color': accent,
+            } as React.CSSProperties
           : undefined
       }
     >
@@ -217,6 +219,33 @@ export function TaskTile({
         >
           {task.title}
         </div>
+
+        {(task.goal || task.checkpointSummary) && (
+          <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-foreground/50">
+            {task.goal || task.checkpointSummary}
+          </p>
+        )}
+
+        {(task.priority === 'high' || task.dueAt) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+            {task.priority === 'high' && (
+              <span className="rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive">
+                {t('taskContinuity.priorityHigh')}
+              </span>
+            )}
+            {task.dueAt && (
+              <span className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5',
+                task.dueAt < Date.now() && task.column !== 'done'
+                  ? 'bg-destructive/10 text-destructive'
+                  : 'bg-foreground/[0.05] text-muted-foreground',
+              )}>
+                <Clock className="h-3 w-3" />
+                {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(task.dueAt)}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-2">
           {status &&

@@ -103,6 +103,45 @@ export default function ExploreSettingsPage() {
                   </SettingsRow>
                 </SettingsCard>
               </SettingsSection>
+              <SettingsSection
+                title={t('settings.explore.proactiveTitle', { defaultValue: '主动工作台' })}
+                description={t('settings.explore.proactiveDesc', { defaultValue: '控制 Today、主动建议和任务提醒。' })}
+              >
+                <SettingsCard>
+                  <SettingsToggle
+                    label={t('settings.explore.proactiveEnabled', { defaultValue: '主动建议' })}
+                    description={t('settings.explore.proactiveEnabledDesc', { defaultValue: '根据任务状态、检查点和时间给出下一步建议。' })}
+                    checked={settings.proactiveSuggestionsEnabled}
+                    onCheckedChange={(checked) => update({ proactiveSuggestionsEnabled: checked })}
+                  />
+                  <SettingsToggle
+                    label={t('settings.explore.remindersEnabled', { defaultValue: '任务提醒' })}
+                    description={t('settings.explore.remindersEnabledDesc', { defaultValue: '在设置的时间通过系统通知提醒你继续任务。' })}
+                    checked={settings.remindersEnabled}
+                    onCheckedChange={(checked) => update({ remindersEnabled: checked })}
+                  />
+                  <SettingsRow
+                    label={t('settings.explore.quietHours', { defaultValue: '免打扰时间' })}
+                    description={t('settings.explore.quietHoursDesc', { defaultValue: '免打扰期间延后系统提醒；开始和结束相同表示关闭。' })}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={settings.quietHoursStart}
+                        onChange={(event) => update({ quietHoursStart: event.target.value })}
+                        className="h-8 rounded-control border border-border bg-background px-2 text-xs text-foreground"
+                      />
+                      <span className="text-xs text-muted-foreground">–</span>
+                      <input
+                        type="time"
+                        value={settings.quietHoursEnd}
+                        onChange={(event) => update({ quietHoursEnd: event.target.value })}
+                        className="h-8 rounded-control border border-border bg-background px-2 text-xs text-foreground"
+                      />
+                    </div>
+                  </SettingsRow>
+                </SettingsCard>
+              </SettingsSection>
             </div>
           </div>
         </ScrollArea>

@@ -81,6 +81,8 @@ import { rendererLog } from '@/lib/logger'
 import { widgetDescriptorFromHostCommand } from '@/lib/widget-runtime/host-command'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
+import { DEFAULT_EXPLORE_SETTINGS, getExploreSettings, type ExploreSettings } from '@/lib/explore-settings'
+import { shouldNotifyTaskReminder } from '@/lib/task-reminders'
 
 type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'ready'
 
@@ -755,6 +757,63 @@ export default function App() {
     onNavigateToSession: handleNavigateToSession,
     enabled: notificationsEnabled,
   })
+
+  const notifiedTaskReminders = useRef(new Set<string>())
+  useEffect(() => {
+    if (appState !== 'ready' || !windowWorkspaceId) return
+    let settings: ExploreSettings = DEFAULT_EXPLORE_SETTINGS
+    let disposed = false
+
+    const checkReminders = () => {
+      if (disposed || !notificationsEnabled) return
+      const now = Date.now()
+      for (const session of store.get(sessionMetaMapAtom).values()) {
+        if (session.workspaceId !== windowWorkspaceId || !shouldNotifyTaskReminder(session, settings, now)) continue
+        const key = `${session.id}:${session.taskReminderAt}`
+        if (notifiedTaskReminders.current.has(key)) continue
+        notifiedTaskReminders.current.add(key)
+        const title = session.name || t('taskContinuity.reminderTitle', { defaultValue: '任务提醒' })
+        const body = session.taskGoal || session.preview || t('taskContinuity.reminderBody', { defaultValue: '该继续处理这个任务了。' })
+        if (isWindowFocused) {
+          toast.info(title, {
+            description: body,
+            action: {
+              label: t('taskContinuity.openTask', { defaultValue: '打开任务' }),
+              onClick: () => navigate(routes.view.allSessions(session.id)),
+            },
+          })
+        } else {
+          void window.electronAPI.showNotification(title, body.slice(0, 100), windowWorkspaceId, session.id).catch(() => {})
+        }
+        void window.electronAPI.sessionCommand(session.id, { type: 'setTaskDetails', patch: { markReminderNotified: true } }).catch(() => {
+          // The in-memory key still prevents repeat notifications in this run;
+          // persistence will be retried naturally if the reminder is edited.
+        })
+      }
+    }
+
+    const loadSettings = () => {
+      void getExploreSettings().then((next) => {
+        if (disposed) return
+        settings = next
+        checkReminders()
+      })
+    }
+    const handleSettingsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<ExploreSettings>).detail
+      if (detail) settings = detail
+      checkReminders()
+    }
+
+    loadSettings()
+    const interval = window.setInterval(checkReminders, 30_000)
+    window.addEventListener('craft:explore-settings-changed', handleSettingsChanged)
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+      window.removeEventListener('craft:explore-settings-changed', handleSettingsChanged)
+    }
+  }, [appState, isWindowFocused, notificationsEnabled, store, t, windowWorkspaceId])
 
   // Load workspaces, sessions, model, notifications setting, and drafts when app is ready
   useEffect(() => {

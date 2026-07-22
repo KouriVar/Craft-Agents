@@ -70,6 +70,8 @@ import {
   type SessionMetadata,
   type SessionStatus,
   type SessionHeader,
+  type TaskCheckpoint,
+  type TaskPriority,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
@@ -103,6 +105,7 @@ import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 import { buildExploreBriefPrompt, EXPLORE_BRIEF_OUTPUT_SCHEMA, parseExploreBriefResult } from './explore-brief'
+import { buildTaskCheckpointContent } from './task-checkpoint'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -911,6 +914,14 @@ interface ManagedSession {
   taskNodeCount?: number
   // Tasks Conductor: hidden generate-time orchestrator awaiting validated adoption (off the board)
   taskDraft?: boolean
+  // Session-backed long-running task continuity.
+  taskGoal?: string
+  taskPriority?: TaskPriority
+  taskDueAt?: number
+  taskReminderAt?: number
+  taskReminderAcknowledgedAt?: number
+  taskReminderLastNotifiedAt?: number
+  taskCheckpoints?: TaskCheckpoint[]
   // Working directory for this session (used by agent for bash commands)
   workingDirectory?: string
   // SDK cwd for session storage - set once at creation, never changes.
@@ -1558,6 +1569,26 @@ export class SessionManager implements ISessionManager {
     if (managed.kanbanColumn !== header.kanbanColumn) {
       managed.kanbanColumn = header.kanbanColumn
       changed = true
+    }
+
+    const continuityKeys = [
+      'taskGoal',
+      'taskPriority',
+      'taskDueAt',
+      'taskReminderAt',
+      'taskReminderAcknowledgedAt',
+      'taskReminderLastNotifiedAt',
+      'taskCheckpoints',
+    ] as const
+    const continuityChanges: Partial<Pick<Session, (typeof continuityKeys)[number]>> = {}
+    for (const key of continuityKeys) {
+      if (JSON.stringify(managed[key]) === JSON.stringify(header[key])) continue
+      ;(managed as unknown as Record<string, unknown>)[key] = header[key]
+      ;(continuityChanges as Record<string, unknown>)[key] = header[key]
+      changed = true
+    }
+    if (Object.keys(continuityChanges).length > 0) {
+      this.sendEvent({ type: 'session_metadata_changed', sessionId, changes: continuityChanges }, managed.workspace.id)
     }
 
     if (changed) {
@@ -6674,6 +6705,33 @@ export class SessionManager implements ISessionManager {
     const currentFinalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
     const didReceiveNewFinalMessage = !!currentFinalMessageId && currentFinalMessageId !== turnStartFinalMessageId
 
+    if (
+      reason === 'complete' &&
+      didReceiveNewFinalMessage &&
+      !managed.hidden &&
+      !managed.parentSessionId &&
+      managed.systemPromptPreset !== 'mini'
+    ) {
+      await this.createTaskCheckpoint(sessionId, undefined, {
+        source: 'auto',
+        outcome: 'completed',
+        messageId: currentFinalMessageId,
+      })
+    } else if (
+      reason !== 'complete' &&
+      !managed.hidden &&
+      !managed.parentSessionId &&
+      managed.systemPromptPreset !== 'mini'
+    ) {
+      const latestUser = [...managed.messages].reverse().find((message) => message.role === 'user' && !message.hidden)
+      const latestError = [...managed.messages].reverse().find((message) => message.role === 'error' && !message.hidden)
+      await this.createTaskCheckpoint(
+        sessionId,
+        (reason === 'error' ? latestError?.content : undefined) || latestUser?.content || managed.name || 'Task stopped before completion.',
+        { source: 'auto', outcome: reason === 'interrupted' ? 'interrupted' : 'failed' },
+      )
+    }
+
     if (reason === 'complete' && didReceiveNewFinalMessage) {
       if (isViewing) {
         // User is watching - mark as read immediately
@@ -7342,6 +7400,125 @@ export class SessionManager implements ISessionManager {
       const watcher = this.configWatchers.get(managed.workspace.rootPath)
       watcher?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
     }
+  }
+
+  /** Update the lightweight task fields used by the board, Today, and reminders. */
+  async setTaskDetails(
+    sessionId: string,
+    patch: {
+      goal?: string | null
+      priority?: TaskPriority | null
+      dueAt?: number | null
+      reminderAt?: number | null
+      acknowledgeReminder?: boolean
+      markReminderNotified?: boolean
+    },
+  ): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session not found: ${sessionId}`)
+
+    const changes: Partial<Pick<Session, 'taskGoal' | 'taskPriority' | 'taskDueAt' | 'taskReminderAt' | 'taskReminderAcknowledgedAt' | 'taskReminderLastNotifiedAt'>> = {}
+    if ('goal' in patch) {
+      managed.taskGoal = patch.goal?.trim() || undefined
+      changes.taskGoal = managed.taskGoal
+    }
+    if ('priority' in patch) {
+      managed.taskPriority = patch.priority ?? undefined
+      changes.taskPriority = managed.taskPriority
+    }
+    if ('dueAt' in patch) {
+      managed.taskDueAt = patch.dueAt ?? undefined
+      changes.taskDueAt = managed.taskDueAt
+    }
+    if ('reminderAt' in patch) {
+      managed.taskReminderAt = patch.reminderAt ?? undefined
+      managed.taskReminderAcknowledgedAt = undefined
+      managed.taskReminderLastNotifiedAt = undefined
+      changes.taskReminderAt = managed.taskReminderAt
+      changes.taskReminderAcknowledgedAt = undefined
+      changes.taskReminderLastNotifiedAt = undefined
+    }
+    if (patch.acknowledgeReminder) {
+      managed.taskReminderAcknowledgedAt = Date.now()
+      changes.taskReminderAcknowledgedAt = managed.taskReminderAcknowledgedAt
+    }
+    if (patch.markReminderNotified && managed.taskReminderAt) {
+      managed.taskReminderLastNotifiedAt = Date.now()
+      changes.taskReminderLastNotifiedAt = managed.taskReminderLastNotifiedAt
+    }
+
+    this.setMetadataWriteGuard(managed)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    this.sendEvent({ type: 'session_metadata_changed', sessionId, changes }, managed.workspace.id)
+  }
+
+  /** Save a durable resume point. Automatic checkpoints are deduplicated by final message id. */
+  async createTaskCheckpoint(
+    sessionId: string,
+    requestedSummary?: string,
+    options: {
+      source?: 'auto' | 'manual'
+      outcome?: TaskCheckpoint['outcome']
+      messageId?: string
+    } = {},
+  ): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session not found: ${sessionId}`)
+    if (options.messageId && managed.taskCheckpoints?.some((item) => item.messageId === options.messageId)) return
+
+    if (!managed.messagesLoaded) this.hydrateMessagesForColdPersist(managed)
+    const latestAssistant = [...managed.messages].reverse().find((message) =>
+      (message.role === 'assistant' || message.role === 'plan') && !message.isIntermediate && !message.hidden
+    )
+    const latestUser = [...managed.messages].reverse().find((message) => message.role === 'user' && !message.hidden)
+    const rawSummary = requestedSummary?.trim() || latestAssistant?.content || latestUser?.content || managed.name || ''
+    const content = buildTaskCheckpointContent(rawSummary)
+    if (!content.summary) return
+
+    if (!managed.taskGoal) {
+      const firstUser = managed.messages.find((message) => message.role === 'user' && !message.hidden)
+      managed.taskGoal = (firstUser?.content || managed.name || content.summary).replace(/\s+/g, ' ').trim().slice(0, 280)
+    }
+
+    const checkpoint: TaskCheckpoint = {
+      id: `checkpoint-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
+      createdAt: Date.now(),
+      source: options.source ?? 'manual',
+      outcome: options.outcome ?? 'completed',
+      summary: content.summary,
+      nextSteps: content.nextSteps,
+      blockers: content.blockers,
+      relatedFiles: content.relatedFiles,
+      messageId: options.messageId ?? latestAssistant?.id,
+    }
+    if (!checkpoint.nextSteps?.length) delete checkpoint.nextSteps
+    if (!checkpoint.blockers?.length) delete checkpoint.blockers
+    if (!checkpoint.relatedFiles?.length) delete checkpoint.relatedFiles
+
+    managed.taskCheckpoints = [...(managed.taskCheckpoints ?? []), checkpoint].slice(-20)
+    this.setMetadataWriteGuard(managed)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    this.sendEvent({
+      type: 'session_metadata_changed',
+      sessionId,
+      changes: { taskGoal: managed.taskGoal, taskCheckpoints: managed.taskCheckpoints },
+    }, managed.workspace.id)
+  }
+
+  async deleteTaskCheckpoint(sessionId: string, checkpointId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session not found: ${sessionId}`)
+    managed.taskCheckpoints = (managed.taskCheckpoints ?? []).filter((item) => item.id !== checkpointId)
+    this.setMetadataWriteGuard(managed)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    this.sendEvent({
+      type: 'session_metadata_changed',
+      sessionId,
+      changes: { taskCheckpoints: managed.taskCheckpoints },
+    }, managed.workspace.id)
   }
 
   /**
@@ -8771,6 +8948,13 @@ export class SessionManager implements ISessionManager {
       sessionStatus: managed.sessionStatus,
       labels: managed.labels,
       permissionMode: managed.permissionMode,
+      taskGoal: managed.taskGoal,
+      taskPriority: managed.taskPriority,
+      taskDueAt: managed.taskDueAt,
+      taskReminderAt: managed.taskReminderAt,
+      taskReminderAcknowledgedAt: managed.taskReminderAcknowledgedAt,
+      taskReminderLastNotifiedAt: managed.taskReminderLastNotifiedAt,
+      taskCheckpoints: managed.taskCheckpoints,
       summary,
     }
   }
@@ -8797,6 +8981,13 @@ export class SessionManager implements ISessionManager {
 
     managed.transferredSessionSummary = payload.summary.trim()
     managed.transferredSessionSummaryApplied = false
+    managed.taskGoal = payload.taskGoal
+    managed.taskPriority = payload.taskPriority
+    managed.taskDueAt = payload.taskDueAt
+    managed.taskReminderAt = payload.taskReminderAt
+    managed.taskReminderAcknowledgedAt = payload.taskReminderAcknowledgedAt
+    managed.taskReminderLastNotifiedAt = payload.taskReminderLastNotifiedAt
+    managed.taskCheckpoints = payload.taskCheckpoints?.slice(-20)
     this.persistSession(managed)
     await sessionPersistenceQueue.flush(session.id)
 
@@ -8915,6 +9106,13 @@ export class SessionManager implements ISessionManager {
       hidden: header.hidden,
       transferredSessionSummary: header.transferredSessionSummary,
       transferredSessionSummaryApplied: header.transferredSessionSummaryApplied,
+      taskGoal: header.taskGoal,
+      taskPriority: header.taskPriority,
+      taskDueAt: header.taskDueAt,
+      taskReminderAt: header.taskReminderAt,
+      taskReminderAcknowledgedAt: header.taskReminderAcknowledgedAt,
+      taskReminderLastNotifiedAt: header.taskReminderLastNotifiedAt,
+      taskCheckpoints: header.taskCheckpoints?.slice(-20),
       messages: bundle.session.messages,
       tokenUsage: header.tokenUsage ?? DEFAULT_TOKEN_USAGE,
     }

@@ -1884,7 +1884,13 @@ export function FreeFormInput({
           />
           <FreeFormInputContextBadge
             icon={<FolderPlus className="h-4 w-4" />}
-            label={t('chat.attachFolder')}
+            label={attachments.some((attachment) => attachment.kind === 'folder')
+              ? t('chat.foldersCount', {
+                  count: attachments.filter((attachment) => attachment.kind === 'folder').length,
+                  defaultValue: '{{count}} folders',
+                })
+              : t('chat.attachFolder')
+            }
             isExpanded={false}
             hasSelection={attachments.some((attachment) => attachment.kind === 'folder')}
             showChevron={false}
@@ -1994,7 +2000,13 @@ export function FreeFormInput({
           />
           <FreeFormInputContextBadge
             icon={<FolderPlus className="h-4 w-4" />}
-            label={t('chat.attachFolder')}
+            label={attachments.some((attachment) => attachment.kind === 'folder')
+              ? t('chat.foldersCount', {
+                  count: attachments.filter((attachment) => attachment.kind === 'folder').length,
+                  defaultValue: '{{count}} folders',
+                })
+              : t('chat.attachFolder')
+            }
             isExpanded={isEmptySession}
             hasSelection={attachments.some((attachment) => attachment.kind === 'folder')}
             showChevron={false}

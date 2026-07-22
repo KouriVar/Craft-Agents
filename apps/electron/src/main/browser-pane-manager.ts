@@ -10,7 +10,24 @@ import { join, parse as parsePath, resolve } from 'path'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserWindow, Menu, WebContentsView, app, clipboard, dialog, ipcMain, nativeTheme, net, session, shell, type DownloadItem, type MenuItemConstructorOptions, type MessageBoxOptions, type Rectangle, type Session as ElectronSession } from 'electron'
+import {
+  BrowserWindow,
+  Menu,
+  WebContentsView,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  net,
+  session,
+  shell,
+  type DownloadItem,
+  type MenuItemConstructorOptions,
+  type MessageBoxOptions,
+  type Rectangle,
+  type Session as ElectronSession,
+} from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
@@ -31,14 +48,8 @@ import {
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
 import { CodedError } from '@craft-agent/shared/protocol'
-import type {
-  IBrowserPaneManager,
-  BrowserInstanceSnapshot,
-} from '@craft-agent/server-core/handlers'
-import type {
-  BrowserCapabilityRequest,
-  ScreenshotResultWire,
-} from '@craft-agent/server-core/transport'
+import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
+import type { BrowserCapabilityRequest, ScreenshotResultWire } from '@craft-agent/server-core/transport'
 import { BrowserProfileStore } from './browser-profile-store'
 import { BrowserPasswordVault } from './browser-password-vault'
 import { BrowserTabLifecycle } from './browser-tab-lifecycle'
@@ -70,7 +81,19 @@ const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
 const DANGEROUS_DOWNLOAD_EXTENSIONS = new Set([
-  '.app', '.bat', '.cmd', '.com', '.command', '.dmg', '.exe', '.jar', '.msi', '.pkg', '.ps1', '.scr', '.sh',
+  '.app',
+  '.bat',
+  '.cmd',
+  '.com',
+  '.command',
+  '.dmg',
+  '.exe',
+  '.jar',
+  '.msi',
+  '.pkg',
+  '.ps1',
+  '.scr',
+  '.sh',
 ])
 const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'file:', 'http:', 'https:', 'javascript:'])
 const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/
@@ -414,7 +437,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
   private profileChangedCallback: ((kind: import('@craft-agent/shared/protocol').BrowserProfileCollectionKind) => void) | null = null
-  private profileChangeTimers = new Map<import('@craft-agent/shared/protocol').BrowserProfileCollectionKind, ReturnType<typeof setTimeout>>()
+  private profileChangeTimers = new Map<
+    import('@craft-agent/shared/protocol').BrowserProfileCollectionKind,
+    ReturnType<typeof setTimeout>
+  >()
   private partitionPermissionsInitialized = false
   private partitionObserversInitialized = false
   private inFlightRequestsByWebContentsId = new Map<number, number>()
@@ -447,7 +473,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (!instance) return false
     const host = instance.embeddedHostWindow ?? instance.window
     const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    void dialog.showMessageBox(host, {
+    void dialog
+      .showMessageBox(host, {
       type: 'warning',
       title: localeIsChinese ? '连接不安全' : 'Connection is not private',
       message: localeIsChinese ? '此网站的安全证书无效。' : 'This site presented an invalid security certificate.',
@@ -456,7 +483,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       defaultId: 0,
       cancelId: 0,
       noLink: true,
-    }).then((result) => callback(result.response === 1), () => callback(false))
+      })
+      .then(
+        (result) => callback(result.response === 1),
+        () => callback(false),
+      )
     return true
   }
 
@@ -492,9 +523,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
     const workspaceId = options?.workspaceId ?? null
     const embeddedHostWebContentsId = options?.embeddedHostWebContentsId ?? null
-    const embeddedHostWindow = embeddedHostWebContentsId !== null
-      ? this.windowManager?.getWindowByWebContentsId(embeddedHostWebContentsId) ?? null
-      : null
+    const embeddedHostWindow =
+      embeddedHostWebContentsId !== null ? (this.windowManager?.getWindowByWebContentsId(embeddedHostWebContentsId) ?? null) : null
 
     if (this.instances.has(instanceId)) {
       mainLog.warn(`[browser-pane] Instance already exists, reusing: ${instanceId}`)
@@ -564,11 +594,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     // Match the native views to the app theme so about:blank never flashes.
-    const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
+    const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & {
+      setBackgroundColor?: (color: string) => void
+    }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
-    const pageWcWithBg = pageView.webContents as typeof pageView.webContents & { setBackgroundColor?: (color: string) => void }
+    const pageWcWithBg = pageView.webContents as typeof pageView.webContents & {
+      setBackgroundColor?: (color: string) => void
+    }
     pageWcWithBg.setBackgroundColor?.(bgColor)
-    const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & { setBackgroundColor?: (color: string) => void }
+    const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & {
+      setBackgroundColor?: (color: string) => void
+    }
     overlayWcWithBg.setBackgroundColor?.('#00000000')
 
     const cdp = new BrowserCDP(pageView.webContents)
@@ -657,14 +693,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.tabLifecycle.register(instance)
     this.emitStateChange(instance)
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
-    mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'})`)
+    mainLog.info(
+      `[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'})`,
+    )
 
     if (embeddedHostWindow) {
       toolbarView.setVisible(false)
       instance.toolbarReady = true
     }
-    void this.loadToolbarPage(instance)
-      .finally(() => {
+    void this.loadToolbarPage(instance).finally(() => {
         // Safety net: if Electron never fires ready-to-show, still unblock focus/show behavior.
         if (!instance.toolbarReady) {
           this.markToolbarReady(instance, 'toolbar-load-finalized')
@@ -693,7 +730,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const destroyedBefore = instance.window.isDestroyed()
-    mainLog.info(`[browser-pane] destroy requested id=${id} destroyedBefore=${destroyedBefore} keepAlive=${instance.keepAliveOnWindowClose}`)
+    mainLog.info(
+      `[browser-pane] destroy requested id=${id} destroyedBefore=${destroyedBefore} keepAlive=${instance.keepAliveOnWindowClose}`,
+    )
 
     // Clear pending timers before destroying the window
     if (instance.inPageThemeTimer) {
@@ -713,7 +752,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       try {
         action()
       } catch (error) {
-        mainLog.warn(`[browser-pane] destroy cleanup failed id=${id} step=${label} error=${error instanceof Error ? error.message : String(error)}`)
+        mainLog.warn(
+          `[browser-pane] destroy cleanup failed id=${id} step=${label} error=${error instanceof Error ? error.message : String(error)}`,
+        )
       }
     }
 
@@ -951,24 +992,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return this.getInstance(id)
   }
 
-  async createForSessionAsync(
-    sessionId: string,
-    options?: { show?: boolean; workspaceId?: string | null },
-  ): Promise<string> {
+  async createForSessionAsync(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string> {
     return this.createForSession(sessionId, options)
   }
 
-  async getOrCreateForSessionAsync(
-    sessionId: string,
-    options?: { workspaceId?: string | null },
-  ): Promise<string> {
+  async getOrCreateForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
     return this.getOrCreateForSession(sessionId, options)
   }
 
-  async focusBoundForSessionAsync(
-    sessionId: string,
-    options?: { workspaceId?: string | null },
-  ): Promise<string> {
+  async focusBoundForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
     return this.focusBoundForSession(sessionId, options)
   }
 
@@ -1015,7 +1047,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     try {
       const loaded = instance.pageView.webContents.loadURL(normalizedUrl)
       const timeout = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error(`Navigation to "${normalizedUrl}" timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`Navigation to "${normalizedUrl}" timed out after ${timeoutMs / 1000}s`)),
+          timeoutMs,
+        )
       })
       await Promise.race([loaded, timeout])
       this.pushToolbarState(instance)
@@ -1135,13 +1170,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const previousBounds = instance.embeddedBounds
     if (
-      !attachedToNewHost
-      && instance.embeddedHostWindow === hostWindow
-      && previousBounds
-      && previousBounds.x === nextBounds.x
-      && previousBounds.y === nextBounds.y
-      && previousBounds.width === nextBounds.width
-      && previousBounds.height === nextBounds.height
+      !attachedToNewHost &&
+      instance.embeddedHostWindow === hostWindow &&
+      previousBounds &&
+      previousBounds.x === nextBounds.x &&
+      previousBounds.y === nextBounds.y &&
+      previousBounds.width === nextBounds.width &&
+      previousBounds.height === nextBounds.height
     ) {
       return
     }
@@ -1186,6 +1221,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.embeddedToolbarRevealed = false
     this.layoutEmbeddedToolbar(instance)
     this.pushToolbarState(instance)
+    this.emitStateChange(instance)
+  }
+
+  setAudioMuted(id: string, muted: boolean): void {
+    const instance = this.requireAliveInstance(id)
+    if (instance.pageView.webContents.isAudioMuted() === muted) return
+    instance.pageView.webContents.setAudioMuted(muted)
     this.emitStateChange(instance)
   }
 
@@ -1325,7 +1367,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   async clickElement(
     id: string,
     ref: string,
-    options?: { waitFor?: 'none' | 'navigation' | 'network-idle'; timeoutMs?: number }
+    options?: {
+      waitFor?: 'none' | 'navigation' | 'network-idle'
+      timeoutMs?: number
+    },
   ): Promise<void> {
     const instance = this.requireAliveInstance(id)
 
@@ -1345,10 +1390,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => {
             cleanup()
-            reject(new Error(
-              `Click navigation wait timed out after ${timeoutMs}ms (no navigation event observed). `
-              + `Tip: retry with "click ${ref}" (no navigation wait), then use "wait url <pattern>" or "wait network-idle".`
-            ))
+            reject(
+              new Error(
+                `Click navigation wait timed out after ${timeoutMs}ms (no navigation event observed). ` +
+                  `Tip: retry with "click ${ref}" (no navigation wait), then use "wait url <pattern>" or "wait network-idle".`,
+              ),
+            )
           }, timeoutMs)
 
           const onNav = () => {
@@ -1366,7 +1413,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           instance.pageView.webContents.once('did-navigate-in-page', onNav)
         })
       } else if (waitFor === 'network-idle') {
-        await this.waitFor(id, { kind: 'network-idle', timeoutMs: options?.timeoutMs })
+        await this.waitFor(id, {
+          kind: 'network-idle',
+          timeoutMs: options?.timeoutMs,
+        })
       }
     } catch (error) {
       instance.lastAction = {
@@ -1426,8 +1476,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private suspendOverlayForCapture(instance: BrowserInstance): boolean {
-    const shouldSuspend = !!instance.agentControl?.active
-      && instance.nativeOverlayReady
+    const shouldSuspend = !!instance.agentControl?.active && instance.nativeOverlayReady
 
     if (!shouldSuspend) return false
 
@@ -1449,7 +1498,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     try {
       // When annotating, force agent mode and gather refs from accessibility tree
       const annotate = !!options?.annotate
-      const mode = (annotate || options?.mode === 'agent') ? 'agent' : 'raw'
+      const mode = annotate || options?.mode === 'agent' ? 'agent' : 'raw'
 
       if (mode === 'raw') {
         const viewport = await instance.cdp.getViewportMetrics()
@@ -1492,9 +1541,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         }
       }
 
-      const settled = await Promise.allSettled(
-        refs.map((ref) => instance.cdp.getElementGeometry(ref)),
-      )
+      const settled = await Promise.allSettled(refs.map((ref) => instance.cdp.getElementGeometry(ref)))
 
       for (let i = 0; i < settled.length; i++) {
         const result = settled[i]!
@@ -1683,11 +1730,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       format?: 'png' | 'jpeg'
       jpegQuality?: number
     },
-  ): Promise<{ imageBuffer: Buffer; imageFormat: 'png' | 'jpeg'; warnings: string[] }> {
+  ): Promise<{
+    imageBuffer: Buffer
+    imageFormat: 'png' | 'jpeg'
+    warnings: string[]
+  }> {
     let rescueUsed = false
     let sawDisplaySurfaceUnavailable = false
     const warnings: string[] = []
-    const imageOpts = { dpr: options.dpr, format: options.format, jpegQuality: options.jpegQuality }
+    const imageOpts = {
+      dpr: options.dpr,
+      format: options.format,
+      jpegQuality: options.jpegQuality,
+    }
 
     for (let attempt = 1; attempt <= SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS; attempt += 1) {
       let result: { buffer: Buffer; format: 'png' | 'jpeg' } | null = null
@@ -1712,7 +1767,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         if (attempt > 1) {
           warnings.push(`Capture recovered after ${attempt} hidden attempt${attempt === 1 ? '' : 's'}.`)
         }
-        return { imageBuffer: result.buffer, imageFormat: result.format, warnings }
+        return {
+          imageBuffer: result.buffer,
+          imageFormat: result.format,
+          warnings,
+        }
       }
 
       mainLog.warn(
@@ -1763,7 +1822,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           if (rescueUsed) {
             warnings.push('Capture required temporary inactive reveal for rendering; browser visibility was restored immediately.')
           }
-          return { imageBuffer: rescueResult.buffer, imageFormat: rescueResult.format, warnings }
+          return {
+            imageBuffer: rescueResult.buffer,
+            imageFormat: rescueResult.format,
+            warnings,
+          }
         }
       } finally {
         if (!wasVisible && !window.isDestroyed()) {
@@ -1780,8 +1843,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     if (sawDisplaySurfaceUnavailable) {
       throw new Error(
-        `Failed to capture ${options.errorPrefix}: current display surface is unavailable. `
-        + `Try focusing the browser window first ("focus ${instance.id}" or "open --foreground") and retry.`
+        `Failed to capture ${options.errorPrefix}: current display surface is unavailable. ` +
+          `Try focusing the browser window first ("focus ${instance.id}" or "open --foreground") and retry.`,
       )
     }
 
@@ -1803,9 +1866,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       jpegQuality?: number
     },
   ): Promise<{ buffer: Buffer; format: 'png' | 'jpeg' } | null> {
-    const captureOpts = options.useHiddenCaptureOptions
-      ? { stayHidden: true, stayAwake: true }
-      : undefined
+    const captureOpts = options.useHiddenCaptureOptions ? { stayHidden: true, stayAwake: true } : undefined
 
     let image = options.rect
       ? await instance.pageView.webContents.capturePage(options.rect, captureOpts)
@@ -1828,9 +1889,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const fmt = options.format ?? 'png'
-    const encoded = fmt === 'jpeg'
-      ? image.toJPEG(options.jpegQuality ?? 80)
-      : image.toPNG()
+    const encoded = fmt === 'jpeg' ? image.toJPEG(options.jpegQuality ?? 80) : image.toPNG()
 
     if (!encoded || encoded.length === 0) {
       return null
@@ -1859,9 +1918,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const level = options?.level ?? 'all'
     const limit = Math.max(1, Math.min(500, Number(options?.limit ?? 50)))
 
-    const filtered = level === 'all'
-      ? instance.consoleLogs
-      : instance.consoleLogs.filter((entry) => entry.level === level)
+    const filtered = level === 'all' ? instance.consoleLogs : instance.consoleLogs.filter((entry) => entry.level === level)
 
     return filtered.slice(-limit)
   }
@@ -1917,9 +1974,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const selector = args.value?.trim()
       if (!selector) throw new Error('browser_wait selector requires value')
       return until(async () => {
-        const exists = await instance.pageView.webContents.executeJavaScript(
-          `Boolean(document.querySelector(${JSON.stringify(selector)}))`
-        )
+        const exists = await instance.pageView.webContents.executeJavaScript(`Boolean(document.querySelector(${JSON.stringify(selector)}))`)
         return Boolean(exists)
       }, `selector matched: ${selector}`)
     }
@@ -1929,7 +1984,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (!text) throw new Error('browser_wait text requires value')
       return until(async () => {
         const found = await instance.pageView.webContents.executeJavaScript(
-          `document.body && document.body.innerText && document.body.innerText.includes(${JSON.stringify(text)})`
+          `document.body && document.body.innerText && document.body.innerText.includes(${JSON.stringify(text)})`,
         )
         return Boolean(found)
       }, `text found: ${text}`)
@@ -1948,7 +2003,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return until(async () => {
         const inflight = this.inFlightRequestsByWebContentsId.get(wcId) ?? 0
         const last = this.lastNetworkActivityByWebContentsId.get(wcId) ?? started
-        return inflight === 0 && (Date.now() - last) >= idleMs
+        return inflight === 0 && Date.now() - last >= idleMs
       }, `network idle for ${idleMs}ms`)
     }
 
@@ -1998,7 +2053,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return this.profileStore.listBookmarks(workspaceId)
   }
 
-  addBookmark(workspaceId: string | null, input: { url: string; title: string; favicon?: string | null; folderId?: string | null }): BrowserBookmarkEntry {
+  addBookmark(
+    workspaceId: string | null,
+    input: {
+      url: string
+      title: string
+      favicon?: string | null
+      folderId?: string | null
+    },
+  ): BrowserBookmarkEntry {
     const parsed = new URL(input.url)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('Only HTTP(S) pages can be bookmarked.')
@@ -2016,11 +2079,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return bookmark
   }
 
-  updateBookmark(
-    workspaceId: string | null,
-    id: string,
-    changes: { title?: string; folderId?: string | null },
-  ): BrowserBookmarkEntry {
+  updateBookmark(workspaceId: string | null, id: string, changes: { title?: string; folderId?: string | null }): BrowserBookmarkEntry {
     const next = { ...changes }
     if (next.title !== undefined) {
       next.title = next.title.trim()
@@ -2089,7 +2148,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     ]
     const appendBookmark = (bookmark: BrowserBookmarkEntry, indent: string) => {
       const icon = bookmark.favicon ? ` ICON="${escapeBookmarkHtml(bookmark.favicon)}"` : ''
-      lines.push(`${indent}<DT><A HREF="${escapeBookmarkHtml(bookmark.url)}" ADD_DATE="${Math.floor(bookmark.createdAt / 1_000)}"${icon}>${escapeBookmarkHtml(bookmark.title)}</A>`)
+      lines.push(
+        `${indent}<DT><A HREF="${escapeBookmarkHtml(bookmark.url)}" ADD_DATE="${Math.floor(bookmark.createdAt / 1_000)}"${icon}>${escapeBookmarkHtml(bookmark.title)}</A>`,
+      )
     }
     for (const bookmark of bookmarks.filter((entry) => !entry.folderId)) appendBookmark(bookmark, '  ')
     for (const folder of folders) {
@@ -2100,7 +2161,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
     lines.push('</DL><p>')
     writeFileSync(result.filePath, `${lines.join('\n')}\n`, 'utf8')
-    return { canceled: false, path: result.filePath, exported: bookmarks.length }
+    return {
+      canceled: false,
+      path: result.filePath,
+      exported: bookmarks.length,
+    }
   }
 
   async importBookmarks(workspaceId: string | null): Promise<{ canceled: boolean; imported: number; skipped: number }> {
@@ -2138,14 +2203,25 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const anchorMatch = token.match(/(<A\b[^>]*>)([\s\S]*?)<\/A>/i)
       if (!anchorMatch) continue
       const url = readHtmlAttribute(anchorMatch[1], 'HREF')
-      if (!url) { skipped += 1; continue }
+      if (!url) {
+        skipped += 1
+        continue
+      }
       try {
         const parsed = new URL(url)
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') { skipped += 1; continue }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          skipped += 1
+          continue
+        }
         const title = decodeBookmarkHtml(anchorMatch[2].replace(/<[^>]+>/g, '')).trim() || parsed.hostname
         const favicon = readHtmlAttribute(anchorMatch[1], 'ICON')
         const folder = [...folderStack].reverse().find(Boolean) ?? null
-        this.addBookmark(workspaceId, { url, title, favicon, folderId: folder?.id ?? null })
+        this.addBookmark(workspaceId, {
+          url,
+          title,
+          favicon,
+          folderId: folder?.id ?? null,
+        })
         imported += 1
       } catch {
         skipped += 1
@@ -2213,8 +2289,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   retryBrowserDownload(workspaceId: string | null, id: string): void {
     const entry = this.profileStore.listDownloads(workspaceId, 2_000).find((item) => item.id === id)
     if (!entry) throw new Error('Download record not found.')
-    const instance = this.instances.get(entry.tabId)
-      ?? Array.from(this.instances.values()).find((item) => item.workspaceId === workspaceId)
+    const instance = this.instances.get(entry.tabId) ?? Array.from(this.instances.values()).find((item) => item.workspaceId === workspaceId)
     if (!instance) throw new Error('Open a browser tab before retrying this download.')
     instance.pageView.webContents.downloadURL(entry.url)
   }
@@ -2235,7 +2310,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   listExtensions(): BrowserExtensionEntry[] {
-    return session.fromPartition(SESSION_PARTITION).extensions.getAllExtensions()
+    return session
+      .fromPartition(SESSION_PARTITION)
+      .extensions.getAllExtensions()
       .map((extension) => {
         const preference = this.profileStore.getExtensionPreference(extension.id)
         const manifest = extension.manifest as {
@@ -2279,7 +2356,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (!existsSync(absoluteIcon) || !statSync(absoluteIcon).isFile() || statSync(absoluteIcon).size > 2 * 1024 * 1024) return null
 
     const extension = parsePath(absoluteIcon).ext.toLowerCase()
-    const mime = extension === '.svg'
+    const mime =
+      extension === '.svg'
       ? 'image/svg+xml'
       : extension === '.jpg' || extension === '.jpeg'
         ? 'image/jpeg'
@@ -2330,7 +2408,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
 
       const directManifest = join(installRoot, 'manifest.json')
-      const childDirectories = readdirSync(installRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+      const childDirectories = readdirSync(installRoot, {
+        withFileTypes: true,
+      }).filter((entry) => entry.isDirectory())
       const extensionRoot = existsSync(directManifest)
         ? installRoot
         : childDirectories.length === 1 && existsSync(join(installRoot, childDirectories[0]!.name, 'manifest.json'))
@@ -2357,12 +2437,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const confirmation = await dialog.showMessageBox({
         type: 'warning',
         title: localeIsChinese ? '安装浏览器扩展' : 'Install browser extension',
-        message: localeIsChinese
-          ? `要安装“${manifest.name}”吗？`
-          : `Install “${manifest.name}”?`,
-        detail: requestedPermissions.length > 0
+        message: localeIsChinese ? `要安装“${manifest.name}”吗？` : `Install “${manifest.name}”?`,
+        detail:
+          requestedPermissions.length > 0
           ? `${localeIsChinese ? '请求的权限' : 'Requested permissions'}:\n${requestedPermissions.slice(0, 20).join('\n')}`
-          : (localeIsChinese ? '此扩展未声明额外权限。' : 'This extension declares no additional permissions.'),
+            : localeIsChinese
+              ? '此扩展未声明额外权限。'
+              : 'This extension declares no additional permissions.',
         buttons: [localeIsChinese ? '安装' : 'Install', localeIsChinese ? '取消' : 'Cancel'],
         defaultId: 1,
         cancelId: 1,
@@ -2426,9 +2507,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       acceptformat: 'crx2,crx3',
       x: `id=${extensionId}&installsource=ondemand&uc`,
     })
-    const packageEndpoint = store === 'edge'
-      ? 'https://edge.microsoft.com/extensionwebstorebase/v1/crx'
-      : 'https://clients2.google.com/service/update2/crx'
+    const packageEndpoint =
+      store === 'edge' ? 'https://edge.microsoft.com/extensionwebstorebase/v1/crx' : 'https://clients2.google.com/service/update2/crx'
     const response = await net.fetch(`${packageEndpoint}?${updateQuery.toString()}`, {
       redirect: 'follow',
     })
@@ -2463,7 +2543,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (normalizedPath.startsWith(normalizedRoot)) {
       const relativePath = normalizedPath.slice(normalizedRoot.length)
       const installDirectory = relativePath.split('/')[0]
-      if (installDirectory) rmSync(join(managedRoot, installDirectory), { recursive: true, force: true })
+      if (installDirectory)
+        rmSync(join(managedRoot, installDirectory), {
+          recursive: true,
+          force: true,
+        })
     }
   }
 
@@ -2475,9 +2559,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   showToolbarMenu(kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null): void {
-    const instance = (tabId ? this.instances.get(tabId) : null)
-      ?? Array.from(this.instances.values()).find((item) => item.isVisible)
-      ?? Array.from(this.instances.values())[0]
+    const instance =
+      (tabId ? this.instances.get(tabId) : null) ??
+      Array.from(this.instances.values()).find((item) => item.isVisible) ??
+      Array.from(this.instances.values())[0]
     const host = instance?.embeddedHostWindow ?? instance?.window
     if (!host || host.isDestroyed()) return
 
@@ -2491,7 +2576,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
     if (kind === 'extensions') {
       const extensions = this.listExtensions().filter((extension) => !extension.hidden)
-      template = extensions.length > 0
+      template =
+        extensions.length > 0
         ? extensions.map((extension) => ({
             label: extension.name,
             enabled: extension.hasAction,
@@ -2501,7 +2587,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
               })
             },
           }))
-        : [{ label: isChinese ? '暂无浏览器扩展' : 'No browser extensions', enabled: false }]
+          : [
+              {
+                label: isChinese ? '暂无浏览器扩展' : 'No browser extensions',
+                enabled: false,
+              },
+            ]
     } else {
       if (!origin) return
       const entries = this.listBrowserPermissions(origin)
@@ -2509,11 +2600,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         { label: origin, enabled: false },
         { type: 'separator' },
         ...(entries.length > 0
-          ? entries.map((entry) => ({
-              label: `${entry.permission} · ${entry.allowed ? (isChinese ? '允许' : 'Allowed') : (isChinese ? '阻止' : 'Blocked')}`,
+          ? entries.map(
+              (entry) =>
+                ({
+                  label: `${entry.permission} · ${entry.allowed ? (isChinese ? '允许' : 'Allowed') : isChinese ? '阻止' : 'Blocked'}`,
               click: () => this.clearBrowserPermission(entry.origin, entry.permission),
-            }) satisfies MenuItemConstructorOptions)
-          : [{ label: isChinese ? '暂无已保存权限' : 'No saved permissions', enabled: false }]),
+                }) satisfies MenuItemConstructorOptions,
+            )
+          : [
+              {
+                label: isChinese ? '暂无已保存权限' : 'No saved permissions',
+                enabled: false,
+              },
+            ]),
         ...(entries.length > 0
           ? [
               { type: 'separator' } as MenuItemConstructorOptions,
@@ -2536,9 +2635,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const actionPath = this.getExtensionActionPath(extension.manifest)
     if (!actionPath) throw new Error('This extension does not expose a popup or options page.')
 
-    const parentInstance = (tabId ? this.instances.get(tabId) : null)
-      ?? Array.from(this.instances.values()).find((instance) => instance.isVisible)
-      ?? Array.from(this.instances.values())[0]
+    const parentInstance =
+      (tabId ? this.instances.get(tabId) : null) ??
+      Array.from(this.instances.values()).find((instance) => instance.isVisible) ??
+      Array.from(this.instances.values())[0]
     const popupWindow = new BrowserWindow({
       width: 420,
       height: 600,
@@ -2619,7 +2719,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     // DOM-based detection via JS evaluation
     try {
-      const domSignals = await instance.pageView.webContents.executeJavaScript(`(() => {
+      const domSignals = (await instance.pageView.webContents.executeJavaScript(`(() => {
         const signals = [];
         const bodyText = (document.body?.innerText || '').slice(0, 2000);
         if (/Verify you are human/i.test(bodyText)) signals.push('text:verify-human');
@@ -2630,7 +2730,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         if (document.querySelector('.cf-turnstile')) signals.push('dom:cf-turnstile');
         if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) signals.push('dom:cf-challenge-iframe');
         return signals;
-      })()`) as string[]
+      })()`)) as string[]
 
       if (Array.isArray(domSignals)) {
         signals.push(...domSignals)
@@ -2642,8 +2742,22 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     try {
       const snapshot = await instance.cdp.getAccessibilitySnapshot()
       const actionableRoles = new Set([
-        'button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch',
-        'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'slider', 'spinbutton', 'listbox',
+        'button',
+        'link',
+        'textbox',
+        'searchbox',
+        'combobox',
+        'checkbox',
+        'radio',
+        'switch',
+        'menuitem',
+        'menuitemcheckbox',
+        'menuitemradio',
+        'tab',
+        'option',
+        'slider',
+        'spinbutton',
+        'listbox',
       ])
       const actionableCount = snapshot.nodes.filter((node) => {
         const role = (node.role || '').toLowerCase()
@@ -2658,8 +2772,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const detected = signals.length > 0
-    const isCloudflare = signals.some(s =>
-      s.includes('cf-') || s.includes('challenge') || s.includes('turnstile') || s === 'title:just-a-moment'
+    const isCloudflare = signals.some(
+      (s) => s.includes('cf-') || s.includes('challenge') || s.includes('turnstile') || s === 'title:just-a-moment',
     )
     const provider = detected ? (isCloudflare ? 'cloudflare' : 'unknown') : 'none'
 
@@ -2714,7 +2828,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         // Keep ownerSessionId for post-turn lifecycle commands like `close` and `hide`.
         instance.ownerSessionId = instance.ownerSessionId ?? sessionId
         this.emitStateChange(instance)
-        mainLog.info(`[browser-pane] Unbound instance ${instance.id} from session ${sessionId} (owner retained: ${instance.ownerSessionId ?? 'none'})`)
+        mainLog.info(
+          `[browser-pane] Unbound instance ${instance.id} from session ${sessionId} (owner retained: ${instance.ownerSessionId ?? 'none'})`,
+        )
       }
     }
   }
@@ -2764,7 +2880,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   createForSession(
     sessionId: string,
-    options?: { show?: boolean; allowReuseManual?: boolean; workspaceId?: string | null },
+    options?: {
+      show?: boolean
+      allowReuseManual?: boolean
+      workspaceId?: string | null
+    },
   ): string {
     const workspaceId = options?.workspaceId ?? null
     const existing = this.getBoundForSession(sessionId)
@@ -2806,13 +2926,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
-    const id = this.createForSession(sessionId, { show: true, workspaceId: options?.workspaceId })
+    const id = this.createForSession(sessionId, {
+      show: true,
+      workspaceId: options?.workspaceId,
+    })
     this.focus(id)
     return id
   }
 
   getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
-    return this.createForSession(sessionId, { show: false, workspaceId: options?.workspaceId })
+    return this.createForSession(sessionId, {
+      show: false,
+      workspaceId: options?.workspaceId,
+    })
   }
 
   getBoundInstanceId(sessionId: string): string | null {
@@ -2950,13 +3076,25 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const [width] = instance.window.getContentSize()
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
 
-    instance.toolbarView.setBounds({ x: 0, y: 0, width, height: toolbarHeight })
+    instance.toolbarView.setBounds({
+      x: 0,
+      y: 0,
+      width,
+      height: toolbarHeight,
+    })
   }
 
   private layoutEmbeddedToolbar(instance: BrowserInstance): void {
     const host = instance.embeddedHostWindow
     const bounds = instance.embeddedBounds
-    if (!host || host.isDestroyed() || !bounds || instance.embeddedToolbarMode !== 'floating' || !instance.isVisible || instance.agentControl?.active) {
+    if (
+      !host ||
+      host.isDestroyed() ||
+      !bounds ||
+      instance.embeddedToolbarMode !== 'floating' ||
+      !instance.isVisible ||
+      instance.agentControl?.active
+    ) {
       instance.toolbarView.setVisible(false)
       return
     }
@@ -2969,7 +3107,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // Keep the invisible trigger and revealed toolbar on the same inset
       // baseline so expanding it does not jump under the pointer.
       y: bounds.y + inset,
-      width: Math.max(1, bounds.width - (inset * 2)),
+      width: Math.max(1, bounds.width - inset * 2),
       height: revealed ? TOOLBAR_HEIGHT : collapsedTriggerHeight,
     }
     instance.toolbarView.setBounds(toolbarBounds)
@@ -3012,7 +3150,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const [width, height] = instance.window.getContentSize()
       const toolbarHeight = this.getToolbarEffectiveHeight(instance)
       const overlayHeight = Math.max(1, height - toolbarHeight)
-      instance.nativeOverlayView.setBounds({ x: 0, y: toolbarHeight, width, height: overlayHeight })
+      instance.nativeOverlayView.setBounds({
+        x: 0,
+        y: toolbarHeight,
+        width,
+        height: overlayHeight,
+      })
       instance.nativeOverlayView.setVisible(true)
       instance.window.contentView.addChildView(instance.nativeOverlayView)
       instance.window.contentView.addChildView(instance.toolbarView)
@@ -3022,7 +3165,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const label = this.getAgentControlLabel(control)
       const accent = this.getResolvedAccentColor()
 
-      void instance.nativeOverlayView.webContents.executeJavaScript(`(() => {
+      void instance.nativeOverlayView.webContents
+        .executeJavaScript(
+          `(() => {
         const overlay = document.getElementById('overlay');
         const chip = document.getElementById('chip');
         const shield = document.getElementById('shield');
@@ -3035,12 +3180,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         shield.style.pointerEvents = 'auto';
         shield.style.cursor = 'not-allowed';
         shield.style.background = 'rgba(2, 6, 23, 0.03)';
-      })()`).catch(() => {})
+      })()`,
+        )
+        .catch(() => {})
       return
     }
 
     // Menu mode: transparent full-page tap-catcher, no visuals
-    void instance.nativeOverlayView.webContents.executeJavaScript(`(() => {
+    void instance.nativeOverlayView.webContents
+      .executeJavaScript(
+        `(() => {
       const overlay = document.getElementById('overlay');
       const chip = document.getElementById('chip');
       const shield = document.getElementById('shield');
@@ -3052,7 +3201,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       shield.style.pointerEvents = 'auto';
       shield.style.cursor = 'default';
       shield.style.background = 'rgba(0, 0, 0, 0.001)';
-    })()`).catch(() => {})
+    })()`,
+      )
+      .catch(() => {})
   }
 
   private getWindowResizable(window: BrowserWindow): boolean {
@@ -3107,9 +3258,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const visibleTabId = tabs.find((tab) => tab.isVisible)?.id ?? null
       this.profileStore.saveWorkspaceState(workspaceId, {
         version: 1,
-        activeTabId: visibleTabId
-          ?? (previous.activeTabId && liveIds.has(previous.activeTabId) ? previous.activeTabId : null)
-          ?? (tabs[0]?.id ?? null),
+        activeTabId:
+          visibleTabId ?? (previous.activeTabId && liveIds.has(previous.activeTabId) ? previous.activeTabId : null) ?? tabs[0]?.id ?? null,
         tabs: tabs.map((tab) => {
           const saved = previousById.get(tab.id)
           return {
@@ -3161,7 +3311,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
     const [width, height] = instance.window.getContentSize()
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
-    instance.pageView.setBounds({ x: 0, y: toolbarHeight, width, height: Math.max(1, height - toolbarHeight) })
+    instance.pageView.setBounds({
+      x: 0,
+      y: toolbarHeight,
+      width,
+      height: Math.max(1, height - toolbarHeight),
+    })
     this.updateNativeOverlayState(instance)
   }
 
@@ -3199,7 +3354,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.layoutAllViews(instance)
 
     if (!instance.window.isDestroyed() && !instance.toolbarView.webContents.isDestroyed()) {
-      instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.FORCE_CLOSE_MENU, { reason })
+      instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.FORCE_CLOSE_MENU, {
+        reason,
+      })
     }
   }
 
@@ -3242,7 +3399,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         mainLog.warn(`[browser-pane] deep-link handling failed: ${result.error ?? 'unknown error'} url=${url}`)
       }
     } catch (error) {
-      mainLog.warn(`[browser-pane] deep-link handling threw, falling back to shell.openExternal: ${error instanceof Error ? error.message : String(error)}`)
+      mainLog.warn(
+        `[browser-pane] deep-link handling threw, falling back to shell.openExternal: ${error instanceof Error ? error.message : String(error)}`,
+      )
       await shell.openExternal(url)
     }
   }
@@ -3304,10 +3463,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         if (VITE_DEV_SERVER_URL) {
           await instance.toolbarView.webContents.loadURL(`${VITE_DEV_SERVER_URL}/browser-toolbar.html?${query}`)
         } else {
-          await instance.toolbarView.webContents.loadFile(
-            join(__dirname, 'renderer/browser-toolbar.html'),
-            { query: { instanceId: instance.id, embedded: embedded ? '1' : '0' } },
-          )
+          await instance.toolbarView.webContents.loadFile(join(__dirname, 'renderer/browser-toolbar.html'), {
+            query: {
+              instanceId: instance.id,
+              embedded: embedded ? '1' : '0',
+            },
+          })
         }
 
         if (attempt > 0) {
@@ -3332,7 +3493,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private async loadToolbarFallback(instance: BrowserInstance, reason: string): Promise<void> {
-    const safeReason = reason.replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch] || ch))
+    const safeReason = reason.replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[ch] || ch)
     const html = `<!doctype html>
 <html>
   <head>
@@ -3363,12 +3524,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       await instance.toolbarView.webContents.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`)
       mainLog.warn(`[browser-pane] Loaded toolbar fallback id=${instance.id}`)
     } catch (error) {
-      mainLog.error(`[browser-pane] Failed to load toolbar fallback id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+      mainLog.error(
+        `[browser-pane] Failed to load toolbar fallback id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   private pushToolbarState(instance: BrowserInstance): void {
@@ -3380,10 +3543,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       canGoBack: instance.canGoBack,
       canGoForward: instance.canGoForward,
       themeColor: instance.themeColor,
-      bookmarked: /^https?:/i.test(instance.currentUrl)
-        && this.profileStore.listBookmarks(instance.workspaceId).some((entry) => entry.url === instance.currentUrl),
+      bookmarked:
+        /^https?:/i.test(instance.currentUrl) &&
+        this.profileStore.listBookmarks(instance.workspaceId).some((entry) => entry.url === instance.currentUrl),
       embedded: instance.embeddedHostWebContentsId !== null,
       toolbarMode: instance.embeddedToolbarMode,
+      muted: instance.pageView.webContents.isAudioMuted(),
     }
     instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
   }
@@ -3395,9 +3560,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // can briefly observe an empty/stale query string during native reloads;
       // the sender identity remains stable and is the authoritative binding.
       if (typeof event?.sender?.id === 'number') {
-        return Array.from(this.instances.values()).find(
-          instance => instance.toolbarView.webContents.id === event.sender.id,
-        )
+        return Array.from(this.instances.values()).find((instance) => instance.toolbarView.webContents.id === event.sender.id)
       }
       return this.instances.get(instanceId)
     }
@@ -3501,9 +3664,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         return
       }
 
-      const changed = !inst.toolbarMenuOpen
-        || inst.toolbarMenuHeight !== normalizedHeight
-        || !inst.toolbarMenuOverlayActive
+      const changed = !inst.toolbarMenuOpen || inst.toolbarMenuHeight !== normalizedHeight || !inst.toolbarMenuOverlayActive
 
       if (!changed) return
 
@@ -3560,7 +3721,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const rest = value.slice('remote:'.length)
     const colon = rest.indexOf(':')
     if (colon === -1) return null
-    return { workspaceId: rest.slice(0, colon), sessionId: rest.slice(colon + 1) }
+    return {
+      workspaceId: rest.slice(0, colon),
+      sessionId: rest.slice(colon + 1),
+    }
   }
 
   /** Replace `remote:${ws}:${sid}` owner-keys with raw `sid` on outbound payloads. */
@@ -3585,8 +3749,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
     const owned = instance.boundSessionId === ownerKey || instance.ownerSessionId === ownerKey
     if (!owned) {
-      throw new CodedError('BROWSER_INSTANCE_NOT_OWNED',
-        `Browser instance "${instanceId}" is not owned by this session.`)
+      throw new CodedError('BROWSER_INSTANCE_NOT_OWNED', `Browser instance "${instanceId}" is not owned by this session.`)
     }
   }
 
@@ -3638,8 +3801,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   /** Main dispatcher. Strongly-typed `switch` over `IBrowserPaneManager` methods. */
   private async dispatchCapability(req: BrowserCapabilityRequest): Promise<unknown> {
     if (!req || req.v !== 1) {
-      throw new CodedError('HANDLER_ERROR',
-        `Unsupported browser capability request shape (v=${(req as { v?: unknown })?.v}).`)
+      throw new CodedError('HANDLER_ERROR', `Unsupported browser capability request shape (v=${(req as { v?: unknown })?.v}).`)
     }
     const ownerKey = this.toOwnerKey(req.workspaceId, req.sessionId)
     const args = req.args ?? []
@@ -3697,10 +3859,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       case 'clearAgentControlForInstance': {
         const [instanceId, sessionId] = args as [string, string | undefined]
         this.requireOwnedInstance(instanceId, ownerKey)
-        return this.clearAgentControlForInstance(
-          instanceId,
-          sessionId !== undefined ? ownerKey : undefined,
-        )
+        return this.clearAgentControlForInstance(instanceId, sessionId !== undefined ? ownerKey : undefined)
       }
 
       // -- Instance-id only ----------------------------------------------------
@@ -3719,7 +3878,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       case 'bindSession': {
         const [instanceId] = args as [string, string]
         this.requireOwnedInstance(instanceId, ownerKey)
-        this.bindSession(instanceId, ownerKey, { workspaceId: req.workspaceId })
+        this.bindSession(instanceId, ownerKey, {
+          workspaceId: req.workspaceId,
+        })
         return undefined
       }
       case 'focus': {
@@ -3766,8 +3927,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
       case 'clickElement': {
         const [instanceId, ref, options] = args as [
-          string, string,
-          { waitFor?: 'none' | 'navigation' | 'network-idle'; timeoutMs?: number } | undefined,
+          string,
+          string,
+          (
+            | {
+                waitFor?: 'none' | 'navigation' | 'network-idle'
+                timeoutMs?: number
+              }
+            | undefined
+          ),
         ]
         this.requireOwnedInstance(instanceId, ownerKey)
         return this.clickElement(instanceId, ref, options)
@@ -3803,9 +3971,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         return this.sendKey(instanceId, keyArgs)
       }
       case 'scroll': {
-        const [instanceId, direction, amount] = args as [
-          string, 'up' | 'down' | 'left' | 'right', number | undefined,
-        ]
+        const [instanceId, direction, amount] = args as [string, 'up' | 'down' | 'left' | 'right', number | undefined]
         this.requireOwnedInstance(instanceId, ownerKey)
         return this.scroll(instanceId, direction, amount)
       }
@@ -3818,8 +3984,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         const [instanceId, expression] = args as [string, string]
         this.requireOwnedInstance(instanceId, ownerKey)
         if (!getAllowRemoteEvaluate()) {
-          throw new CodedError('BROWSER_REMOTE_EVALUATE_BLOCKED',
-            'JavaScript evaluation from remote agents is disabled in this client.')
+          throw new CodedError('BROWSER_REMOTE_EVALUATE_BLOCKED', 'JavaScript evaluation from remote agents is disabled in this client.')
         }
         return this.evaluate(instanceId, expression)
       }
@@ -3870,8 +4035,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         return this.getDownloads(instanceId, options)
       }
       case 'uploadFile':
-        throw new CodedError('BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
-          'File upload from a remote agent is not supported yet. Ask the user to attach the file to the session.')
+        throw new CodedError(
+          'BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
+          'File upload from a remote agent is not supported yet. Ask the user to attach the file to the session.',
+        )
       case 'detectSecurityChallenge': {
         const [instanceId] = args as [string]
         this.requireOwnedInstance(instanceId, ownerKey)
@@ -3904,7 +4071,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.window.focus()
     instance.isVisible = true
     this.emitStateChange(instance)
-
   }
 
   // ---------------------------------------------------------------------------
@@ -3915,11 +4081,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Activate or update the agent control overlay on the browser instance
    * bound to the given session. Called from sessions.ts on browser_* tool_start events.
    */
-  setAgentControl(
-    sessionId: string,
-    meta: { displayName?: string; intent?: string },
-    options?: { workspaceId?: string | null },
-  ): void {
+  setAgentControl(sessionId: string, meta: { displayName?: string; intent?: string }, options?: { workspaceId?: string | null }): void {
     for (const instance of this.instances.values()) {
       if (instance.boundSessionId === sessionId) {
         instance.agentControl = {
@@ -3967,21 +4129,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   clearAgentControlForInstance(instanceId: string, sessionId?: string): { released: boolean; reason?: string } {
     const instance = this.instances.get(instanceId)
     if (!instance) {
-      return { released: false, reason: `Browser window "${instanceId}" not found.` }
+      return {
+        released: false,
+        reason: `Browser window "${instanceId}" not found.`,
+      }
     }
 
     if (sessionId) {
       if (instance.boundSessionId && instance.boundSessionId !== sessionId) {
-        return { released: false, reason: `Browser window "${instanceId}" is locked to session ${instance.boundSessionId}.` }
+        return {
+          released: false,
+          reason: `Browser window "${instanceId}" is locked to session ${instance.boundSessionId}.`,
+        }
       }
 
       if (!instance.boundSessionId && instance.ownerSessionId && instance.ownerSessionId !== sessionId) {
-        return { released: false, reason: `Browser window "${instanceId}" is currently owned by session ${instance.ownerSessionId}.` }
+        return {
+          released: false,
+          reason: `Browser window "${instanceId}" is currently owned by session ${instance.ownerSessionId}.`,
+        }
       }
     }
 
     if (!instance.agentControl?.active) {
-      return { released: false, reason: 'No active agent overlay on the target window.' }
+      return {
+        released: false,
+        reason: 'No active agent overlay on the target window.',
+      }
     }
 
     instance.agentControl = null
@@ -4029,7 +4203,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const urlAtInstall = instance.currentUrl
     instance.themeObserverToken = token
 
-    void instance.pageView.webContents.executeJavaScript(`
+    void instance.pageView.webContents
+      .executeJavaScript(
+        `
       (() => {
         const token = ${JSON.stringify(token)};
         const prefix = ${JSON.stringify(THEME_COLOR_SIGNAL_PREFIX)} + token + ':';
@@ -4136,7 +4312,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         // Fast first color for initial toolbar paint and after SPA route changes
         schedule();
       })()
-    `).catch(() => {
+    `,
+      )
+      .catch(() => {
       if (!allowRetry) return
       setTimeout(() => {
         if (!this.instances.has(instance.id)) return
@@ -4182,9 +4360,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     mainLog.info(`[browser-pane] popup created parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${initialUrl}`)
 
     popupWindow.webContents.on('did-navigate', (_event, urlFromEvent) => {
-      const popupUrl = typeof popupWindow.webContents.getURL === 'function'
-        ? popupWindow.webContents.getURL()
-        : (urlFromEvent || initialUrl)
+      const popupUrl = typeof popupWindow.webContents.getURL === 'function' ? popupWindow.webContents.getURL() : urlFromEvent || initialUrl
       mainLog.info(`[browser-pane] popup did-navigate parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${popupUrl}`)
     })
 
@@ -4357,10 +4533,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         message: localeIsChinese
           ? `${existing ? '更新' : '保存'} ${username} 在 ${new URL(origin).hostname} 的密码？`
           : `${existing ? 'Update' : 'Save'} the password for ${username} on ${new URL(origin).hostname}?`,
-        detail: this.passwordVault.getBackend() === 'icloud-keychain'
-          ? (localeIsChinese ? '密码将安全存入 iCloud 钥匙串，并可在您的设备间同步。' : 'The password will be stored in iCloud Keychain and can sync across your devices.')
-          : (localeIsChinese ? '密码将使用系统密码库加密保存在本机。' : 'The password will be encrypted locally by the operating-system password vault.'),
-        buttons: [localeIsChinese ? (existing ? '更新' : '保存') : (existing ? 'Update' : 'Save'), localeIsChinese ? '暂不' : 'Not now'],
+        detail:
+          this.passwordVault.getBackend() === 'icloud-keychain'
+            ? localeIsChinese
+              ? '密码将安全存入 iCloud 钥匙串，并可在您的设备间同步。'
+              : 'The password will be stored in iCloud Keychain and can sync across your devices.'
+            : localeIsChinese
+              ? '密码将使用系统密码库加密保存在本机。'
+              : 'The password will be encrypted locally by the operating-system password vault.',
+        buttons: [localeIsChinese ? (existing ? '更新' : '保存') : existing ? 'Update' : 'Save', localeIsChinese ? '暂不' : 'Not now'],
         defaultId: 0,
         cancelId: 1,
         noLink: true,
@@ -4381,10 +4562,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return
     }
     if (instance.credentialOfferUrl === instance.currentUrl) return
-    const hasPasswordField = await instance.pageView.webContents.executeJavaScript(
-      `Boolean(document.querySelector('input[type="password"]'))`,
-      true,
-    ).catch(() => false)
+    const hasPasswordField = await instance.pageView.webContents
+      .executeJavaScript(`Boolean(document.querySelector('input[type="password"]'))`, true)
+      .catch(() => false)
     if (!hasPasswordField) return
     const credentials = await this.passwordVault.list(origin)
     if (credentials.length === 0) return
@@ -4408,10 +4588,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   private async fillSavedCredential(instance: BrowserInstance, id: string): Promise<void> {
     const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    const credential = await this.passwordVault.reveal(
-      id,
-      localeIsChinese ? '使用已保存的网页登录信息' : 'Use your saved website login',
-    )
+    const credential = await this.passwordVault.reveal(id, localeIsChinese ? '使用已保存的网页登录信息' : 'Use your saved website login')
     let pageOrigin: string
     try {
       pageOrigin = new URL(instance.pageView.webContents.getURL()).origin
@@ -4430,27 +4607,42 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (host.isDestroyed()) return
     const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
     const credentials = await this.passwordVault.list(origin)
-    const template: MenuItemConstructorOptions[] = credentials.length > 0
+    const template: MenuItemConstructorOptions[] =
+      credentials.length > 0
       ? credentials.map((credential) => ({
           label: credential.username,
           submenu: [
             {
               label: localeIsChinese ? '使用 Touch ID 填充' : 'Fill with Touch ID',
-              click: () => { void this.fillSavedCredential(instance, credential.id) },
+                click: () => {
+                  void this.fillSavedCredential(instance, credential.id)
+                },
             },
             {
               label: localeIsChinese ? '删除' : 'Delete',
-              click: () => { void this.passwordVault.remove(credential.id) },
+                click: () => {
+                  void this.passwordVault.remove(credential.id)
+                },
             },
           ],
         }))
-      : [{ label: localeIsChinese ? '此网站没有已保存的密码' : 'No saved passwords for this site', enabled: false }]
+        : [
+            {
+              label: localeIsChinese ? '此网站没有已保存的密码' : 'No saved passwords for this site',
+              enabled: false,
+            },
+          ]
     template.push(
       { type: 'separator' },
       {
-        label: this.passwordVault.getBackend() === 'icloud-keychain'
-          ? (localeIsChinese ? 'iCloud 钥匙串同步已启用' : 'iCloud Keychain sync enabled')
-          : (localeIsChinese ? '系统加密密码库' : 'System-encrypted password vault'),
+        label:
+          this.passwordVault.getBackend() === 'icloud-keychain'
+            ? localeIsChinese
+              ? 'iCloud 钥匙串同步已启用'
+              : 'iCloud Keychain sync enabled'
+            : localeIsChinese
+              ? '系统加密密码库'
+              : 'System-encrypted password vault',
         enabled: false,
       },
     )
@@ -4458,11 +4650,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private getExtensionActionPath(manifest: any): string | null {
-    const popup = manifest?.action?.default_popup
-      ?? manifest?.browser_action?.default_popup
-      ?? manifest?.page_action?.default_popup
-      ?? manifest?.options_ui?.page
-      ?? manifest?.options_page
+    const popup =
+      manifest?.action?.default_popup ??
+      manifest?.browser_action?.default_popup ??
+      manifest?.page_action?.default_popup ??
+      manifest?.options_ui?.page ??
+      manifest?.options_page
     return typeof popup === 'string' && popup.trim() ? popup.trim() : null
   }
 
@@ -4508,10 +4701,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   private isPotentiallyDangerousDownload(filename: string, mimeType: string): boolean {
     const extension = parsePath(filename).ext.toLowerCase()
-    return DANGEROUS_DOWNLOAD_EXTENSIONS.has(extension)
-      || mimeType === 'application/x-msdownload'
-      || mimeType === 'application/x-apple-diskimage'
-      || mimeType === 'application/vnd.microsoft.portable-executable'
+    return (
+      DANGEROUS_DOWNLOAD_EXTENSIONS.has(extension) ||
+      mimeType === 'application/x-msdownload' ||
+      mimeType === 'application/x-apple-diskimage' ||
+      mimeType === 'application/vnd.microsoft.portable-executable'
+    )
   }
 
   private promptExternalProtocol(instance: BrowserInstance, url: string): void {
@@ -4524,18 +4719,23 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (INTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol) || parsed.protocol === new URL(CRAFT_DEEPLINK_SCHEME_PREFIX).protocol) return
     const host = instance.embeddedHostWindow ?? instance.window
     const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    void dialog.showMessageBox(host, {
+    void dialog
+      .showMessageBox(host, {
       type: 'question',
       title: localeIsChinese ? '打开外部应用' : 'Open external application',
-      message: localeIsChinese ? `允许此网站打开“${parsed.protocol.slice(0, -1)}”应用吗？` : `Allow this site to open the “${parsed.protocol.slice(0, -1)}” application?`,
+        message: localeIsChinese
+          ? `允许此网站打开“${parsed.protocol.slice(0, -1)}”应用吗？`
+          : `Allow this site to open the “${parsed.protocol.slice(0, -1)}” application?`,
       detail: url,
       buttons: [localeIsChinese ? '打开' : 'Open', localeIsChinese ? '取消' : 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       noLink: true,
-    }).then((result) => {
+      })
+      .then((result) => {
       if (result.response === 0) void shell.openExternal(url)
-    }).catch((error) => mainLog.warn(`[browser-pane] external protocol prompt failed: ${String(error)}`))
+      })
+      .catch((error) => mainLog.warn(`[browser-pane] external protocol prompt failed: ${String(error)}`))
   }
 
   private setupSessionObservers(ses: ElectronSession): void {
@@ -4681,7 +4881,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         this.persistDownload(instance, started)
         const host = instance.embeddedHostWindow ?? instance.window
         const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-        void dialog.showMessageBox(host, {
+        void dialog
+          .showMessageBox(host, {
           type: 'warning',
           title: localeIsChinese ? '确认下载' : 'Confirm download',
           message: localeIsChinese ? `“${filename}”可能会更改您的设备。` : `“${filename}” may make changes to your device.`,
@@ -4690,11 +4891,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           defaultId: 0,
           cancelId: 0,
           noLink: true,
-        }).then((result) => {
+          })
+          .then((result) => {
           if (!this.activeDownloads.has(downloadId)) return
           if (result.response === 1) item.resume()
           else item.cancel()
-        }).catch(() => {
+          })
+          .catch(() => {
           if (this.activeDownloads.has(downloadId)) item.cancel()
         })
       }
@@ -4720,25 +4923,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.permissionDecisions.set(`${entry.origin}|${entry.permission}`, entry.allowed)
     }
 
-    const allowWithoutPrompt = new Set([
-      'fullscreen',
-      'pointerLock',
-      'clipboard-sanitized-write',
-    ])
-    const promptable = new Set([
-      'window-management',
-      'notifications',
-      'geolocation',
-      'media',
-      'clipboard-read',
-      'idle-detection',
-    ])
+    const allowWithoutPrompt = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write'])
+    const promptable = new Set(['window-management', 'notifications', 'geolocation', 'media', 'clipboard-read', 'idle-detection'])
     const decisionKey = (origin: string, permission: string) => `${origin}|${permission}`
 
     if (typeof ses.setPermissionCheckHandler === 'function') {
       ses.setPermissionCheckHandler((_webContents, permission: string, requestingOrigin: string, _details: any) => {
-        const allowed = allowWithoutPrompt.has(permission)
-          || this.permissionDecisions.get(decisionKey(requestingOrigin, permission)) === true
+        const allowed =
+          allowWithoutPrompt.has(permission) || this.permissionDecisions.get(decisionKey(requestingOrigin, permission)) === true
         if (!allowed) {
           this.logPermissionDecision('check', permission, requestingOrigin)
         }
@@ -4780,7 +4972,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         const prompt = instance
           ? dialog.showMessageBox(instance.embeddedHostWindow ?? instance.window, options)
           : dialog.showMessageBox(options)
-        void prompt.then((result) => {
+        void prompt
+          .then((result) => {
           const allowed = result.response === 0
           this.permissionDecisions.set(decisionKey(origin, permission), allowed)
           this.profileStore.setPermission({
@@ -4790,7 +4983,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
             updatedAt: Date.now(),
           })
           callback(allowed)
-        }).catch(() => callback(false))
+          })
+          .catch(() => callback(false))
       })
     }
   }
@@ -4815,7 +5009,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.window.on('close', (event) => {
       const explicitDestroy = this.tabLifecycle.isClosing(instance.id)
       const interceptToHide = !explicitDestroy && instance.keepAliveOnWindowClose
-      mainLog.info(`[browser-pane] window close requested id=${instance.id} explicitDestroy=${explicitDestroy} keepAlive=${instance.keepAliveOnWindowClose} interceptToHide=${interceptToHide}`)
+      mainLog.info(
+        `[browser-pane] window close requested id=${instance.id} explicitDestroy=${explicitDestroy} keepAlive=${instance.keepAliveOnWindowClose} interceptToHide=${interceptToHide}`,
+      )
 
       if (interceptToHide) {
         event.preventDefault()
@@ -4902,21 +5098,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const inputType = pointerInput.type || ''
       if (inputType === 'keyUp' && (_input.key === 'Alt' || !_input.alt)) {
         instance.altKeyPressed = false
-      } else if (
-        inputType === 'keyDown'
-        || inputType === 'mouseDown'
-        || inputType === 'pointerDown'
-      ) {
+      } else if (inputType === 'keyDown' || inputType === 'mouseDown' || inputType === 'pointerDown') {
         instance.altKeyPressed = Boolean(_input.alt)
       }
       if (
-        instance.embeddedHostWindow
-        && instance.embeddedToolbarMode === 'floating'
-        && !instance.embeddedToolbarRevealed
-        && instance.isVisible
-        && (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown')
-        && typeof pointerInput.y === 'number'
-        && pointerInput.y <= 12
+        instance.embeddedHostWindow &&
+        instance.embeddedToolbarMode === 'floating' &&
+        !instance.embeddedToolbarRevealed &&
+        instance.isVisible &&
+        (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown') &&
+        typeof pointerInput.y === 'number' &&
+        pointerInput.y <= 12
       ) {
         instance.embeddedToolbarRevealed = true
         this.layoutEmbeddedToolbar(instance)
@@ -4948,33 +5140,67 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         )
       }
       if (params.hasImageContents && params.srcURL) {
-        template.push({
+        template.push(
+          {
           label: localeIsChinese ? '下载图片' : 'Download image',
           click: () => pageWc.downloadURL(params.srcURL),
-        }, { type: 'separator' })
+          },
+          { type: 'separator' },
+        )
       }
       if (params.isEditable) {
         template.push(
-          { label: localeIsChinese ? '剪切' : 'Cut', enabled: params.editFlags.canCut, click: () => pageWc.cut() },
-          { label: localeIsChinese ? '复制' : 'Copy', enabled: params.editFlags.canCopy, click: () => pageWc.copy() },
-          { label: localeIsChinese ? '粘贴' : 'Paste', enabled: params.editFlags.canPaste, click: () => pageWc.paste() },
+          {
+            label: localeIsChinese ? '剪切' : 'Cut',
+            enabled: params.editFlags.canCut,
+            click: () => pageWc.cut(),
+          },
+          {
+            label: localeIsChinese ? '复制' : 'Copy',
+            enabled: params.editFlags.canCopy,
+            click: () => pageWc.copy(),
+          },
+          {
+            label: localeIsChinese ? '粘贴' : 'Paste',
+            enabled: params.editFlags.canPaste,
+            click: () => pageWc.paste(),
+          },
         )
       } else if (params.selectionText) {
-        template.push({ label: localeIsChinese ? '复制' : 'Copy', click: () => pageWc.copy() })
+        template.push({
+          label: localeIsChinese ? '复制' : 'Copy',
+          click: () => pageWc.copy(),
+        })
       } else {
         template.push(
-          { label: localeIsChinese ? '返回' : 'Back', enabled: pageWc.canGoBack(), click: () => pageWc.goBack() },
-          { label: localeIsChinese ? '前进' : 'Forward', enabled: pageWc.canGoForward(), click: () => pageWc.goForward() },
-          { label: localeIsChinese ? '重新加载' : 'Reload', click: () => pageWc.reload() },
+          {
+            label: localeIsChinese ? '返回' : 'Back',
+            enabled: pageWc.canGoBack(),
+            click: () => pageWc.goBack(),
+          },
+          {
+            label: localeIsChinese ? '前进' : 'Forward',
+            enabled: pageWc.canGoForward(),
+            click: () => pageWc.goForward(),
+          },
+          {
+            label: localeIsChinese ? '重新加载' : 'Reload',
+            click: () => pageWc.reload(),
+          },
         )
       }
       if (!app.isPackaged) {
         template.push(
           { type: 'separator' },
-          { label: localeIsChinese ? '检查元素' : 'Inspect element', click: () => pageWc.inspectElement(params.x, params.y) },
+          {
+            label: localeIsChinese ? '检查元素' : 'Inspect element',
+            click: () => pageWc.inspectElement(params.x, params.y),
+          },
         )
       }
-      Menu.buildFromTemplate(template).popup({ window: instance.embeddedHostWindow ?? instance.window })
+      Menu.buildFromTemplate(template).popup({
+        window: instance.embeddedHostWindow ?? instance.window,
+      })
     })
 
     toolbarWc.on('before-input-event', (event, input) => {
@@ -4984,9 +5210,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
       const inputType = input.type || ''
       if (
-        instance.embeddedToolbarMode === 'floating'
-        && !instance.embeddedToolbarRevealed
-        && (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown')
+        instance.embeddedToolbarMode === 'floating' &&
+        !instance.embeddedToolbarRevealed &&
+        (inputType === 'mouseMove' || inputType === 'mouseDown' || inputType === 'pointerDown')
       ) {
         instance.embeddedToolbarRevealed = true
         this.layoutEmbeddedToolbar(instance)
@@ -5004,7 +5230,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('did-navigate', (_event, urlFromEvent) => {
-      const url = typeof pageWc.getURL === 'function' ? pageWc.getURL() : (urlFromEvent || instance.currentUrl)
+      const url = typeof pageWc.getURL === 'function' ? pageWc.getURL() : urlFromEvent || instance.currentUrl
       if (!this.isBrowserEmptyStateUrl(url)) {
         // Navigating the result tab away detaches only the lightweight mirror;
         // the canonical session continues in the main conversation window.
@@ -5038,14 +5264,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('did-navigate-in-page', (_event, urlFromEvent) => {
-      const url = typeof pageWc.getURL === 'function' ? pageWc.getURL() : (urlFromEvent || instance.currentUrl)
+      const url = typeof pageWc.getURL === 'function' ? pageWc.getURL() : urlFromEvent || instance.currentUrl
       const normalized = this.normalizePageState(url, instance.title)
       instance.currentUrl = normalized.url
       instance.title = normalized.title
       instance.canGoBack = pageWc.canGoBack()
       instance.canGoForward = pageWc.canGoForward()
 
-      void this.maybeHandleEmptyStateLaunch(instance, url).then((handled) => {
+      void this.maybeHandleEmptyStateLaunch(instance, url)
+        .then((handled) => {
         if (handled) {
           this.emitStateChange(instance)
           void this.pushToolbarState(instance)
@@ -5060,10 +5287,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         this.recordHistory(instance)
         void this.pushToolbarState(instance)
         this.installThemeObserver(instance)
-        instance.inPageThemeTimer = setTimeout(() => { void this.extractThemeColor(instance) }, 300)
+          instance.inPageThemeTimer = setTimeout(() => {
+            void this.extractThemeColor(instance)
+          }, 300)
         this.reapplyAgentControlVisual(instance)
-      }).catch((error) => {
-        mainLog.warn(`[browser-pane] empty-state launch handling failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+        })
+        .catch((error) => {
+          mainLog.warn(
+            `[browser-pane] empty-state launch handling failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`,
+          )
       })
     })
 
@@ -5163,7 +5395,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
 
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=unsupported_protocol protocol=${parsed.protocol} url=${details.url}`)
+        mainLog.warn(
+          `[browser-pane] window-open denied id=${instance.id} reason=unsupported_protocol protocol=${parsed.protocol} url=${details.url}`,
+        )
         this.promptExternalProtocol(instance, details.url)
         return { action: 'deny' }
       }

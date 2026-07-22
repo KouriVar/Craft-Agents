@@ -30,6 +30,13 @@ describe('tiptap mermaid input helpers', () => {
     expect(source).toBe('xychart-beta\n  x-axis [Jan, Feb]\n  bar [10, 20]')
   })
 
+  it('accepts official advanced diagram sources without fences', () => {
+    expect(extractMermaidSource('mindmap\n  root((CA))\n    Tasks')).toBe('mindmap\n  root((CA))\n    Tasks')
+    expect(extractMermaidSource('architecture-beta\n  group api(cloud)[API]')).toBe('architecture-beta\n  group api(cloud)[API]')
+    expect(extractMermaidSource('C4Context\n  Person(user, "User")')).toBe('C4Context\n  Person(user, "User")')
+    expect(extractMermaidSource('railroad-ebnf-beta\n  expr = term;')).toBe('railroad-ebnf-beta\n  expr = term;')
+  })
+
   it('accepts Mermaid YAML frontmatter before the diagram', () => {
     const source = extractMermaidSource('---\ntitle: Example\n---\ngraph TD\nA-->B')
     expect(source).toBe('---\ntitle: Example\n---\ngraph TD\nA-->B')

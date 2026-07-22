@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { computeCollapsedPagination } from '../useSessionSearch'
+import { computeCollapsedPagination, taskMetadataSearchScore } from '../useSessionSearch'
 import type { SessionMeta } from '@/atoms/sessions'
 
 function makeSession(id: string, opts: Partial<SessionMeta> = {}): SessionMeta {
@@ -65,5 +65,25 @@ describe('computeCollapsedPagination', () => {
 
     expect(result.paginatedItems.map(s => s.id)).toEqual(['a', 'b'])
     expect(result.collapsedGroupsMeta).toEqual([])
+  })
+})
+
+describe('task metadata search', () => {
+  it('matches task goals, checkpoint next steps, and related files', () => {
+    const item = makeSession('task', {
+      taskGoal: '发布桌面客户端',
+      taskCheckpoints: [{
+        id: 'checkpoint-1',
+        createdAt: Date.now(),
+        source: 'auto',
+        outcome: 'completed',
+        summary: '打包流程已经完成',
+        nextSteps: ['上传 GitHub Release'],
+        relatedFiles: ['apps/electron/package.json'],
+      }],
+    })
+    expect(taskMetadataSearchScore(item, 'GitHub Release')).toBeGreaterThan(0)
+    expect(taskMetadataSearchScore(item, 'package.json')).toBeGreaterThan(0)
+    expect(taskMetadataSearchScore(item, '发布桌面客户端')).toBeGreaterThan(0)
   })
 })

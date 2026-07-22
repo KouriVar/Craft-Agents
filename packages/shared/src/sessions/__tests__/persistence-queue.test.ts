@@ -37,6 +37,24 @@ describe('session persistence header conflict helpers', () => {
     expect(getHeaderMetadataSignature(a)).not.toBe(getHeaderMetadataSignature(b))
   })
 
+  it('treats task continuity as externally editable metadata', () => {
+    const a = makeHeader({ taskGoal: 'Ship desktop app', taskPriority: 'high' })
+    const b = makeHeader({
+      taskGoal: 'Ship desktop app',
+      taskPriority: 'high',
+      taskCheckpoints: [{
+        id: 'cp-1',
+        createdAt: 10,
+        source: 'manual',
+        outcome: 'completed',
+        summary: 'Packaging complete',
+      }],
+    })
+
+    expect(getHeaderMetadataSignature(a)).not.toBe(getHeaderMetadataSignature(b))
+    expect(mergeHeaderWithExternalMetadata(a, b).taskCheckpoints).toEqual(b.taskCheckpoints)
+  })
+
   it('merge preserves external metadata while keeping local computed fields', () => {
     const local = makeHeader({
       name: 'Local Name',

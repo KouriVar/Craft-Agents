@@ -63,7 +63,11 @@ describe('BrowserProfileStore', () => {
       totalBytes: 10,
       mimeType: 'application/zip',
     })
-    store.setExtensionPreference('extension-1', { pinned: true, hidden: false, order: 2 })
+    store.setExtensionPreference('extension-1', {
+      pinned: true,
+      hidden: false,
+      order: 2,
+    })
     store.setPermission({
       origin: 'https://example.com',
       permission: 'notifications',
@@ -77,7 +81,10 @@ describe('BrowserProfileStore', () => {
     expect(restored.listBookmarkFolders('workspace-a')).toEqual([expect.objectContaining({ name: 'Research' })])
     expect(restored.listHistory('workspace-a')).toHaveLength(1)
     expect(restored.listDownloads('workspace-a')).toHaveLength(1)
-    expect(restored.getExtensionPreference('extension-1')).toMatchObject({ pinned: true, order: 2 })
+    expect(restored.getExtensionPreference('extension-1')).toMatchObject({
+      pinned: true,
+      order: 2,
+    })
     expect(restored.listPermissions('https://example.com')).toEqual([
       expect.objectContaining({ permission: 'notifications', allowed: false }),
     ])
@@ -87,10 +94,20 @@ describe('BrowserProfileStore', () => {
 
   it('keeps bookmarks when their folder is deleted', () => {
     const { store } = createStore()
-    store.createBookmarkFolder({ id: 'folder-1', workspaceId: 'workspace-a', name: 'Read later', createdAt: 1 })
+    store.createBookmarkFolder({
+      id: 'folder-1',
+      workspaceId: 'workspace-a',
+      name: 'Read later',
+      createdAt: 1,
+    })
     store.addBookmark({
-      id: 'bookmark-1', workspaceId: 'workspace-a', url: 'https://example.com/', title: 'Example',
-      favicon: null, folderId: 'folder-1', createdAt: 2,
+      id: 'bookmark-1',
+      workspaceId: 'workspace-a',
+      url: 'https://example.com/',
+      title: 'Example',
+      favicon: null,
+      folderId: 'folder-1',
+      createdAt: 2,
     })
 
     store.removeBookmarkFolder('workspace-a', 'folder-1')
@@ -124,7 +141,12 @@ describe('BrowserProfileStore', () => {
       version: 1,
       activeTabId: 'tab-2',
       tabs: [
-        { id: 'tab-1', url: 'https://example.com/', title: 'Example' },
+        {
+          id: 'tab-1',
+          url: 'https://example.com/',
+          title: 'Example',
+          pinned: true,
+        },
         { id: 'tab-2', url: 'https://figma.com/', title: 'Figma' },
       ],
       updatedAt: 1,
@@ -133,6 +155,7 @@ describe('BrowserProfileStore', () => {
     const restored = new BrowserProfileStore(filePath).loadWorkspaceState('workspace-a')
     expect(restored.activeTabId).toBe('tab-2')
     expect(restored.tabs).toHaveLength(2)
+    expect(restored.tabs[0]?.pinned).toBe(true)
     expect(restored.updatedAt).toBeGreaterThan(1)
   })
 

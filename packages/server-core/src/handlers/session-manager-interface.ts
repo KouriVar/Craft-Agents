@@ -23,7 +23,7 @@ import type {
   UnreadSummary,
   ShareResult,
 } from '@craft-agent/shared/protocol'
-import type { SessionBundle, DispatchMode } from '@craft-agent/shared/sessions'
+import type { SessionBundle, DispatchMode, TaskCheckpoint, TaskPriority } from '@craft-agent/shared/sessions'
 import type { EventSink } from '../transport'
 
 export interface ISessionManager {
@@ -91,6 +91,20 @@ export interface ISessionManager {
   ): Promise<{ labelId: string } | undefined>
   setSessionProjectId(sessionId: string, projectId: string | null): Promise<void>
   setKanbanColumn(sessionId: string, column: string | null): Promise<void>
+  setTaskDetails(sessionId: string, patch: {
+    goal?: string | null
+    priority?: TaskPriority | null
+    dueAt?: number | null
+    reminderAt?: number | null
+    acknowledgeReminder?: boolean
+    markReminderNotified?: boolean
+  }): Promise<void>
+  createTaskCheckpoint(sessionId: string, summary?: string, options?: {
+    source?: 'auto' | 'manual'
+    outcome?: TaskCheckpoint['outcome']
+    messageId?: string
+  }): Promise<void>
+  deleteTaskCheckpoint(sessionId: string, checkpointId: string): Promise<void>
   setTaskNodeCount(sessionId: string, count: number): Promise<void>
   adoptGeneratedTaskOrchestrator(
     sessionId: string,

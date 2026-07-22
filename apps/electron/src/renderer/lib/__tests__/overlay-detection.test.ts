@@ -19,7 +19,11 @@ describe('hasOpenOverlay', () => {
       handleEscape: () => true,
     })
 
-    ;(globalThis as unknown as { document: { querySelector: (_selector: string) => null } }).document = {
+    ;(
+      globalThis as unknown as {
+        document: { querySelector: (_selector: string) => null }
+      }
+    ).document = {
       querySelector: () => null,
     }
 
@@ -27,7 +31,11 @@ describe('hasOpenOverlay', () => {
   })
 
   it('returns true when an island dialog is open', () => {
-    ;(globalThis as unknown as { document: { querySelector: (selector: string) => object | null } }).document = {
+    ;(
+      globalThis as unknown as {
+        document: { querySelector: (selector: string) => object | null }
+      }
+    ).document = {
       querySelector: (selector: string) => {
         if (selector.includes('[data-ca-island-dialog="true"][data-state="open"]')) {
           return {}
@@ -41,7 +49,11 @@ describe('hasOpenOverlay', () => {
   })
 
   it('returns false when no overlays are open', () => {
-    ;(globalThis as unknown as { document: { querySelector: (_selector: string) => null } }).document = {
+    ;(
+      globalThis as unknown as {
+        document: { querySelector: (_selector: string) => null }
+      }
+    ).document = {
       querySelector: () => null,
     }
 
@@ -64,6 +76,23 @@ describe('detectNativeViewPauseReasons', () => {
   })
 
   it('returns no owners when only non-blocking content is visible', () => {
-    expect(detectNativeViewPauseReasons({ querySelector: () => null } as unknown as Document)).toEqual([])
+    expect(
+      detectNativeViewPauseReasons({
+        querySelector: () => null,
+      } as unknown as Document),
+    ).toEqual([])
+  })
+
+  it('allows navigator-contained menus to keep the browser surface visible', () => {
+    const seenSelectors: string[] = []
+    const root = {
+      querySelector: (selector: string) => {
+        seenSelectors.push(selector)
+        return null
+      },
+    }
+
+    expect(detectNativeViewPauseReasons(root as unknown as Document)).toEqual([])
+    expect(seenSelectors.find((selector) => selector.includes('context-menu-content'))).toContain('data-native-view-passthrough')
   })
 })

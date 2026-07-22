@@ -83,6 +83,11 @@ export interface KanbanTask {
   messageCount?: number
   /** Accrued cost in USD, shown in the footer when available. */
   costUsd?: number
+  /** Long-running task continuity summary shown without opening the chat. */
+  goal?: string
+  priority?: 'low' | 'medium' | 'high'
+  dueAt?: number
+  checkpointSummary?: string
 }
 
 export interface KanbanProject {

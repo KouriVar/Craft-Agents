@@ -8,6 +8,7 @@ export interface PersistedBrowserTab {
   createdAt?: number
   lastAccessedAt?: number
   pageState?: string | null
+  pinned?: boolean
 }
 
 export interface PersistedBrowserWorkspace {

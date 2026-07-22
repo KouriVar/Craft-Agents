@@ -19,6 +19,13 @@ interface HeaderMetadataSignature {
   permissionMode?: string
   hasUnread?: boolean
   lastReadMessageId?: string
+  taskGoal?: string
+  taskPriority?: SessionHeader['taskPriority']
+  taskDueAt?: number
+  taskReminderAt?: number
+  taskReminderAcknowledgedAt?: number
+  taskReminderLastNotifiedAt?: number
+  taskCheckpoints?: SessionHeader['taskCheckpoints']
 }
 
 function getHeaderMetadataSignature(header: SessionHeader): string {
@@ -30,6 +37,13 @@ function getHeaderMetadataSignature(header: SessionHeader): string {
     permissionMode: header.permissionMode,
     hasUnread: header.hasUnread,
     lastReadMessageId: header.lastReadMessageId,
+    taskGoal: header.taskGoal,
+    taskPriority: header.taskPriority,
+    taskDueAt: header.taskDueAt,
+    taskReminderAt: header.taskReminderAt,
+    taskReminderAcknowledgedAt: header.taskReminderAcknowledgedAt,
+    taskReminderLastNotifiedAt: header.taskReminderLastNotifiedAt,
+    taskCheckpoints: header.taskCheckpoints,
   }
   return JSON.stringify(signature)
 }
@@ -44,6 +58,13 @@ function mergeHeaderWithExternalMetadata(localHeader: SessionHeader, diskHeader:
     permissionMode: diskHeader.permissionMode,
     hasUnread: diskHeader.hasUnread,
     lastReadMessageId: diskHeader.lastReadMessageId,
+    taskGoal: diskHeader.taskGoal,
+    taskPriority: diskHeader.taskPriority,
+    taskDueAt: diskHeader.taskDueAt,
+    taskReminderAt: diskHeader.taskReminderAt,
+    taskReminderAcknowledgedAt: diskHeader.taskReminderAcknowledgedAt,
+    taskReminderLastNotifiedAt: diskHeader.taskReminderLastNotifiedAt,
+    taskCheckpoints: diskHeader.taskCheckpoints,
   }
 }
 

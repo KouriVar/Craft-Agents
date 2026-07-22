@@ -2,12 +2,12 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useAppShellContext, useSession } from '@/context/AppShellContext'
+import { useSession } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
 import { ContinueFromHereSection, UsageSection } from './SessionResourcesPopover'
+import { TaskContinuitySection } from './TaskContinuitySection'
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -101,66 +101,22 @@ export function SessionInfoPopover({
 }
 
 export function SessionInfoContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
-  const { t } = useTranslation()
   const session = useSession(sessionId)
-  const { onRenameSession } = useAppShellContext()
-  const [name, setName] = React.useState('')
-  const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  React.useEffect(() => {
-    setName(session?.name || '')
-  }, [session?.name])
-
-  React.useEffect(() => {
-    return () => {
-      if (renameTimeoutRef.current) {
-        clearTimeout(renameTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  const handleNameChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newName = e.target.value
-    setName(newName)
-
-    if (renameTimeoutRef.current) {
-      clearTimeout(renameTimeoutRef.current)
-    }
-
-    renameTimeoutRef.current = setTimeout(() => {
-      const trimmed = newName.trim()
-      if (trimmed) {
-        onRenameSession(sessionId, trimmed)
-      }
-    }, 500)
-  }, [onRenameSession, sessionId])
 
   return (
     <ScrollArea className="h-full min-h-0 [&_[data-slot=scroll-bar]]:w-1.5">
       <div className="min-h-full">
-        <div className="shrink-0 p-3 border-b border-border/50">
-          <label className="text-xs font-medium text-muted-foreground block mb-1.5 select-none">
-            {t("chat.title")}
-          </label>
-          <div className="rounded-lg bg-foreground-2 has-[:focus]:bg-background shadow-minimal transition-colors">
-            <Input
-              value={name}
-              onChange={handleNameChange}
-              placeholder={t("chat.titlePlaceholder")}
-              className="h-9 py-2 text-sm border-0 shadow-none bg-transparent focus-visible:ring-0"
-            />
-          </div>
-        </div>
-        <div className="h-[150px] min-h-[100px] border-b border-border/50">
+        <div className="border-b border-border/50">
           <SessionFilesSection
             sessionId={sessionId}
             sessionFolderPath={sessionFolderPath}
             hideHeader={false}
-            className="h-full min-h-0"
+            autoHeight
           />
         </div>
         {session && (
-          <div className="px-3 pb-3">
+          <div className="px-3 pb-3 pt-3">
+            <TaskContinuitySection session={session} />
             <ContinueFromHereSection session={session} />
             <div className="my-3 h-px bg-border/50" />
             <UsageSection session={session} />

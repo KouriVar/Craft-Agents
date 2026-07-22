@@ -1,23 +1,27 @@
 import * as React from 'react'
-import { renderMermaidSVG } from 'beautiful-mermaid'
 import { Maximize2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { MermaidPreviewOverlay } from '../overlay/MermaidPreviewOverlay'
-import { normalizeMermaidSource } from './mermaid-source'
+import {
+  getMermaidThemeKey,
+  parseMermaidSvgDimensions,
+  readMermaidTheme,
+  renderOfficialMermaid,
+  type MermaidThemeSnapshot,
+} from './mermaid-renderer'
 import { useScrollFade } from './useScrollFade'
 import { useTranslation } from 'react-i18next'
 
 // ============================================================================
 // MarkdownMermaidBlock — renders mermaid code fences as SVG diagrams.
 //
-// Uses beautiful-mermaid to parse flowchart text and produce an SVG string.
+// Uses the full official Mermaid package to produce an SVG string.
 // Falls back to a plain code block if rendering fails (invalid syntax, etc).
 //
-// Theming: Colors are passed as CSS variable references (var(--background),
-// var(--foreground), etc.) so the SVG inherits from the app's theme system
-// via CSS cascade. Theme switches (light/dark, preset changes) apply
-// automatically without re-rendering — the browser resolves the variables.
+// Theming: CA color tokens are resolved to browser colors and passed to Mermaid.
+// Theme switches (light/dark and preset changes) trigger a fresh render because
+// Mermaid writes its theme values directly into the generated SVG.
 //
 // Wide diagrams: Horizontal diagrams (graph LR) with many nodes can become
 // unreadably small when fit to container width. To fix this, we enforce a
@@ -36,14 +40,6 @@ const FADE_SIZE = 32
 // Small overflow threshold — if diagram overflows by less than this, scale to fit
 const SMALL_OVERFLOW_THRESHOLD = 200
 
-/** Parse width/height from an SVG string's root element attributes. */
-function parseSvgDimensions(svgString: string): { width: number; height: number } | null {
-  const widthMatch = svgString.match(/width="(\d+(?:\.\d+)?)"/)
-  const heightMatch = svgString.match(/height="(\d+(?:\.\d+)?)"/)
-  if (!widthMatch?.[1] || !heightMatch?.[1]) return null
-  return { width: parseFloat(widthMatch[1]), height: parseFloat(heightMatch[1]) }
-}
-
 interface MarkdownMermaidBlockProps {
   code: string
   className?: string
@@ -60,29 +56,48 @@ interface MarkdownMermaidBlockProps {
 
 export function MarkdownMermaidBlock({ code, className, showExpandButton = true, tapToOpen = true, minHeight }: MarkdownMermaidBlockProps) {
   const { t } = useTranslation()
-  // Render synchronously — no flash between CodeBlock and SVG.
-  // Colors are CSS variable references so the SVG inherits from the app's theme
-  // via CSS cascade. Theme switches apply automatically without re-rendering.
-  const { svg, error } = React.useMemo(() => {
-    try {
-      return {
-        svg: renderMermaidSVG(normalizeMermaidSource(code), {
-          bg: 'var(--background)',
-          fg: 'var(--foreground)',
-          accent: 'var(--accent)',
-          line: 'var(--foreground-30)',
-          muted: 'var(--muted-foreground)',
-          surface: 'var(--foreground-3)',
-          border: 'var(--foreground-20)',
-          transparent: true,
-          interactive: true,
-        }),
-        error: null,
-      }
-    } catch (err) {
-      return { svg: null, error: err instanceof Error ? err : new Error(String(err)) }
+  const [theme, setTheme] = React.useState<MermaidThemeSnapshot>(() => readMermaidTheme())
+  const themeKey = getMermaidThemeKey(theme)
+  const [{ svg, error, loading }, setRenderState] = React.useState<{
+    svg: string | null
+    error: Error | null
+    loading: boolean
+  }>({ svg: null, error: null, loading: true })
+
+  React.useEffect(() => {
+    const root = document.documentElement
+    let frame = 0
+    const updateTheme = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const next = readMermaidTheme()
+        setTheme((current) => getMermaidThemeKey(current) === getMermaidThemeKey(next) ? current : next)
+      })
     }
-  }, [code])
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [])
+
+  React.useEffect(() => {
+    let cancelled = false
+    setRenderState({ svg: null, error: null, loading: true })
+    void renderOfficialMermaid(code, theme).then((nextSvg) => {
+      if (!cancelled) setRenderState({ svg: nextSvg, error: null, loading: false })
+    }).catch((renderError) => {
+      if (!cancelled) {
+        setRenderState({
+          svg: null,
+          error: renderError instanceof Error ? renderError : new Error(String(renderError)),
+          loading: false,
+        })
+      }
+    })
+    return () => { cancelled = true }
+  }, [code, themeKey])
 
   const [isFullscreen, setIsFullscreen] = React.useState(false)
   const { scrollRef, maskImage } = useScrollFade(FADE_SIZE)
@@ -112,7 +127,7 @@ export function MarkdownMermaidBlock({ code, className, showExpandButton = true,
     if (!svg) return null
     if (!containerWidth) return null
 
-    const dims = parseSvgDimensions(svg)
+    const dims = parseMermaidSvgDimensions(svg)
     if (!dims) return null
 
     // Calculate what height we'd get if we fit to container width
@@ -164,7 +179,17 @@ export function MarkdownMermaidBlock({ code, className, showExpandButton = true,
     }
   }, [svg, containerWidth])
 
-  // On error, fall back to a plain code block showing the mermaid source
+  if (loading) {
+    return (
+      <div
+        className={cn('animate-pulse rounded-[10px] bg-foreground/[0.025]', className)}
+        style={{ minHeight: `${minHeight ?? 180}px` }}
+        aria-label="Rendering Mermaid diagram"
+      />
+    )
+  }
+
+  // On error, fall back to a plain code block showing the Mermaid source.
   if (error) {
     return <CodeBlock code={code} language="mermaid" mode="full" className={className} />
   }

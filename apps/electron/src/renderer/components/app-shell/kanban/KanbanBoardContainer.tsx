@@ -283,6 +283,10 @@ export function KanbanBoardContainer() {
         lastMessageAt: meta.lastMessageAt,
         messageCount: meta.messageCount,
         costUsd: meta.tokenUsage?.costUsd,
+        goal: meta.taskGoal,
+        priority: meta.taskPriority,
+        dueAt: meta.taskDueAt,
+        checkpointSummary: meta.taskCheckpoints?.at(-1)?.summary,
       })
     }
     return result

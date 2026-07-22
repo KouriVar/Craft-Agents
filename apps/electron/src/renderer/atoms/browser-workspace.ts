@@ -1,5 +1,7 @@
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 import type { BrowserInstanceInfo } from '../../shared/types'
+import * as storage from '@/lib/local-storage'
 
 export type BrowserWorkspaceTab = BrowserInstanceInfo
 export type BrowserNavigatorKind = 'tabs' | 'bookmarks' | 'history' | 'downloads'
@@ -11,7 +13,10 @@ export type BrowserNavigatorKind = 'tabs' | 'bookmarks' | 'history' | 'downloads
  * between them without splitting Explore into separate modules.
  */
 export type ExploreMode = 'sessions' | 'browser'
-export const exploreModeAtom = atom<ExploreMode>('sessions')
+export const exploreModeAtom = atomWithStorage<ExploreMode>(
+  storage.getKeyString(storage.KEYS.exploreMode),
+  storage.get<ExploreMode>(storage.KEYS.exploreMode, 'sessions'),
+)
 
 export const BROWSER_NEW_TAB_URL = 'about:blank'
 

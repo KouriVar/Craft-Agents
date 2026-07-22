@@ -17,6 +17,7 @@ import type {
 import type { PermissionMode } from '../agent/mode-types'
 import type { ThinkingLevel } from '../agent/thinking-levels'
 import type { CustomEndpointConfig } from '../config/llm-connections'
+import type { TaskCheckpoint, TaskPriority } from '../sessions/types'
 import type {
   AuthRequest as SharedAuthRequest,
   CredentialInputMode as SharedCredentialInputMode,
@@ -117,6 +118,16 @@ export interface Session {
   taskNodeCount?: number
   /** Tasks Conductor: generate-time draft orchestrator, hidden from the board until adopted by createTask. */
   taskDraft?: boolean
+  /** Long-running task objective and resume metadata. */
+  taskGoal?: string
+  taskPriority?: TaskPriority
+  taskDueAt?: number
+  taskReminderAt?: number
+  taskReminderAcknowledgedAt?: number
+  taskReminderLastNotifiedAt?: number
+  taskCheckpoints?: TaskCheckpoint[]
+  /** Origin metadata for sessions started by an automation. */
+  triggeredBy?: { automationName?: string; event?: string; timestamp?: number }
 }
 
 export interface CreateSessionOptions {
@@ -177,6 +188,13 @@ export interface RemoteSessionTransferPayload {
   sessionStatus?: SessionStatus
   labels?: string[]
   permissionMode?: PermissionMode
+  taskGoal?: string
+  taskPriority?: TaskPriority
+  taskDueAt?: number
+  taskReminderAt?: number
+  taskReminderAcknowledgedAt?: number
+  taskReminderLastNotifiedAt?: number
+  taskCheckpoints?: TaskCheckpoint[]
   summary: string
 }
 
@@ -345,9 +363,17 @@ export interface TaskResultsDto {
   /** All run ids for this task (newest last), for a run picker. */
   runIds: string[]
   /** The most recent verdict (kept for back-compat with single-verdict consumers). */
-  verdict?: { result: 'pass' | 'fail' | 'unparsed'; reason?: string; nodes?: string[] }
+  verdict?: {
+    result: 'pass' | 'fail' | 'unparsed'
+    reason?: string
+    nodes?: string[]
+  }
   /** Every verdict in order (a FAIL→repair loop produces several), for the Results history view. */
-  verdicts?: { result: 'pass' | 'fail' | 'unparsed'; reason?: string; nodes?: string[] }[]
+  verdicts?: {
+    result: 'pass' | 'fail' | 'unparsed'
+    reason?: string
+    nodes?: string[]
+  }[]
   /** Repair-loop accounting: attempts consumed (= count of FAIL verdicts) and the resolved cap. */
   repair?: { used: number; max: number }
   /** Terminal run status recovered from the run-log (completed | failed | stopped | …). */
@@ -373,51 +399,230 @@ export interface PermissionModeState {
 // turnId: Correlation ID from the API's message.id, groups all events in an assistant turn
 export type SessionEvent =
   | { type: 'text_delta'; sessionId: string; delta: string; turnId?: string }
-  | { type: 'text_complete'; sessionId: string; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; timestamp?: number; messageId?: string }
-  | { type: 'tool_start'; sessionId: string; toolName: string; toolUseId: string; toolInput: Record<string, unknown>; toolIntent?: string; toolDisplayName?: string; toolDisplayMeta?: ToolDisplayMeta; turnId?: string; parentToolUseId?: string; timestamp?: number }
-  | { type: 'tool_result'; sessionId: string; toolUseId: string; toolName: string; result: string; resultDetails?: Record<string, unknown>; turnId?: string; parentToolUseId?: string; isError?: boolean; timestamp?: number }
+  | {
+      type: 'text_complete'
+      sessionId: string
+      text: string
+      isIntermediate?: boolean
+      turnId?: string
+      parentToolUseId?: string
+      timestamp?: number
+      messageId?: string
+    }
+  | {
+      type: 'tool_start'
+      sessionId: string
+      toolName: string
+      toolUseId: string
+      toolInput: Record<string, unknown>
+      toolIntent?: string
+      toolDisplayName?: string
+      toolDisplayMeta?: ToolDisplayMeta
+      turnId?: string
+      parentToolUseId?: string
+      timestamp?: number
+    }
+  | {
+      type: 'tool_result'
+      sessionId: string
+      toolUseId: string
+      toolName: string
+      result: string
+      resultDetails?: Record<string, unknown>
+      turnId?: string
+      parentToolUseId?: string
+      isError?: boolean
+      timestamp?: number
+    }
   | { type: 'error'; sessionId: string; error: string; timestamp?: number }
-  | { type: 'typed_error'; sessionId: string; error: TypedError; timestamp?: number }
-  | { type: 'complete'; sessionId: string; tokenUsage?: Session['tokenUsage']; hasUnread?: boolean; backgroundTasksAlive?: boolean }
-  | { type: 'interrupted'; sessionId: string; message?: Message; queuedMessages?: string[] }
-  | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' }
-  | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success'; timestamp?: number }
+  | {
+      type: 'typed_error'
+      sessionId: string
+      error: TypedError
+      timestamp?: number
+    }
+  | {
+      type: 'complete'
+      sessionId: string
+      tokenUsage?: Session['tokenUsage']
+      hasUnread?: boolean
+      backgroundTasksAlive?: boolean
+    }
+  | {
+      type: 'interrupted'
+      sessionId: string
+      message?: Message
+      queuedMessages?: string[]
+    }
+  | {
+      type: 'status'
+      sessionId: string
+      message: string
+      statusType?: 'compacting'
+    }
+  | {
+      type: 'info'
+      sessionId: string
+      message: string
+      statusType?: 'compaction_complete'
+      level?: 'info' | 'warning' | 'error' | 'success'
+      timestamp?: number
+    }
   | { type: 'title_generated'; sessionId: string; title: string }
   | { type: 'title_regenerating'; sessionId: string; isRegenerating: boolean }
   | { type: 'async_operation'; sessionId: string; isOngoing: boolean }
-  | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
-  | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
-  | { type: 'credential_request'; sessionId: string; request: CredentialRequest }
-  | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode; previousPermissionMode?: PermissionMode; transitionDisplay?: string; modeVersion?: number; changedAt?: string; changedBy?: PermissionModeState['changedBy'] }
+  | {
+      type: 'working_directory_changed'
+      sessionId: string
+      workingDirectory: string
+    }
+  | {
+      type: 'permission_request'
+      sessionId: string
+      request: PermissionRequest
+    }
+  | {
+      type: 'credential_request'
+      sessionId: string
+      request: CredentialRequest
+    }
+  | {
+      type: 'permission_mode_changed'
+      sessionId: string
+      permissionMode: PermissionMode
+      previousPermissionMode?: PermissionMode
+      transitionDisplay?: string
+      modeVersion?: number
+      changedAt?: string
+      changedBy?: PermissionModeState['changedBy']
+    }
   | { type: 'plan_submitted'; sessionId: string; message: Message }
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
   | { type: 'labels_changed'; sessionId: string; labels: string[] }
   | { type: 'project_id_changed'; sessionId: string; projectId: string | null }
-  | { type: 'connection_changed'; sessionId: string; connectionSlug: string; supportsBranching?: boolean }
-  | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; turnId?: string; kind?: 'workflow'; workflowId?: string }
-  | { type: 'shell_backgrounded'; sessionId: string; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
-  | { type: 'task_progress'; sessionId: string; toolUseId: string; elapsedSeconds: number; turnId?: string }
-  | { type: 'task_completed'; sessionId: string; taskId: string; status: 'completed' | 'failed' | 'stopped'; outputFile?: string; summary?: string; turnId?: string }
-  | { type: 'workflow_agent_completed'; sessionId: string; workflowId: string; agentId: string; turnId?: string }
+  | {
+      type: 'connection_changed'
+      sessionId: string
+      connectionSlug: string
+      supportsBranching?: boolean
+    }
+  | {
+      type: 'task_backgrounded'
+      sessionId: string
+      toolUseId: string
+      taskId: string
+      intent?: string
+      turnId?: string
+      kind?: 'workflow'
+      workflowId?: string
+    }
+  | {
+      type: 'shell_backgrounded'
+      sessionId: string
+      toolUseId: string
+      shellId: string
+      intent?: string
+      command?: string
+      turnId?: string
+    }
+  | {
+      type: 'task_progress'
+      sessionId: string
+      toolUseId: string
+      elapsedSeconds: number
+      turnId?: string
+    }
+  | {
+      type: 'task_completed'
+      sessionId: string
+      taskId: string
+      status: 'completed' | 'failed' | 'stopped'
+      outputFile?: string
+      summary?: string
+      turnId?: string
+    }
+  | {
+      type: 'workflow_agent_completed'
+      sessionId: string
+      workflowId: string
+      agentId: string
+      turnId?: string
+    }
   | { type: 'shell_killed'; sessionId: string; shellId: string }
-  | { type: 'user_message'; sessionId: string; message: Message; status: 'accepted' | 'queued' | 'processing'; optimisticMessageId?: string }
+  | {
+      type: 'user_message'
+      sessionId: string
+      message: Message
+      status: 'accepted' | 'queued' | 'processing'
+      optimisticMessageId?: string
+    }
   | { type: 'session_flagged'; sessionId: string }
   | { type: 'session_unflagged'; sessionId: string }
   | { type: 'session_archived'; sessionId: string }
   | { type: 'session_unarchived'; sessionId: string }
   | { type: 'name_changed'; sessionId: string; name?: string }
   | { type: 'session_model_changed'; sessionId: string; model: string | null }
-  | { type: 'session_status_changed'; sessionId: string; sessionStatus: SessionStatus }
-  | { type: 'session_metadata_changed'; sessionId: string; changes: Partial<Pick<Session, 'taskNodeCount' | 'kanbanColumn' | 'taskDraft' | 'taskSlug' | 'projectId'>> }
+  | {
+      type: 'session_status_changed'
+      sessionId: string
+      sessionStatus: SessionStatus
+    }
+  | {
+      type: 'session_metadata_changed'
+      sessionId: string
+      changes: Partial<
+        Pick<
+          Session,
+          | 'taskNodeCount'
+          | 'kanbanColumn'
+          | 'taskDraft'
+          | 'taskSlug'
+          | 'projectId'
+          | 'taskGoal'
+          | 'taskPriority'
+          | 'taskDueAt'
+          | 'taskReminderAt'
+          | 'taskReminderAcknowledgedAt'
+          | 'taskReminderLastNotifiedAt'
+          | 'taskCheckpoints'
+        >
+      >
+    }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'session_created'; sessionId: string }
   | { type: 'session_shared'; sessionId: string; sharedUrl: string }
   | { type: 'session_unshared'; sessionId: string }
-  | { type: 'auth_request'; sessionId: string; message: Message; request: SharedAuthRequest }
-  | { type: 'auth_completed'; sessionId: string; requestId: string; success: boolean; cancelled?: boolean; error?: string }
-  | { type: 'source_activated'; sessionId: string; sourceSlug: string; originalMessage: string }
-  | { type: 'usage_update'; sessionId: string; tokenUsage: { inputTokens: number; contextWindow?: number } }
-  | { type: 'message_annotations_updated'; sessionId: string; messageId: string; annotations: AnnotationV1[] }
+  | {
+      type: 'auth_request'
+      sessionId: string
+      message: Message
+      request: SharedAuthRequest
+    }
+  | {
+      type: 'auth_completed'
+      sessionId: string
+      requestId: string
+      success: boolean
+      cancelled?: boolean
+      error?: string
+    }
+  | {
+      type: 'source_activated'
+      sessionId: string
+      sourceSlug: string
+      originalMessage: string
+    }
+  | {
+      type: 'usage_update'
+      sessionId: string
+      tokenUsage: { inputTokens: number; contextWindow?: number }
+    }
+  | {
+      type: 'message_annotations_updated'
+      sessionId: string
+      messageId: string
+      annotations: AnnotationV1[]
+    }
   | { type: 'working_directory_error'; sessionId: string; error: string }
 
 export interface SendMessageOptions {
@@ -454,6 +659,19 @@ export type SessionCommand =
   | { type: 'setLabels'; labels: string[] }
   | { type: 'setProjectId'; projectId: string | null }
   | { type: 'setKanbanColumn'; column: string | null }
+  | {
+      type: 'setTaskDetails'
+      patch: {
+        goal?: string | null
+        priority?: TaskPriority | null
+        dueAt?: number | null
+        reminderAt?: number | null
+        acknowledgeReminder?: boolean
+        markReminderNotified?: boolean
+      }
+    }
+  | { type: 'createTaskCheckpoint'; summary?: string }
+  | { type: 'deleteTaskCheckpoint'; checkpointId: string }
   | { type: 'showInFinder' }
   | { type: 'copyPath' }
   | { type: 'shareToViewer' }
@@ -461,13 +679,22 @@ export type SessionCommand =
   | { type: 'revokeShare' }
   | { type: 'refreshTitle' }
   | { type: 'setConnection'; connectionSlug: string }
-  | { type: 'setPendingPlanExecution'; planPath: string; draftInputSnapshot?: string }
+  | {
+      type: 'setPendingPlanExecution'
+      planPath: string
+      draftInputSnapshot?: string
+    }
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
   | { type: 'clearPendingPlanExecution' }
   | { type: 'addAnnotation'; messageId: string; annotation: AnnotationV1 }
   | { type: 'removeAnnotation'; messageId: string; annotationId: string }
-  | { type: 'updateAnnotation'; messageId: string; annotationId: string; patch: Partial<AnnotationV1> }
+  | {
+      type: 'updateAnnotation'
+      messageId: string
+      annotationId: string
+      patch: Partial<AnnotationV1>
+    }
 
 export interface NewChatActionParams {
   input?: string
@@ -524,7 +751,13 @@ export interface DirectoryListingResult {
   /** Total number of matching child entries before truncation. */
   totalEntries: number
   /** Child entries. Older clients may treat omitted `type` as a directory. */
-  entries: Array<{ name: string; path: string; isSymlink: boolean; type?: 'file' | 'directory'; size?: number }>
+  entries: Array<{
+    name: string
+    path: string
+    isSymlink: boolean
+    type?: 'file' | 'directory'
+    size?: number
+  }>
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +931,12 @@ export interface ExploreBriefSessionInput {
   lastMessageAt?: number
   isProcessing?: boolean
   hasUnread?: boolean
+  taskGoal?: string
+  taskPriority?: TaskPriority
+  taskDueAt?: number
+  taskReminderAt?: number
+  latestCheckpoint?: string
+  nextSteps?: string[]
   /** Server-enriched recent user/assistant context. Never required from clients. */
   recentContext?: string
 }
@@ -818,8 +1057,23 @@ export interface ClaudeOAuthResult {
 // ---------------------------------------------------------------------------
 
 export type TestAutomationAction =
-  | { type: 'prompt'; prompt: string; llmConnection?: string; model?: string; thinkingLevel?: ThinkingLevel }
-  | { type: 'webhook'; url: string; method?: string; headers?: Record<string, string>; bodyFormat?: 'json' | 'form' | 'raw'; body?: unknown; captureResponse?: boolean; auth?: { type: 'basic'; username: string; password: string } | { type: 'bearer'; token: string } }
+  | {
+      type: 'prompt'
+      prompt: string
+      llmConnection?: string
+      model?: string
+      thinkingLevel?: ThinkingLevel
+    }
+  | {
+      type: 'webhook'
+      url: string
+      method?: string
+      headers?: Record<string, string>
+      bodyFormat?: 'json' | 'form' | 'raw'
+      body?: unknown
+      captureResponse?: boolean
+      auth?: { type: 'basic'; username: string; password: string } | { type: 'bearer'; token: string }
+    }
 
 export interface TestAutomationPayload {
   workspaceId: string
@@ -833,8 +1087,21 @@ export interface TestAutomationPayload {
 }
 
 export type TestAutomationActionResult =
-  | { type: 'prompt'; success: boolean; stderr?: string; sessionId?: string; duration: number }
-  | { type: 'webhook'; success: boolean; url: string; statusCode: number; error?: string; duration: number }
+  | {
+      type: 'prompt'
+      success: boolean
+      stderr?: string
+      sessionId?: string
+      duration: number
+    }
+  | {
+      type: 'webhook'
+      success: boolean
+      url: string
+      statusCode: number
+      error?: string
+      duration: number
+    }
 
 export interface TestAutomationResult {
   actions: TestAutomationActionResult[]
@@ -878,6 +1145,10 @@ export interface BrowserInstanceInfo {
   workspaceId?: string | null
   /** Integrated browser toolbar layout. Floating mode is rendered as a native overlay. */
   toolbarMode?: 'fixed' | 'floating'
+  /** Renderer-managed tab pin state, persisted with the browser workspace. */
+  pinned?: boolean
+  /** Whether audio from this page is muted. */
+  muted?: boolean
   /** True after automatic renderer recovery is exhausted and user action is required. */
   crashed?: boolean
   /** Last Chromium renderer termination reason, safe for diagnostics/UI. */
@@ -970,6 +1241,8 @@ export interface BrowserWorkspaceSnapshot {
     pageState?: string | null
     /** Task that owns this tab. Restored tabs re-bind to the same task. */
     ownerSessionId?: string | null
+    /** Pinned tabs remain at the top of the vertical tab list. */
+    pinned?: boolean
   }>
   updatedAt: number
 }
@@ -1006,8 +1279,17 @@ export interface ReadMcpWidgetResourceRequest {
 }
 
 export type ReadMcpWidgetResourceResult =
-  | { ok: true; html: string; mimeType: string; resourceMeta?: Record<string, unknown> }
-  | { ok: false; error: string; code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'not-found' | 'invalid-resource' }
+  | {
+      ok: true
+      html: string
+      mimeType: string
+      resourceMeta?: Record<string, unknown>
+    }
+  | {
+      ok: false
+      error: string
+      code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'not-found' | 'invalid-resource'
+    }
 
 export interface CallMcpWidgetToolRequest {
   sessionId: string
@@ -1019,7 +1301,13 @@ export interface CallMcpWidgetToolRequest {
 
 export type CallMcpWidgetToolResult =
   | { ok: true; result: import('../mcp/mcp-pool.ts').McpToolResult }
-  | { ok: false; error: string; code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'permission-required' | 'permission-denied' | 'tool-failed'; requiresApproval?: boolean; destructive?: boolean }
+  | {
+      ok: false
+      error: string
+      code: 'invalid-request' | 'session-not-found' | 'not-connected' | 'permission-required' | 'permission-denied' | 'tool-failed'
+      requiresApproval?: boolean
+      destructive?: boolean
+    }
 
 // ---------------------------------------------------------------------------
 // Privacy-safe diagnostics

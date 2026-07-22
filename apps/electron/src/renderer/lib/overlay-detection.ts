@@ -47,8 +47,14 @@ const OVERLAY_SELECTORS = [
 const NATIVE_VIEW_PAUSE_SELECTORS: ReadonlyArray<readonly [BrowserNativeViewPauseReason, string]> = [
   ['dialog', '[data-slot="dialog-content"], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'],
   ['drawer', '[data-slot="drawer-content"][data-state="open"], [data-vaul-drawer][data-state="open"]'],
-  ['menu', '[data-slot="dropdown-menu-content"][data-state="open"], [data-slot="context-menu-content"][data-state="open"], [role="menu"][data-state="open"]'],
-  ['popover', '[data-slot="popover-content"][data-state="open"], [data-radix-popper-content-wrapper] > [data-state="open"]:not([role="tooltip"]):not([role="menu"])'],
+  [
+    'menu',
+    '[data-slot="dropdown-menu-content"][data-state="open"]:not([data-native-view-passthrough="true"]), [data-slot="context-menu-content"][data-state="open"]:not([data-native-view-passthrough="true"]), [role="menu"][data-state="open"]:not([data-native-view-passthrough="true"])',
+  ],
+  [
+    'popover',
+    '[data-slot="popover-content"][data-state="open"], [data-radix-popper-content-wrapper] > [data-state="open"]:not([role="tooltip"]):not([role="menu"])',
+  ],
   ['select', '[data-slot="select-content"][data-state="open"]'],
   ['inline-menu', '[data-inline-menu]'],
   ['island-dialog', '[data-ca-island-dialog="true"][data-state="open"]'],

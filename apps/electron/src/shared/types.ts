@@ -21,17 +21,17 @@ import type {
   ContentBadge,
   ToolDisplayMeta,
   AnnotationV1,
-} from '@craft-agent/core/types';
+} from '@craft-agent/core/types'
 
 // Mode types from dedicated subpath export (avoids pulling in SDK)
-import type { PermissionMode } from '@craft-agent/shared/agent/modes';
-export type { PermissionMode };
-export { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes';
+import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+export type { PermissionMode }
+export { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes'
 
 // Thinking level types
-import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
-export type { ThinkingLevel };
-export { THINKING_LEVELS, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels';
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
+export type { ThinkingLevel }
+export { THINKING_LEVELS, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 
 export type {
   CoreMessage as Message,
@@ -45,32 +45,38 @@ export type {
   ContentBadge,
   ToolDisplayMeta,
   AnnotationV1,
-};
+}
 
 // Auth types for onboarding
-import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types';
-import type { AuthType } from '@craft-agent/shared/config/types';
-export type { AuthState, SetupNeeds, AuthType };
+import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types'
+import type { AuthType } from '@craft-agent/shared/config/types'
+export type { AuthState, SetupNeeds, AuthType }
 
 // Credential health types
-import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType } from '@craft-agent/shared/credentials/types';
-export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType };
+import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType } from '@craft-agent/shared/credentials/types'
+export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType }
 
 // Source types for session source selection
-import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
-export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
+import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types'
+export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus }
 
 // Skill types
-import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
-export type { LoadedSkill, SkillMetadata };
+import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types'
+export type { LoadedSkill, SkillMetadata }
 
 // Resource bundle types (cross-workspace export/import)
-import type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult } from '@craft-agent/shared/resources';
-export type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult };
+import type {
+  ExportResourcesOptions,
+  ExportResult,
+  ResourceImportMode,
+  ResourceBundle,
+  ResourceImportResult,
+} from '@craft-agent/shared/resources'
+export type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult }
 
 // LLM connection types
-import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
-export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
+import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config'
+export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings }
 
 // =============================================================================
 // GUI-only types (not used by server/handler code)
@@ -144,13 +150,7 @@ export interface BrowserEmptyStateLaunchResult {
   reason?: string
 }
 
-export type BrowserAskAiStatus =
-  | 'starting'
-  | 'streaming'
-  | 'attention'
-  | 'complete'
-  | 'error'
-  | 'interrupted'
+export type BrowserAskAiStatus = 'starting' | 'streaming' | 'attention' | 'complete' | 'error' | 'interrupted'
 
 /** Privacy-safe projection of a full session for the browser new-tab surface. */
 export interface BrowserAskAiSnapshot {
@@ -179,21 +179,9 @@ export interface BrowserNewTabApi {
 
 export type TransportMode = 'local' | 'remote'
 
-export type TransportConnectionStatus =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'disconnected'
-  | 'failed'
+export type TransportConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed'
 
-export type TransportConnectionErrorKind =
-  | 'auth'
-  | 'protocol'
-  | 'timeout'
-  | 'network'
-  | 'server'
-  | 'unknown'
+export type TransportConnectionErrorKind = 'auth' | 'protocol' | 'timeout' | 'network' | 'server' | 'unknown'
 
 export interface TransportConnectionError {
   kind: TransportConnectionErrorKind
@@ -223,7 +211,7 @@ export interface TransportConnectionState {
 // =============================================================================
 
 // Re-import types for ElectronAPI
-import type { WorkspaceInfo, Workspace, SessionMetadata, StoredAttachment as StoredAttachmentType } from '@craft-agent/core/types';
+import type { WorkspaceInfo, Workspace, SessionMetadata, StoredAttachment as StoredAttachmentType } from '@craft-agent/core/types'
 
 // Import protocol types used by ElectronAPI (they come through the `export *` above,
 // but we need them in scope for the interface definition)
@@ -291,8 +279,16 @@ export interface ElectronAPI {
   getSessionMessages(sessionId: string): Promise<Session | null>
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
-  sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
-  generateExploreBrief(request: import('@craft-agent/shared/protocol').ExploreBriefRequest): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
+  sendMessage(
+    sessionId: string,
+    message: string,
+    attachments?: FileAttachment[],
+    storedAttachments?: StoredAttachmentType[],
+    options?: SendMessageOptions,
+  ): Promise<void>
+  generateExploreBrief(
+    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
+  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
@@ -311,7 +307,13 @@ export interface ElectronAPI {
   listTasks(workspaceId: string): Promise<string[]>
   getTaskResults(workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto>
 
-  respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
+  respondToPermission(
+    sessionId: string,
+    requestId: string,
+    allowed: boolean,
+    alwaysAllow: boolean,
+    options?: PermissionResponseOptions,
+  ): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
 
   // Consolidated session command handler
@@ -331,8 +333,15 @@ export interface ElectronAPI {
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
 
   // Remote session transfer (main-process orchestrated, supports chunked upload)
-  transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>
-  onTransferProgress(callback: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void): () => void
+  transferSessionToWorkspace(
+    sessionId: string,
+    targetWorkspaceId: string,
+    sessionIndex?: number,
+    sessionCount?: number,
+  ): Promise<{ sessionId: string }>
+  onTransferProgress(
+    callback: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void,
+  ): () => void
 
   // Session export/import (cross-workspace transfer)
   exportSession(sessionId: string): Promise<unknown>
@@ -341,21 +350,36 @@ export interface ElectronAPI {
   importRemoteSessionTransfer(targetWorkspaceId: string, payload: RemoteSessionTransferPayload): Promise<ImportRemoteSessionTransferResult>
 
   // Pending plan execution (for reload recovery)
-  getPendingPlanExecution(sessionId: string): Promise<{ planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null>
+  getPendingPlanExecution(sessionId: string): Promise<{
+    planPath: string
+    draftInputSnapshot?: string
+    awaitingCompaction: boolean
+    executionDispatched: boolean
+  } | null>
   // Permission mode reconciliation
   getSessionPermissionModeState(sessionId: string): Promise<PermissionModeState | null>
 
   // Workspace management
   getWorkspaces(): Promise<Workspace[]>
-  createWorkspace(folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }): Promise<Workspace>
+  createWorkspace(
+    folderPath: string,
+    name: string,
+    remoteServer?: { url: string; token: string; remoteWorkspaceId: string },
+  ): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
-  updateWorkspaceRemoteServer(workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }): Promise<{ success: boolean }>
+  updateWorkspaceRemoteServer(
+    workspaceId: string,
+    remoteServer: { url: string; token: string; remoteWorkspaceId: string },
+  ): Promise<{ success: boolean }>
 
   // Server-level workspace operations (for thin client / remote workspace discovery)
   getServerWorkspaces(): Promise<WorkspaceInfo[]>
   createServerWorkspace(name: string): Promise<WorkspaceInfo>
 
-  testRemoteConnection(url: string, token: string): Promise<{
+  testRemoteConnection(
+    url: string,
+    token: string,
+  ): Promise<{
     ok: boolean
     error?: string
     needsWorkspace?: boolean
@@ -387,8 +411,12 @@ export interface ElectronAPI {
   // File operations
   readFile(path: string): Promise<string>
   readWidgetFile(request: import('./widget-runtime').ReadWidgetFileRequest): Promise<import('./widget-runtime').ReadWidgetFileResult>
-  readMcpWidgetResource(request: import('@craft-agent/shared/protocol').ReadMcpWidgetResourceRequest): Promise<import('@craft-agent/shared/protocol').ReadMcpWidgetResourceResult>
-  callMcpWidgetTool(request: import('@craft-agent/shared/protocol').CallMcpWidgetToolRequest): Promise<import('@craft-agent/shared/protocol').CallMcpWidgetToolResult>
+  readMcpWidgetResource(
+    request: import('@craft-agent/shared/protocol').ReadMcpWidgetResourceRequest,
+  ): Promise<import('@craft-agent/shared/protocol').ReadMcpWidgetResourceResult>
+  callMcpWidgetTool(
+    request: import('@craft-agent/shared/protocol').CallMcpWidgetToolRequest,
+  ): Promise<import('@craft-agent/shared/protocol').CallMcpWidgetToolResult>
   /** Read a file as binary data (Uint8Array) */
   readFileBinary(path: string): Promise<Uint8Array>
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */
@@ -400,7 +428,10 @@ export interface ElectronAPI {
   /** Re-read a user-attached file by absolute path (bypasses workspace-dir validation).
    *  Used only by draft hydration for paths the user explicitly picked via OS dialog / drag. */
   readUserAttachment(path: string): Promise<FileAttachment | null>
-  storeAttachment(sessionId: string, attachment: FileAttachment): Promise<import('../../../../packages/core/src/types/index.ts').StoredAttachment>
+  storeAttachment(
+    sessionId: string,
+    attachment: FileAttachment,
+  ): Promise<import('../../../../packages/core/src/types/index.ts').StoredAttachment>
   generateThumbnail(base64: string, mimeType: string): Promise<string | null>
   /** Returns the absolute filesystem path for a File (only works for file-picker / OS-drag Files). */
   getFilePath(file: File): string | null
@@ -450,7 +481,10 @@ export interface ElectronAPI {
   getLatestReleaseVersion(): Promise<string | undefined>
 
   // System warnings (startup checks)
-  getSystemWarnings(): Promise<{ vcredistMissing: boolean; downloadUrl?: string }>
+  getSystemWarnings(): Promise<{
+    vcredistMissing: boolean
+    downloadUrl?: string
+  }>
 
   // Shell operations
   openUrl(url: string): Promise<void>
@@ -489,7 +523,11 @@ export interface ElectronAPI {
   getSetupNeeds(): Promise<SetupNeeds>
   startWorkspaceMcpOAuth(mcpUrl: string): Promise<OAuthResult & { clientId?: string }>
   // Claude OAuth (two-step flow)
-  startClaudeOAuth(): Promise<{ success: boolean; authUrl?: string; error?: string }>
+  startClaudeOAuth(): Promise<{
+    success: boolean
+    authUrl?: string
+    error?: string
+  }>
   exchangeClaudeCode(code: string, connectionSlug: string): Promise<ClaudeOAuthResult>
   hasClaudeOAuthState(): Promise<boolean>
   clearClaudeOAuthState(): Promise<{ success: boolean }>
@@ -499,7 +537,11 @@ export interface ElectronAPI {
   // ChatGPT OAuth (for Codex chatgptAuthTokens mode)
   startChatGptOAuth(connectionSlug: string): Promise<{ success: boolean; error?: string }>
   cancelChatGptOAuth(): Promise<{ success: boolean }>
-  getChatGptAuthStatus(connectionSlug: string): Promise<{ authenticated: boolean; expiresAt?: number; hasRefreshToken?: boolean }>
+  getChatGptAuthStatus(connectionSlug: string): Promise<{
+    authenticated: boolean
+    expiresAt?: number
+    hasRefreshToken?: boolean
+  }>
   chatGptLogout(connectionSlug: string): Promise<{ success: boolean }>
 
   // GitHub Copilot OAuth
@@ -516,7 +558,17 @@ export interface ElectronAPI {
   // Pi provider discovery (main process only — Pi SDK can't run in renderer)
   getPiApiKeyProviders(): Promise<Array<{ key: string; label: string; placeholder: string }>>
   getPiProviderBaseUrl(provider: string): Promise<string | undefined>
-  getPiProviderModels(provider: string): Promise<{ models: Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>; totalCount: number }>
+  getPiProviderModels(provider: string): Promise<{
+    models: Array<{
+      id: string
+      name: string
+      costInput: number
+      costOutput: number
+      contextWindow: number
+      reasoning: boolean
+    }>
+    totalCount: number
+  }>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>
@@ -530,7 +582,11 @@ export interface ElectronAPI {
   openFolderDialog(): Promise<string | null>
 
   // User Preferences
-  readPreferences(): Promise<{ content: string; exists: boolean; path: string }>
+  readPreferences(): Promise<{
+    content: string
+    exists: boolean
+    path: string
+  }>
   writePreferences(content: string): Promise<{ success: boolean; error?: string }>
 
   // Session Drafts (persisted composer state — text + attachment refs)
@@ -553,16 +609,36 @@ export interface ElectronAPI {
   deleteSource(workspaceId: string, sourceSlug: string): Promise<void>
   startSourceOAuth(workspaceId: string, sourceSlug: string): Promise<{ success: boolean; error?: string }>
   saveSourceCredentials(workspaceId: string, sourceSlug: string, credential: string): Promise<void>
-  getSourcePermissionsConfig(workspaceId: string, sourceSlug: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
+  getSourcePermissionsConfig(
+    workspaceId: string,
+    sourceSlug: string,
+  ): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
   getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
-  getDefaultPermissionsConfig(): Promise<{ config: import('@craft-agent/shared/agent').PermissionsConfigFile | null; path: string }>
+  getDefaultPermissionsConfig(): Promise<{
+    config: import('@craft-agent/shared/agent').PermissionsConfigFile | null
+    path: string
+  }>
   getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
 
   // OAuth (server-owned credentials, client-orchestrated flow)
-  performOAuth(args: { sourceSlug: string; sessionId?: string; authRequestId?: string }): Promise<{ success: boolean; error?: string; email?: string }>
+  performOAuth(args: {
+    sourceSlug: string
+    sessionId?: string
+    authRequestId?: string
+  }): Promise<{ success: boolean; error?: string; email?: string }>
   oauthRevoke(sourceSlug: string): Promise<{ success: boolean }>
-  getOAuthApp(provider: 'google'): Promise<{ provider: 'google'; configured: boolean; clientId?: string; hasClientSecret: boolean }>
-  setOAuthApp(input: { provider: 'google'; clientId: string; clientSecret?: string }): Promise<{ provider: 'google'; configured: boolean; clientId?: string; hasClientSecret: boolean }>
+  getOAuthApp(provider: 'google'): Promise<{
+    provider: 'google'
+    configured: boolean
+    clientId?: string
+    hasClientSecret: boolean
+  }>
+  setOAuthApp(input: { provider: 'google'; clientId: string; clientSecret?: string }): Promise<{
+    provider: 'google'
+    configured: boolean
+    clientId?: string
+    hasClientSecret: boolean
+  }>
   deleteOAuthApp(provider: 'google'): Promise<{ success: boolean }>
 
   // Session content search (full-text search via ripgrep)
@@ -587,22 +663,56 @@ export interface ElectronAPI {
   // Plugins
   listPlugins(workspaceId: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry[]>
   getPluginPolicies(workspaceId: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginPolicyConfig>
-  setPluginPolicy(workspaceId: string, pluginName: string, policy: Partial<import('@craft-agent/shared/plugins').PluginToolPolicy>): Promise<import('@craft-agent/shared/plugins').PluginToolPolicy>
+  setPluginPolicy(
+    workspaceId: string,
+    pluginName: string,
+    policy: Partial<import('@craft-agent/shared/plugins').PluginToolPolicy>,
+  ): Promise<import('@craft-agent/shared/plugins').PluginToolPolicy>
   getPluginMcpStatus(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
   getPluginAuthStatus(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').PluginAuthStatus[]>
   diagnosePluginMcp(workspaceId: string, options?: { timeout?: number }): Promise<import('@craft-agent/shared/plugins').PluginMcpStatusFile>
-  installGitPlugin(workspaceId: string, gitUrl: string, options?: { ref?: string; enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  installGitPlugin(
+    workspaceId: string,
+    gitUrl: string,
+    options?: { ref?: string; enabled?: boolean },
+  ): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
   listPluginMarketplaceSources(workspaceId: string): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource[]>
-  addPluginMarketplaceSource(workspaceId: string, input: { name?: string; source: string; ref?: string; sparsePath?: string }): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource>
+  addPluginMarketplaceSource(
+    workspaceId: string,
+    input: { name?: string; source: string; ref?: string; sparsePath?: string },
+  ): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceSource>
   removePluginMarketplaceSource(workspaceId: string, sourceId: string): Promise<void>
-  getPluginMarketplaceCatalog(workspaceId: string, sourceId: string, options?: { refresh?: boolean }): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceCatalog>
-  installMarketplacePlugin(workspaceId: string, marketplaceId: string, pluginName: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
-  connectPluginNativeSource(workspaceId: string, pluginName: string, connectorName: string): Promise<{ sourceSlug: string; created: boolean }>
-  registerLocalPlugin(workspaceId: string, pluginRootPath: string, options?: { enabled?: boolean }): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
-  setPluginEnabled(workspaceId: string, pluginName: string, enabled: boolean): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  getPluginMarketplaceCatalog(
+    workspaceId: string,
+    sourceId: string,
+    options?: { refresh?: boolean },
+  ): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceCatalog>
+  installMarketplacePlugin(
+    workspaceId: string,
+    marketplaceId: string,
+    pluginName: string,
+    options?: { enabled?: boolean },
+  ): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  connectPluginNativeSource(
+    workspaceId: string,
+    pluginName: string,
+    connectorName: string,
+  ): Promise<{ sourceSlug: string; created: boolean }>
+  registerLocalPlugin(
+    workspaceId: string,
+    pluginRootPath: string,
+    options?: { enabled?: boolean },
+  ): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
+  setPluginEnabled(
+    workspaceId: string,
+    pluginName: string,
+    enabled: boolean,
+  ): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry>
   unregisterPlugin(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry | null>
   removeManagedPlugin(workspaceId: string, pluginName: string): Promise<import('@craft-agent/shared/plugins').WorkspacePluginEntry | null>
-  onPluginsChanged(callback: (workspaceId: string, plugins: import('@craft-agent/shared/plugins').WorkspacePluginEntry[]) => void): () => void
+  onPluginsChanged(
+    callback: (workspaceId: string, plugins: import('@craft-agent/shared/plugins').WorkspacePluginEntry[]) => void,
+  ): () => void
 
   // Statuses (workspace-scoped)
   listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
@@ -611,7 +721,10 @@ export interface ElectronAPI {
 
   // Labels (workspace-scoped)
   listLabels(workspaceId: string): Promise<import('@craft-agent/shared/labels').LabelConfig[]>
-  createLabel(workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput): Promise<import('@craft-agent/shared/labels').LabelConfig>
+  createLabel(
+    workspaceId: string,
+    input: import('@craft-agent/shared/labels').CreateLabelInput,
+  ): Promise<import('@craft-agent/shared/labels').LabelConfig>
   deleteLabel(workspaceId: string, labelId: string): Promise<{ stripped: number }>
   onLabelsChanged(callback: (workspaceId: string) => void): () => void
 
@@ -667,7 +780,11 @@ export interface ElectronAPI {
   setRightSidebarFollowSession(enabled: boolean): Promise<void>
   getBrowserOpenMode(): Promise<'sidebar' | 'window'>
   setBrowserOpenMode(value: 'sidebar' | 'window'): Promise<void>
-  startCowartCanvas(request: { projectDir: string; pageId?: string; sessionId?: string }): Promise<{ ok: true; url: string; preload: string } | { ok: false; error: string }>
+  startCowartCanvas(request: {
+    projectDir: string
+    pageId?: string
+    sessionId?: string
+  }): Promise<{ ok: true; url: string; preload: string } | { ok: false; error: string }>
 
   // Power settings
   getKeepAwakeWhileRunning(): Promise<boolean>
@@ -690,8 +807,20 @@ export interface ElectronAPI {
   // RTK token optimization
   getRtkEnabled(): Promise<boolean>
   setRtkEnabled(enabled: boolean): Promise<void>
-  getRtkStatus(opts?: { forceRecheck?: boolean }): Promise<{ installed: boolean; path: string | null; version: string | null }>
-  getRtkGain(): Promise<{ totalCommands: number; totalInput: number; totalOutput: number; totalSaved: number; avgSavingsPct: number; totalTimeMs: number; avgTimeMs: number } | null>
+  getRtkStatus(opts?: { forceRecheck?: boolean }): Promise<{
+    installed: boolean
+    path: string | null
+    version: string | null
+  }>
+  getRtkGain(): Promise<{
+    totalCommands: number
+    totalInput: number
+    totalOutput: number
+    totalSaved: number
+    avgSavingsPct: number
+    totalTimeMs: number
+    avgTimeMs: number
+  } | null>
 
   // Network proxy settings
   getNetworkProxySettings(): Promise<NetworkProxySettings | undefined>
@@ -753,6 +882,7 @@ export interface ElectronAPI {
     setEmbeddedBounds(id: string, bounds: BrowserPaneBounds): Promise<void>
     setEmbeddedVisible(id: string, visible: boolean): Promise<void>
     setEmbeddedToolbarMode(id: string, mode: 'fixed' | 'floating'): Promise<void>
+    setAudioMuted(id: string, muted: boolean): Promise<void>
     loadWorkspaceState(): Promise<BrowserWorkspaceSnapshot>
     saveWorkspaceState(snapshot: BrowserWorkspaceSnapshot): Promise<void>
     listBookmarks(): Promise<BrowserBookmarkEntry[]>
@@ -763,8 +893,16 @@ export interface ElectronAPI {
     createBookmarkFolder(name: string): Promise<BrowserBookmarkFolder>
     renameBookmarkFolder(id: string, name: string): Promise<BrowserBookmarkFolder>
     removeBookmarkFolder(id: string): Promise<void>
-    importBookmarks(): Promise<{ canceled: boolean; imported: number; skipped: number }>
-    exportBookmarks(): Promise<{ canceled: boolean; path?: string; exported: number }>
+    importBookmarks(): Promise<{
+      canceled: boolean
+      imported: number
+      skipped: number
+    }>
+    exportBookmarks(): Promise<{
+      canceled: boolean
+      path?: string
+      exported: number
+    }>
     listHistory(limit?: number): Promise<BrowserHistoryEntry[]>
     removeHistoryEntry(id: string): Promise<void>
     clearHistory(): Promise<void>
@@ -808,13 +946,29 @@ export interface ElectronAPI {
   // Projects (workspace-scoped)
   getProjects(workspaceId: string): Promise<unknown>
   getProject(workspaceId: string, projectIdOrSlug: string): Promise<unknown | null>
-  createProject(workspaceId: string, input: import('@craft-agent/shared/projects/types').CreateProjectInput): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
-  updateProject(workspaceId: string, projectSlug: string, patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  createProject(
+    workspaceId: string,
+    input: import('@craft-agent/shared/projects/types').CreateProjectInput,
+  ): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  updateProject(
+    workspaceId: string,
+    projectSlug: string,
+    patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>,
+  ): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
   getProjectMemory(workspaceId: string, projectSlug: string): Promise<string>
   setProjectMemory(workspaceId: string, projectSlug: string, content: string): Promise<void>
   deleteProject(workspaceId: string, projectSlug: string): Promise<void>
   listProjectAssets(workspaceId: string, projectSlug: string): Promise<unknown>
-  uploadProjectAsset(workspaceId: string, projectSlug: string, input: { filename: string; base64?: string; text?: string; sourcePath?: string }): Promise<import('@craft-agent/shared/projects/types').ProjectAsset>
+  uploadProjectAsset(
+    workspaceId: string,
+    projectSlug: string,
+    input: {
+      filename: string
+      base64?: string
+      text?: string
+      sourcePath?: string
+    },
+  ): Promise<import('@craft-agent/shared/projects/types').ProjectAsset>
   deleteProjectAsset(workspaceId: string, projectSlug: string, filename: string): Promise<void>
   onProjectsChanged(callback: (workspaceId: string, projects: unknown) => void): () => void
 
@@ -828,9 +982,44 @@ export interface ElectronAPI {
   setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
   duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
   deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
-  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string; webhook?: { method: string; url: string; statusCode: number; durationMs: number; attempts?: number; error?: string; responseBody?: string } }>>
+  getAutomationHistory(
+    workspaceId: string,
+    automationId: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      id: string
+      ts: number
+      ok: boolean
+      sessionId?: string
+      prompt?: string
+      error?: string
+      webhook?: {
+        method: string
+        url: string
+        statusCode: number
+        durationMs: number
+        attempts?: number
+        error?: string
+        responseBody?: string
+      }
+    }>
+  >
   getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
-  replayAutomation(workspaceId: string, automationId: string, eventName: string): Promise<{ results: Array<{ type: string; url: string; statusCode: number; success: boolean; error?: string; duration: number }> }>
+  replayAutomation(
+    workspaceId: string,
+    automationId: string,
+    eventName: string,
+  ): Promise<{
+    results: Array<{
+      type: string
+      url: string
+      statusCode: number
+      success: boolean
+      error?: string
+      duration: number
+    }>
+  }>
 
   // Automations change listener
   onAutomationsChanged(callback: (workspaceId: string) => void): () => void
@@ -845,22 +1034,57 @@ export interface ElectronAPI {
   // Messaging gateway — workspaceId is taken from the client handshake (ctx.workspaceId)
   getMessagingConfig(): Promise<{
     enabled: boolean
-    platforms: Record<string, { enabled: boolean; accessMode?: MessagingPlatformAccessMode; owners?: MessagingPlatformOwnerInfo[] } | undefined>
+    platforms: Record<
+      string,
+      | {
+          enabled: boolean
+          accessMode?: MessagingPlatformAccessMode
+          owners?: MessagingPlatformOwnerInfo[]
+        }
+      | undefined
+    >
     runtime: Record<string, MessagingPlatformRuntimeInfo | undefined>
   } | null>
   updateMessagingConfig(config: Record<string, unknown>): Promise<void>
-  testTelegramToken(token: string): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
+  testTelegramToken(token: string): Promise<{
+    success: boolean
+    botName?: string
+    botUsername?: string
+    error?: string
+  }>
   saveTelegramToken(token: string): Promise<void>
-  testLarkCredentials(creds: { appId: string; appSecret: string; domain: 'lark' | 'feishu' }): Promise<{ success: boolean; botName?: string; error?: string }>
+  testLarkCredentials(creds: {
+    appId: string
+    appSecret: string
+    domain: 'lark' | 'feishu'
+  }): Promise<{ success: boolean; botName?: string; error?: string }>
   saveLarkCredentials(creds: { appId: string; appSecret: string; domain: 'lark' | 'feishu' }): Promise<void>
   disconnectMessagingPlatform(platform: string): Promise<void>
   forgetMessagingPlatform(platform: string): Promise<void>
-  getMessagingBindings(): Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean; createdAt: number; accessMode?: MessagingBindingAccessMode; allowedSenderIds?: string[] }>>
+  getMessagingBindings(): Promise<
+    Array<{
+      id: string
+      workspaceId: string
+      sessionId: string
+      platform: string
+      channelId: string
+      threadId?: number
+      channelName?: string
+      enabled: boolean
+      createdAt: number
+      accessMode?: MessagingBindingAccessMode
+      allowedSenderIds?: string[]
+    }>
+  >
   generateMessagingPairingCode(sessionId: string, platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
   /** Telegram supergroup pairing — returns a code typed in the supergroup to capture its chatId. */
   generateMessagingSupergroupCode(platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
   /** Read the workspace's currently paired Telegram supergroup, if any. */
-  getMessagingSupergroup(): Promise<{ chatId: string; title: string; capturedAt: number } | null>
+  getMessagingSupergroup(): Promise<{
+    chatId: string
+    title: string
+    capturedAt: number
+  } | null>
   /** Forget the paired Telegram supergroup (existing topic bindings stay on disk but stop matching). */
   unbindMessagingSupergroup(): Promise<{ success: boolean }>
   unbindMessagingSession(sessionId: string, platform?: string): Promise<void>
@@ -880,13 +1104,20 @@ export interface ElectronAPI {
   getMessagingPlatformAccessMode(platform: string): Promise<MessagingPlatformAccessMode>
   setMessagingPlatformAccessMode(platform: string, mode: MessagingPlatformAccessMode): Promise<{ success: boolean }>
   getMessagingPendingSenders(platform?: string): Promise<MessagingPendingSenderInfo[]>
-  dismissMessagingPendingSender(platform: string, userId: string, opts?: { reason?: MessagingPendingRejectReason; bindingId?: string }): Promise<{ success: boolean }>
+  dismissMessagingPendingSender(
+    platform: string,
+    userId: string,
+    opts?: { reason?: MessagingPendingRejectReason; bindingId?: string },
+  ): Promise<{ success: boolean }>
   allowMessagingPendingSender(
     platform: string,
     userId: string,
     entryKey?: { reason?: MessagingPendingRejectReason; bindingId?: string },
   ): Promise<{ owners: MessagingPlatformOwnerInfo[]; bindingId?: string }>
-  setMessagingBindingAccess(bindingId: string, access: { mode: MessagingBindingAccessMode; allowedSenderIds?: string[] }): Promise<{ success: boolean }>
+  setMessagingBindingAccess(
+    bindingId: string,
+    access: { mode: MessagingBindingAccessMode; allowedSenderIds?: string[] },
+  ): Promise<{ success: boolean }>
   onMessagingPendingChanged(callback: (workspaceId: string) => void): () => void
 }
 
@@ -955,11 +1186,7 @@ export type WeChatUiEvent =
 /**
  * Right sidebar panel types
  */
-export type RightSidebarPanel =
-  | { type: 'files'; path?: string }
-  | { type: 'history' }
-  | { type: 'review' }
-  | { type: 'none' }
+export type RightSidebarPanel = { type: 'files'; path?: string } | { type: 'history' } | { type: 'review' } | { type: 'none' }
 
 /**
  * Session filter options
@@ -1086,37 +1313,21 @@ export type NavigationState =
   | AutomationsNavigationState
   | ProjectsNavigationState
 
-export const isSessionsNavigation = (
-  state: NavigationState
-): state is SessionsNavigationState => state.navigator === 'sessions'
+export const isSessionsNavigation = (state: NavigationState): state is SessionsNavigationState => state.navigator === 'sessions'
 
-export const isSourcesNavigation = (
-  state: NavigationState
-): state is SourcesNavigationState => state.navigator === 'sources'
+export const isSourcesNavigation = (state: NavigationState): state is SourcesNavigationState => state.navigator === 'sources'
 
-export const isSettingsNavigation = (
-  state: NavigationState
-): state is SettingsNavigationState => state.navigator === 'settings'
+export const isSettingsNavigation = (state: NavigationState): state is SettingsNavigationState => state.navigator === 'settings'
 
-export const isSkillsNavigation = (
-  state: NavigationState
-): state is SkillsNavigationState => state.navigator === 'skills'
+export const isSkillsNavigation = (state: NavigationState): state is SkillsNavigationState => state.navigator === 'skills'
 
-export const isPluginsNavigation = (
-  state: NavigationState
-): state is PluginsNavigationState => state.navigator === 'plugins'
+export const isPluginsNavigation = (state: NavigationState): state is PluginsNavigationState => state.navigator === 'plugins'
 
-export const isBrowserNavigation = (
-  state: NavigationState
-): state is BrowserNavigationState => state.navigator === 'browser'
+export const isBrowserNavigation = (state: NavigationState): state is BrowserNavigationState => state.navigator === 'browser'
 
-export const isAutomationsNavigation = (
-  state: NavigationState
-): state is AutomationsNavigationState => state.navigator === 'automations'
+export const isAutomationsNavigation = (state: NavigationState): state is AutomationsNavigationState => state.navigator === 'automations'
 
-export const isProjectsNavigation = (
-  state: NavigationState
-): state is ProjectsNavigationState => state.navigator === 'projects'
+export const isProjectsNavigation = (state: NavigationState): state is ProjectsNavigationState => state.navigator === 'projects'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'browser',
@@ -1201,17 +1412,13 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key === 'plugins') return { navigator: 'plugins', details: null }
   if (key.startsWith('plugins/plugin/')) {
     const pluginName = key.slice(15)
-    return pluginName
-      ? { navigator: 'plugins', details: { type: 'plugin', pluginName } }
-      : { navigator: 'plugins', details: null }
+    return pluginName ? { navigator: 'plugins', details: { type: 'plugin', pluginName } } : { navigator: 'plugins', details: null }
   }
 
   if (key === 'browser') return { navigator: 'browser', details: null }
   if (key.startsWith('browser/tab/')) {
     const tabId = key.slice(12)
-    return tabId
-      ? { navigator: 'browser', details: { type: 'browser-tab', tabId } }
-      : { navigator: 'browser', details: null }
+    return tabId ? { navigator: 'browser', details: { type: 'browser-tab', tabId } } : { navigator: 'browser', details: null }
   }
 
   // Handle automations
@@ -1219,7 +1426,10 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key.startsWith('automations/automation/')) {
     const automationId = key.slice(22)
     if (automationId) {
-      return { navigator: 'automations', details: { type: 'automation', automationId } }
+      return {
+        navigator: 'automations',
+        details: { type: 'automation', automationId },
+      }
     }
     return { navigator: 'automations', details: null }
   }
@@ -1229,7 +1439,10 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key.startsWith('projects/project/')) {
     const projectSlug = key.slice(17)
     if (projectSlug) {
-      return { navigator: 'projects', details: { type: 'project', projectSlug } }
+      return {
+        navigator: 'projects',
+        details: { type: 'project', projectSlug },
+      }
     }
     return { navigator: 'projects', details: null }
   }

@@ -1049,7 +1049,14 @@ export function NavigationProvider({
           url.searchParams.delete(key)
         }
         url.searchParams.set('ws', workspaceSlug)
-        url.searchParams.set('route', routes.view.browser())
+        const savedExploreMode = storage.get<'sessions' | 'browser'>(
+          storage.KEYS.exploreMode,
+          'sessions',
+        )
+        url.searchParams.set(
+          'route',
+          savedExploreMode === 'browser' ? routes.view.browser() : routes.view.allSessions(),
+        )
       }
 
       // Push a new history entry for the workspace switch

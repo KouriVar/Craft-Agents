@@ -64,6 +64,14 @@ export const SESSION_PERSISTENT_FIELDS = [
   'taskNodeId',
   'taskNodeCount',
   'taskDraft',
+  // Long-running task continuity (session-backed tasks)
+  'taskGoal',
+  'taskPriority',
+  'taskDueAt',
+  'taskReminderAt',
+  'taskReminderAcknowledgedAt',
+  'taskReminderLastNotifiedAt',
+  'taskCheckpoints',
 ] as const;
 
 export type SessionPersistentField = typeof SESSION_PERSISTENT_FIELDS[number];
@@ -96,6 +104,21 @@ export interface SessionTokenUsage {
   cacheCreationTokens?: number;
   /** Model's context window size in tokens (from SDK modelUsage) */
   contextWindow?: number;
+}
+
+export type TaskPriority = 'low' | 'medium' | 'high';
+
+/** A compact, durable resume point generated after a turn or saved manually. */
+export interface TaskCheckpoint {
+  id: string;
+  createdAt: number;
+  source: 'auto' | 'manual';
+  outcome: 'completed' | 'interrupted' | 'failed';
+  summary: string;
+  nextSteps?: string[];
+  blockers?: string[];
+  relatedFiles?: string[];
+  messageId?: string;
 }
 
 /**
@@ -224,6 +247,19 @@ export interface SessionConfig {
   taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
   taskDraft?: boolean;
+  /** User-visible objective for this long-running session task. */
+  taskGoal?: string;
+  /** Lightweight priority used by Today and proactive ordering. */
+  taskPriority?: TaskPriority;
+  /** Optional due timestamp in milliseconds. */
+  taskDueAt?: number;
+  /** Optional reminder timestamp in milliseconds. */
+  taskReminderAt?: number;
+  /** Timestamp of the last acknowledged reminder, preventing duplicate notifications. */
+  taskReminderAcknowledgedAt?: number;
+  taskReminderLastNotifiedAt?: number;
+  /** Newest-last task resume points, capped by the server. */
+  taskCheckpoints?: TaskCheckpoint[];
 }
 
 /**
@@ -331,6 +367,13 @@ export interface SessionHeader {
   taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
   taskDraft?: boolean;
+  taskGoal?: string;
+  taskPriority?: TaskPriority;
+  taskDueAt?: number;
+  taskReminderAt?: number;
+  taskReminderAcknowledgedAt?: number;
+  taskReminderLastNotifiedAt?: number;
+  taskCheckpoints?: TaskCheckpoint[];
   // Pre-computed fields for fast list loading
   /** Number of messages in session */
   messageCount: number;
@@ -427,4 +470,11 @@ export interface SessionMetadata {
   taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
   taskDraft?: boolean;
+  taskGoal?: string;
+  taskPriority?: TaskPriority;
+  taskDueAt?: number;
+  taskReminderAt?: number;
+  taskReminderAcknowledgedAt?: number;
+  taskReminderLastNotifiedAt?: number;
+  taskCheckpoints?: TaskCheckpoint[];
 }

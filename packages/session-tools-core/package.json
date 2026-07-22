@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/session-tools-core",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "license": "Apache-2.0",
   "description": "Shared utilities for session-scoped tools (Claude and Codex)",
   "type": "module",
@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "beautiful-mermaid": "*",
+    "linkedom": "*",
+    "mermaid": "*",
     "zod": "^3.23.0",
     "zod-to-json-schema": "^3.25.0",
     "gray-matter": "^4.0.3"

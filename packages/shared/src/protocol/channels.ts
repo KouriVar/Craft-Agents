@@ -411,6 +411,7 @@ export const RPC_CHANNELS = {
     SET_EMBEDDED_BOUNDS: 'browser-pane:set-embedded-bounds',
     SET_EMBEDDED_VISIBLE: 'browser-pane:set-embedded-visible',
     SET_EMBEDDED_TOOLBAR_MODE: 'browser-pane:set-embedded-toolbar-mode',
+    SET_AUDIO_MUTED: 'browser-pane:set-audio-muted',
     LOAD_WORKSPACE_STATE: 'browser-pane:load-workspace-state',
     SAVE_WORKSPACE_STATE: 'browser-pane:save-workspace-state',
     LIST_BOOKMARKS: 'browser-pane:list-bookmarks',

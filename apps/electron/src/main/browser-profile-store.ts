@@ -53,18 +53,19 @@ export class BrowserProfileStore {
   }
 
   listBookmarks(workspaceId: string | null): BrowserBookmarkEntry[] {
-    return this.load().bookmarks
-      .filter((entry) => entry.workspaceId === workspaceId)
+    return this.load()
+      .bookmarks.filter((entry) => entry.workspaceId === workspaceId)
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
   addBookmark(entry: BrowserBookmarkEntry): BrowserBookmarkEntry {
     const profile = this.load()
-    const existing = profile.bookmarks.find(
-      (item) => item.workspaceId === entry.workspaceId && item.url === entry.url,
-    )
+    const existing = profile.bookmarks.find((item) => item.workspaceId === entry.workspaceId && item.url === entry.url)
     if (existing) {
-      Object.assign(existing, entry, { id: existing.id, createdAt: existing.createdAt })
+      Object.assign(existing, entry, {
+        id: existing.id,
+        createdAt: existing.createdAt,
+      })
       this.save()
       return existing
     }
@@ -96,8 +97,8 @@ export class BrowserProfileStore {
   }
 
   listBookmarkFolders(workspaceId: string | null): BrowserBookmarkFolder[] {
-    return this.load().bookmarkFolders
-      .filter((entry) => entry.workspaceId === workspaceId)
+    return this.load()
+      .bookmarkFolders.filter((entry) => entry.workspaceId === workspaceId)
       .sort((a, b) => a.createdAt - b.createdAt || a.name.localeCompare(b.name))
   }
 
@@ -123,9 +124,7 @@ export class BrowserProfileStore {
 
   removeBookmarkFolder(workspaceId: string | null, id: string): void {
     const profile = this.load()
-    profile.bookmarkFolders = profile.bookmarkFolders.filter(
-      (entry) => entry.workspaceId !== workspaceId || entry.id !== id,
-    )
+    profile.bookmarkFolders = profile.bookmarkFolders.filter((entry) => entry.workspaceId !== workspaceId || entry.id !== id)
     for (const bookmark of profile.bookmarks) {
       if (bookmark.workspaceId === workspaceId && bookmark.folderId === id) bookmark.folderId = null
     }
@@ -133,8 +132,8 @@ export class BrowserProfileStore {
   }
 
   listHistory(workspaceId: string | null, limit = 500): BrowserHistoryEntry[] {
-    return this.load().history
-      .filter((entry) => entry.workspaceId === workspaceId)
+    return this.load()
+      .history.filter((entry) => entry.workspaceId === workspaceId)
       .sort((a, b) => b.visitedAt - a.visitedAt)
       .slice(0, Math.max(1, Math.min(2_000, limit)))
   }
@@ -142,10 +141,11 @@ export class BrowserProfileStore {
   recordHistory(entry: BrowserHistoryEntry): void {
     const profile = this.load()
     const recent = profile.history.find(
-      (item) => item.workspaceId === entry.workspaceId
-        && item.tabId === entry.tabId
-        && item.url === entry.url
-        && Math.abs(item.visitedAt - entry.visitedAt) < 10_000,
+      (item) =>
+        item.workspaceId === entry.workspaceId &&
+        item.tabId === entry.tabId &&
+        item.url === entry.url &&
+        Math.abs(item.visitedAt - entry.visitedAt) < 10_000,
     )
     if (recent) {
       Object.assign(recent, entry, { id: recent.id })
@@ -172,8 +172,8 @@ export class BrowserProfileStore {
   }
 
   listDownloads(workspaceId: string | null, limit = 500): BrowserDownloadRecord[] {
-    return this.load().downloads
-      .filter((entry) => entry.workspaceId === workspaceId)
+    return this.load()
+      .downloads.filter((entry) => entry.workspaceId === workspaceId)
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, Math.max(1, Math.min(2_000, limit)))
   }
@@ -215,15 +215,22 @@ export class BrowserProfileStore {
   }
 
   getExtensionPreference(id: string): StoredExtensionPreference {
-    return this.load().extensionPreferences.find((entry) => entry.id === id)
-      ?? { id, pinned: false, hidden: false, order: Number.MAX_SAFE_INTEGER }
+    return (
+      this.load().extensionPreferences.find((entry) => entry.id === id) ?? {
+        id,
+        pinned: false,
+        hidden: false,
+        order: Number.MAX_SAFE_INTEGER,
+      }
+    )
   }
 
   setExtensionPreference(id: string, preference: Partial<Omit<StoredExtensionPreference, 'id'>>): void {
     const profile = this.load()
     const existing = profile.extensionPreferences.find((entry) => entry.id === id)
     if (existing) Object.assign(existing, preference)
-    else profile.extensionPreferences.push({
+    else
+      profile.extensionPreferences.push({
       id,
       pinned: preference.pinned ?? false,
       hidden: preference.hidden ?? false,
@@ -239,16 +246,14 @@ export class BrowserProfileStore {
   }
 
   listPermissions(origin?: string): BrowserPermissionEntry[] {
-    return this.load().permissions
-      .filter((entry) => !origin || entry.origin === origin)
+    return this.load()
+      .permissions.filter((entry) => !origin || entry.origin === origin)
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   setPermission(entry: BrowserPermissionEntry): void {
     const profile = this.load()
-    const existing = profile.permissions.find(
-      (item) => item.origin === entry.origin && item.permission === entry.permission,
-    )
+    const existing = profile.permissions.find((item) => item.origin === entry.origin && item.permission === entry.permission)
     if (existing) Object.assign(existing, entry)
     else profile.permissions.push(entry)
     this.save()
@@ -270,11 +275,13 @@ export class BrowserProfileStore {
 
   saveWorkspaceState(workspaceId: string, snapshot: BrowserWorkspaceSnapshot): void {
     const seen = new Set<string>()
-    const tabs = snapshot.tabs.filter((tab) => {
+    const tabs = snapshot.tabs
+      .filter((tab) => {
       if (!tab || typeof tab.id !== 'string' || typeof tab.url !== 'string' || seen.has(tab.id)) return false
       seen.add(tab.id)
       return true
-    }).map((tab) => ({
+      })
+      .map((tab) => ({
       id: tab.id,
       url: tab.url,
       title: typeof tab.title === 'string' ? tab.title : tab.url,
@@ -283,10 +290,9 @@ export class BrowserProfileStore {
       lastAccessedAt: tab.lastAccessedAt,
       pageState: tab.pageState ?? null,
       ownerSessionId: typeof tab.ownerSessionId === 'string' ? tab.ownerSessionId : null,
+        pinned: tab.pinned === true,
     }))
-    const activeTabId = snapshot.activeTabId && seen.has(snapshot.activeTabId)
-      ? snapshot.activeTabId
-      : (tabs[0]?.id ?? null)
+    const activeTabId = snapshot.activeTabId && seen.has(snapshot.activeTabId) ? snapshot.activeTabId : (tabs[0]?.id ?? null)
     this.load().browserWorkspaces[workspaceId] = {
       version: 1,
       activeTabId,
@@ -304,7 +310,10 @@ export class BrowserProfileStore {
         this.profile = {
           version: 3,
           bookmarks: Array.isArray(parsed.bookmarks)
-            ? parsed.bookmarks.map((entry) => ({ ...entry, folderId: entry.folderId ?? null }))
+            ? parsed.bookmarks.map((entry) => ({
+                ...entry,
+                folderId: entry.folderId ?? null,
+              }))
             : [],
           bookmarkFolders: Array.isArray(parsed.bookmarkFolders) ? parsed.bookmarkFolders : [],
           history: Array.isArray(parsed.history) ? parsed.history : [],
@@ -312,9 +321,7 @@ export class BrowserProfileStore {
           extensionPaths: Array.isArray(parsed.extensionPaths) ? parsed.extensionPaths : [],
           extensionPreferences: Array.isArray(parsed.extensionPreferences) ? parsed.extensionPreferences : [],
           permissions: Array.isArray(parsed.permissions) ? parsed.permissions : [],
-          browserWorkspaces: parsed.browserWorkspaces && typeof parsed.browserWorkspaces === 'object'
-            ? parsed.browserWorkspaces
-            : {},
+          browserWorkspaces: parsed.browserWorkspaces && typeof parsed.browserWorkspaces === 'object' ? parsed.browserWorkspaces : {},
         }
         return this.profile
       }
@@ -337,7 +344,10 @@ export class BrowserProfileStore {
     const profile = this.load()
     mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 })
     const temporaryPath = `${this.filePath}.tmp`
-    writeFileSync(temporaryPath, JSON.stringify(profile, null, 2), { encoding: 'utf8', mode: 0o600 })
+    writeFileSync(temporaryPath, JSON.stringify(profile, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
     renameSync(temporaryPath, this.filePath)
     chmodSync(this.filePath, 0o600)
   }
