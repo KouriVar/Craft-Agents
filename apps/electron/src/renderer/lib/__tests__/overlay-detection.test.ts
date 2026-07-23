@@ -6,7 +6,11 @@ const originalDocument = globalThis.document
 
 afterEach(() => {
   setDismissibleLayerBridge(null)
-  ;(globalThis as unknown as { document: Document | undefined }).document = originalDocument
+  if (originalDocument === undefined) {
+    Reflect.deleteProperty(globalThis, 'document')
+  } else {
+    ;(globalThis as unknown as { document: Document }).document = originalDocument
+  }
 })
 
 describe('hasOpenOverlay', () => {

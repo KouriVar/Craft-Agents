@@ -125,6 +125,7 @@ export default [
           'shadow-thin',
           'shadow-middle',
           'shadow-strong',
+          'shadow-dragging',
           'shadow-panel-focused',
           'shadow-modal-small',
           'shadow-bottom-border',
@@ -151,7 +152,6 @@ export default [
       'src/renderer/components/ui/sortable-list.tsx',
       'src/main/browser-pane-manager.ts',
       'src/shared/browser-live-fx.ts',
-      'src/renderer/components/KeyboardShortcutsDialog.tsx',
       'src/renderer/playground/**/*.{ts,tsx}',
     ],
     rules: {

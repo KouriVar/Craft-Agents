@@ -15,21 +15,13 @@ import { tmpdir } from 'os'
 import type { RpcServer, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { RPC_CHANNELS } from '../../../shared/types'
+import { mockElectronModule } from '../../../test/mock-electron'
 
 // ---------------------------------------------------------------------------
 // Electron mock (needed by transitive imports)
 // ---------------------------------------------------------------------------
 
-mock.module('electron', () => ({
-  app: { isPackaged: false, getAppPath: () => '/', quit: () => {}, dock: { setIcon: () => {}, setBadge: () => {} } },
-  nativeTheme: { shouldUseDarkColors: false },
-  nativeImage: { createFromPath: () => ({ isEmpty: () => true }), createFromDataURL: () => ({}) },
-  dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }), showMessageBox: async () => ({ response: 0 }) },
-  shell: { openExternal: async () => {}, openPath: async () => '', showItemInFolder: () => {} },
-  BrowserWindow: { fromWebContents: () => null, getFocusedWindow: () => null, getAllWindows: () => [] },
-  Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
-  session: {},
-}))
+mockElectronModule()
 
 // ---------------------------------------------------------------------------
 // Test helpers

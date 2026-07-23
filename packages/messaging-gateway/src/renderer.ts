@@ -36,7 +36,7 @@ import type {
 
 /**
  * Build the per-call options bag from a binding. Currently only `threadId`
- * (Telegram supergroup forum topic) flows through. WhatsApp and DMs leave
+ * (a thread within a channel) flows through. Channels without threading leave
  * `threadId` undefined, which the adapters' `threadParams()` helper turns
  * into a no-op spread.
  */
@@ -177,10 +177,6 @@ export class Renderer {
     // can't be swallowed by mode state.
     if (event.type === 'permission_request') {
       await this.handlePermissionRequest(event, binding, adapter, this.getState(binding.id))
-      return
-    }
-    if (event.type === 'credential_request') {
-      await this.handleCredentialRequest(binding, adapter)
       return
     }
     if (event.type === 'plan_submitted') {
@@ -400,7 +396,7 @@ export class Renderer {
           // status in place rather than editing to an empty string — avoids
           // Telegram "message is not modified" errors and keeps a trace.
         } else if (finalText) {
-          // Adapter can't edit (WhatsApp) — send one message at the end.
+          // Adapter can't edit messages — send one message at the end.
           await this.sendText(adapter, binding, finalText)
         }
         this.resetRun(state)
@@ -517,16 +513,6 @@ export class Renderer {
       state.lastEditedLength = 0
     }
 
-    if (binding.platform === 'whatsapp') {
-      await adapter.sendText(
-        binding.channelId,
-        `⏸ Permission required: ${request.description}
-Approve it in the desktop app to continue.`,
-        bindingOpts(binding),
-      )
-      return
-    }
-
     if (binding.config.approvalChannel === 'chat' && adapter.capabilities.inlineButtons) {
       const text = formatPermissionText(request)
       const buttons: InlineButton[] = [
@@ -545,37 +531,15 @@ Approve in the desktop app to continue.`,
     }
   }
 
-  private async handleCredentialRequest(
-    binding: ChannelBinding,
-    adapter: PlatformAdapter,
-  ): Promise<void> {
-    if (binding.platform !== 'whatsapp') return
-    await adapter.sendText(
-      binding.channelId,
-      '🔐 Credentials are required to continue. Open the desktop app to review and submit them securely.',
-      bindingOpts(binding),
-    )
-  }
-
   private async handlePlanSubmitted(
     event: SessionEvent,
     binding: ChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
-    // WhatsApp: no interactive buttons yet — keep the generic pointer.
-    if (binding.platform === 'whatsapp') {
-      await adapter.sendText(
-        binding.channelId,
-        '📝 A plan is ready for review. Open the desktop app to inspect and approve it.',
-        bindingOpts(binding),
-      )
-      return
-    }
-
-    // Telegram + Lark both support inline buttons through the same
-    // `sendButtons` contract; either gets the rich plan card. Anything else
-    // is treated like WhatsApp above and gated out earlier.
-    if (binding.platform !== 'telegram' && binding.platform !== 'lark') return
+    // Only platforms with inline-button support get the rich plan card.
+    // Lark supports it through the `sendButtons` contract; anything else is
+    // left to the desktop app.
+    if (binding.platform !== 'lark') return
 
     // Token registry is optional for backwards compatibility; without it we
     // degrade to the generic pointer so the bot still sees *something*.

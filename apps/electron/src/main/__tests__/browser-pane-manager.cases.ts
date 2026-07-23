@@ -18,6 +18,7 @@ const mockMenuBuild = mock((_template: unknown[]) => ({ popup: mockMenuPopup }))
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
   let currentUrl = 'about:blank'
+  let audioMuted = false
   return {
     id: nextWebContentsId++,
     userAgent: 'Mock Chrome Electron/99.0.0',
@@ -52,6 +53,10 @@ function createMockWebContents() {
     stop: mock(() => {}),
     setUserAgent: mock(() => {}),
     setBackgroundColor: mock(() => {}),
+    isAudioMuted: mock(() => audioMuted),
+    setAudioMuted: mock((muted: boolean) => {
+      audioMuted = muted
+    }),
     capturePage: mock(async () => {
       const img = {
         isEmpty: () => false,
@@ -171,81 +176,92 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
   return win
 }
 
-mock.module('electron', () => ({
-  app: {
-    getPath: mock((name: string) => name === 'downloads' ? '/tmp/mock-downloads' : `/tmp/mock-${name}`),
-    getLocale: mock(() => 'en-US'),
-    isPackaged: false,
-  },
-  BrowserWindow: class MockBrowserWindow {
-    webContents: any
-    constructor(opts?: any) {
-      const win = createMockWindow(opts)
-      this.webContents = win.webContents
-      Object.assign(this, win)
-    }
-  },
-  WebContentsView: class MockWebContentsView {
-    webContents: any
-    constructor(_opts?: any) {
-      const view = createMockWebContentsView()
-      this.webContents = view.webContents
-      Object.assign(this, view)
-    }
-  },
-  ipcMain: {
-    handle: mockIpcMainHandle,
-    on: mock(() => {}),
-  },
-  dialog: {
-    showMessageBox: mock(async () => ({ response: 1 })),
-  },
-  clipboard: {
-    writeText: mock((_value: string) => {}),
-  },
-  safeStorage: {
-    isEncryptionAvailable: mock(() => true),
-    encryptString: mock((value: string) => Buffer.from(value)),
-    decryptString: mock((value: Buffer) => value.toString('utf8')),
-  },
-  systemPreferences: {
-    canPromptTouchID: mock(() => false),
-    promptTouchID: mock(async () => {}),
-  },
-  net: {
-    fetch: mock(async () => { throw new Error('not implemented in test') }),
-  },
-  Menu: {
-    buildFromTemplate: mockMenuBuild,
-  },
-  nativeTheme: {
-    shouldUseDarkColors: false,
-  },
-  shell: {
-    openExternal: mockShellOpenExternal,
-    openPath: mock(async () => ''),
-    showItemInFolder: mock(() => {}),
-  },
-  session: {
-    fromPartition: mock(() => ({
-      flushStorageData: mock(async () => {}),
-      setPermissionCheckHandler: mock(() => {}),
-      setPermissionRequestHandler: mock(() => {}),
-      webRequest: {
-        onBeforeRequest: mock((_cb: any) => {}),
-        onCompleted: mock((_cb: any) => {}),
-        onErrorOccurred: mock((_cb: any) => {}),
-      },
-      on: mock((_event: string, _cb: any) => {}),
-      extensions: {
-        getAllExtensions: mock(() => []),
-        getExtension: mock(() => null),
-        loadExtension: mock(async () => ({ id: 'mock-extension', name: 'Mock', version: '1.0.0', path: '/tmp/mock-extension' })),
-        removeExtension: mock(() => {}),
-      },
-    })),
-  },
-}))
+import { createElectronTestMock } from '../../test/mock-electron'
+
+mock.module('electron', () =>
+  createElectronTestMock({
+    app: {
+      getPath: mock((name: string) => (name === 'downloads' ? '/tmp/mock-downloads' : `/tmp/mock-${name}`)),
+      getLocale: mock(() => 'en-US'),
+      isPackaged: false,
+    },
+    BrowserWindow: class MockBrowserWindow {
+      webContents: any
+      constructor(opts?: any) {
+        const win = createMockWindow(opts)
+        this.webContents = win.webContents
+        Object.assign(this, win)
+      }
+    },
+    WebContentsView: class MockWebContentsView {
+      webContents: any
+      constructor(_opts?: any) {
+        const view = createMockWebContentsView()
+        this.webContents = view.webContents
+        Object.assign(this, view)
+      }
+    },
+    ipcMain: {
+      handle: mockIpcMainHandle,
+      on: mock(() => {}),
+    },
+    dialog: {
+      showMessageBox: mock(async () => ({ response: 1 })),
+    },
+    clipboard: {
+      writeText: mock((_value: string) => {}),
+    },
+    safeStorage: {
+      isEncryptionAvailable: mock(() => true),
+      encryptString: mock((value: string) => Buffer.from(value)),
+      decryptString: mock((value: Buffer) => value.toString('utf8')),
+    },
+    systemPreferences: {
+      canPromptTouchID: mock(() => false),
+      promptTouchID: mock(async () => {}),
+    },
+    net: {
+      fetch: mock(async () => {
+        throw new Error('not implemented in test')
+      }),
+    },
+    Menu: {
+      buildFromTemplate: mockMenuBuild,
+    },
+    nativeTheme: {
+      shouldUseDarkColors: false,
+    },
+    shell: {
+      openExternal: mockShellOpenExternal,
+      openPath: mock(async () => ''),
+      showItemInFolder: mock(() => {}),
+    },
+    session: {
+      fromPartition: mock(() => ({
+        flushStorageData: mock(async () => {}),
+        setPermissionCheckHandler: mock(() => {}),
+        setPermissionRequestHandler: mock(() => {}),
+        webRequest: {
+          onBeforeRequest: mock((_cb: any) => {}),
+          onCompleted: mock((_cb: any) => {}),
+          onErrorOccurred: mock((_cb: any) => {}),
+        },
+        on: mock((_event: string, _cb: any) => {}),
+        extensions: {
+          getAllExtensions: mock(() => []),
+          getExtension: mock(() => null),
+          loadExtension: mock(async () => ({
+            id: 'mock-extension',
+            name: 'Mock',
+            version: '1.0.0',
+            path: '/tmp/mock-extension',
+          })),
+          removeExtension: mock(() => {}),
+        },
+      })),
+    },
+  }),
+)
 
 mock.module('../logger', () => {
   const stubLog = { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} }
@@ -1131,12 +1147,13 @@ describe('BrowserPaneManager', () => {
         url: 'https://example.com',
         title: 'Example',
         isLoading: false,
-      canGoBack: true,
-      canGoForward: false,
-      themeColor: '#123456',
-      bookmarked: false,
-      embedded: false,
-      toolbarMode: 'fixed',
+        canGoBack: true,
+        canGoForward: false,
+        themeColor: '#123456',
+        bookmarked: false,
+        embedded: false,
+        toolbarMode: 'fixed',
+        muted: false,
       },
     ])
   })
@@ -1165,12 +1182,13 @@ describe('BrowserPaneManager', () => {
         url: 'https://craft.do',
         title: 'Craft',
         isLoading: true,
-      canGoBack: true,
-      canGoForward: true,
-      themeColor: '#654321',
-      bookmarked: false,
-      embedded: false,
-      toolbarMode: 'fixed',
+        canGoBack: true,
+        canGoForward: true,
+        themeColor: '#654321',
+        bookmarked: false,
+        embedded: false,
+        toolbarMode: 'fixed',
+        muted: false,
       },
     ])
   })

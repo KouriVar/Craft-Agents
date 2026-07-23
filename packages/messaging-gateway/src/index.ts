@@ -1,16 +1,12 @@
 /**
  * @craft-agent/messaging-gateway
  *
- * Messaging gateway for Craft Agent — Telegram & WhatsApp.
+ * Generic multi-adapter messaging gateway for Craft Agent. Ships first-party
+ * WeChat & Lark adapters; new platforms plug in via the PlatformAdapter
+ * interface + Registry without changes to the core.
  */
 
 export { MessagingGateway, type GatewayOptions } from './gateway'
-export { TelegramAdapter } from './adapters/telegram/index'
-export {
-  WhatsAppAdapter,
-  type WhatsAppConfig,
-  type WhatsAppEvent,
-} from './adapters/whatsapp/index'
 export { BindingStore } from './binding-store'
 export { ConfigStore } from './config-store'
 export { PairingCodeManager, PAIRING_TTL_MS, PAIRING_RATE_LIMIT_PER_MINUTE } from './pairing'
@@ -21,6 +17,8 @@ export { Renderer } from './renderer'
 
 export type {
   PlatformType,
+  BuiltinPlatform,
+  PlatformConfigEntry,
   PlatformAdapter,
   PlatformConfig,
   AdapterCapabilities,
@@ -41,6 +39,8 @@ export type {
 export {
   DEFAULT_BINDING_CONFIG,
   DEFAULT_MESSAGING_CONFIG,
+  BUILTIN_PLATFORMS,
+  isBuiltinPlatform,
   getDefaultBindingConfig,
   normalizeBindingConfig,
 } from './types'

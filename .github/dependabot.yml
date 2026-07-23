@@ -1,0 +1,106 @@
+# Dependabot configuration for Craft Agents
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+updates:
+  # Root package.json (devDependencies + dependencies)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    groups:
+      # Group all @tiptap updates together to reduce PR noise
+      tiptap:
+        patterns:
+          - "@tiptap/*"
+      # Group all @radix-ui updates together
+      radix:
+        patterns:
+          - "@radix-ui/*"
+      # Group all @img/sharp platform binaries
+      sharp:
+        patterns:
+          - "@img/sharp-*"
+      # Group ESLint ecosystem
+      eslint:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@typescript-eslint/*"
+    # Pin trusted dependencies that require native compilation
+    # and should not be auto-upgraded without testing
+    ignore:
+      # electron must match the version tested in CI
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      # koffi native bindings - major versions need manual verification
+      - dependency-name: "koffi"
+        update-types: ["version-update:semver-major"]
+      # node-pty native module - major versions need manual verification
+      - dependency-name: "node-pty"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Workspace packages (apps/* and packages/*)
+  - package-ecosystem: "npm"
+    directory: "/apps/electron"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    groups:
+      tiptap:
+        patterns:
+          - "@tiptap/*"
+      radix:
+        patterns:
+          - "@radix-ui/*"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/shared"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"

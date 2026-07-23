@@ -233,6 +233,8 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.browserPane.STATE_CHANGED,
   RPC_CHANNELS.browserPane.REMOVED,
   RPC_CHANNELS.browserPane.INTERACTED,
+  RPC_CHANNELS.browserPane.SET_AUDIO_MUTED,
+  RPC_CHANNELS.browserPane.PROFILE_CHANGED,
 
   // gitbash — Windows-specific local
   RPC_CHANNELS.gitbash.CHECK,
@@ -244,7 +246,6 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
 
   // onboarding — local auth setup flow
   RPC_CHANNELS.onboarding.GET_AUTH_STATE,
-  RPC_CHANNELS.onboarding.VALIDATE_MCP,
   RPC_CHANNELS.onboarding.START_MCP_OAUTH,
   RPC_CHANNELS.onboarding.DEFER_SETUP,
   RPC_CHANNELS.settings.GET_NETWORK_PROXY,
@@ -354,7 +355,6 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.llmConnections.TEST,
   RPC_CHANNELS.llmConnections.SET_DEFAULT,
   RPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT,
-  RPC_CHANNELS.llmConnections.REFRESH_MODELS,
   RPC_CHANNELS.llmConnections.CHANGED,
 
   // chatgpt — OAuth via capability passthrough
@@ -511,38 +511,19 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.resources.IMPORT,
 
   // messaging — gateway channels run on workspace server
-  RPC_CHANNELS.messaging.WA_REGISTER,
-  RPC_CHANNELS.messaging.WA_INCOMING,
-  RPC_CHANNELS.messaging.WA_BUTTON_PRESS,
-  RPC_CHANNELS.messaging.WA_STATUS,
-  RPC_CHANNELS.messaging.WA_QR,
-  RPC_CHANNELS.messaging.WA_SEND,
-  RPC_CHANNELS.messaging.WA_SEND_BUTTONS,
-  RPC_CHANNELS.messaging.WA_SEND_TYPING,
-  RPC_CHANNELS.messaging.WA_SEND_FILE,
-  RPC_CHANNELS.messaging.WA_CONNECT,
-  RPC_CHANNELS.messaging.WA_DISCONNECT,
   RPC_CHANNELS.messaging.BINDING_CHANGED,
   RPC_CHANNELS.messaging.PLATFORM_STATUS,
   RPC_CHANNELS.messaging.PENDING_CHANGED,
   RPC_CHANNELS.messaging.GET_CONFIG,
   RPC_CHANNELS.messaging.UPDATE_CONFIG,
-  RPC_CHANNELS.messaging.TEST_TELEGRAM,
-  RPC_CHANNELS.messaging.SAVE_TELEGRAM,
   RPC_CHANNELS.messaging.TEST_LARK,
   RPC_CHANNELS.messaging.SAVE_LARK,
   RPC_CHANNELS.messaging.DISCONNECT,
   RPC_CHANNELS.messaging.FORGET,
   RPC_CHANNELS.messaging.GET_BINDINGS,
   RPC_CHANNELS.messaging.GENERATE_CODE,
-  RPC_CHANNELS.messaging.GENERATE_SUPERGROUP_CODE,
-  RPC_CHANNELS.messaging.GET_SUPERGROUP,
-  RPC_CHANNELS.messaging.UNBIND_SUPERGROUP,
   RPC_CHANNELS.messaging.UNBIND,
   RPC_CHANNELS.messaging.UNBIND_BINDING,
-  RPC_CHANNELS.messaging.WA_START_CONNECT,
-  RPC_CHANNELS.messaging.WA_SUBMIT_PHONE,
-  RPC_CHANNELS.messaging.WA_UI_EVENT,
   RPC_CHANNELS.messaging.WECHAT_START_CONNECT,
   RPC_CHANNELS.messaging.WECHAT_SUBMIT_CODE,
   RPC_CHANNELS.messaging.WECHAT_UI_EVENT,

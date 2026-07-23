@@ -28,7 +28,6 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.llmConnections.TEST,
   RPC_CHANNELS.llmConnections.SET_DEFAULT,
   RPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT,
-  RPC_CHANNELS.llmConnections.REFRESH_MODELS,
   RPC_CHANNELS.chatgpt.START_OAUTH,
   RPC_CHANNELS.chatgpt.COMPLETE_OAUTH,
   RPC_CHANNELS.chatgpt.CANCEL_OAUTH,
@@ -587,23 +586,6 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     } catch (error) {
       deps.platform.logger?.error('Failed to set workspace default LLM connection:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-    }
-  })
-
-  // Refresh available models for a connection (dynamic model discovery)
-  server.handle(RPC_CHANNELS.llmConnections.REFRESH_MODELS, async (_ctx, slug: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const connection = getLlmConnection(slug)
-      if (!connection) {
-        return { success: false, error: 'Connection not found' }
-      }
-
-      await getModelRefreshService().refreshNow(slug)
-      return { success: true }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error'
-      deps.platform.logger?.error(`Failed to refresh models for ${slug}: ${msg}`)
-      return { success: false, error: msg }
     }
   })
 

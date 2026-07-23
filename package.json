@@ -22,7 +22,7 @@
     "!apps/online-docs"
   ],
   "scripts": {
-    "test": "bun test && for f in $(find . -name '*.isolated.ts' -not -path './node_modules/*'); do bun test \"$f\" || exit 1; done",
+    "test": "bun test && for f in $(find . -name '*.isolated.ts' -not -path '*/node_modules/*' -not -path '*/release/*' -not -path '*/dist/*'); do bun test \"$f\" || exit 1; done",
     "typecheck": "bun run typecheck:shared",
     "typecheck:shared": "cd packages/shared && bun run tsc --noEmit",
     "typecheck:staged": "bash scripts/typecheck-staged.sh",
@@ -60,7 +60,6 @@
     "electron:build:preload": "bun run scripts/electron-build-preload.ts",
     "electron:build:renderer": "bun run scripts/electron-build-renderer.ts",
     "electron:build:resources": "bun run scripts/electron-build-resources.ts",
-    "build:wa-worker": "bun run scripts/build-wa-worker.ts",
     "electron:build:subprocess": "bun run scripts/electron-build-subprocess.ts",
     "electron:build:assets": "cd apps/electron && bun scripts/copy-assets.ts",
     "electron:build:validate": "cd apps/electron && bun run build:validate",

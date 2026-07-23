@@ -13,6 +13,23 @@ export type MermaidThemeSnapshot = {
 let renderId = 0
 let renderQueue: Promise<void> = Promise.resolve()
 
+/**
+ * Format a canvas pixel sample as CSS rgb/rgba.
+ * A missing alpha channel is treated as fully opaque (255): getImageData always
+ * writes four channels for a filled pixel, and inventing transparency would be wrong.
+ */
+export function formatSampledRgba(
+  red: number,
+  green: number,
+  blue: number,
+  alpha: number | undefined,
+): string {
+  const resolvedAlpha = alpha ?? 255
+  return resolvedAlpha === 255
+    ? `rgb(${red}, ${green}, ${blue})`
+    : `rgba(${red}, ${green}, ${blue}, ${(resolvedAlpha / 255).toFixed(3)})`
+}
+
 function readCanvasColor(value: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   const canvas = document.createElement('canvas')
@@ -25,10 +42,15 @@ function readCanvasColor(value: string, fallback: string): string {
     context.clearRect(0, 0, 1, 1)
     context.fillStyle = value || fallback
     context.fillRect(0, 0, 1, 1)
-    const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data
-    return alpha === 255
-      ? `rgb(${red}, ${green}, ${blue})`
-      : `rgba(${red}, ${green}, ${blue}, ${(alpha / 255).toFixed(3)})`
+    const data = context.getImageData(0, 0, 1, 1).data
+    const red = data[0]
+    const green = data[1]
+    const blue = data[2]
+    const alpha = data[3]
+    if (red === undefined || green === undefined || blue === undefined) {
+      return fallback
+    }
+    return formatSampledRgba(red, green, blue, alpha)
   } catch {
     return fallback
   }

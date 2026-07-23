@@ -11,7 +11,7 @@
  * a paired supergroup.
  *
  * The "add user" affordance is the pending-requests panel: typing numeric
- * Telegram user_ids by hand is a UX dead-end. Owners promote senders with
+ * Entering platform user_ids by hand is a UX dead-end. Owners promote senders with
  * one click after the gateway records a rejected attempt.
  */
 
@@ -47,7 +47,7 @@ export function OwnersListEditor({ owners, enforced, onRemove, currentUserId }: 
         <IconSpacer />
         <span>
           <Trans
-            i18nKey="settings.messaging.telegram.access.owners.empty"
+            i18nKey="settings.messaging.access.owners.empty"
             components={{
               code: <code className="rounded bg-foreground/[0.06] px-1 py-0.5" />,
             }}
@@ -100,12 +100,12 @@ function OwnerRow({
           <span className="truncate text-sm">{primary}</span>
           {isCurrentUser && (
             <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-              {t('settings.messaging.telegram.access.owners.youBadge')}
+              {t('settings.messaging.access.owners.youBadge')}
             </span>
           )}
           {!enforced && (
             <span className="shrink-0 text-[10px] uppercase tracking-wide text-foreground/40">
-              {t('settings.messaging.telegram.access.owners.notEnforced')}
+              {t('settings.messaging.access.owners.notEnforced')}
             </span>
           )}
         </div>
@@ -116,10 +116,10 @@ function OwnerRow({
         size="sm"
         onClick={onRemove}
         className="text-foreground/60 hover:text-destructive"
-        aria-label={t('settings.messaging.telegram.access.owners.removeAria', { name: primary })}
+        aria-label={t('settings.messaging.access.owners.removeAria', { name: primary })}
       >
         <X className="h-3.5 w-3.5" />
-        {t('settings.messaging.telegram.access.owners.remove')}
+        {t('settings.messaging.access.owners.remove')}
       </Button>
     </div>
   )

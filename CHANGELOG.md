@@ -1,18 +1,32 @@
 # 更新日志
 
-## 2026-07-22 v0.14.0 体验修复
+## 2026-07-23 v0.14.0 消息平台精简、体验修复与工程收敛
 
-本版本聚焦输入体验与文档维护，不引入新功能。
+本版本将消息接入收敛到实际在用的飞书与微信，清理历史残留，并继续修补输入体验与文档。
 
-### 中文输入修复
+### 破坏性变更
 
-- 修复切到其他 app 再切回 Craft Agents 后，中文输入首字符脱离 IME 组合的长期体验问题。此前输入拼音时第一个字母经常被当作普通字符插入，导致候选词被拆分（例如「changjiang」变成「c hang j iang」），现在不再出现。
+- 完整移除 WhatsApp 与 Telegram（UI、Adapter、Worker、IPC、依赖与专属文案）。现役消息平台为飞书 / Lark 与微信。
+- 旧工作区中的 WhatsApp / Telegram 配置与绑定会被识别为 unsupported：不初始化、不崩溃、不阻塞其他平台，并记录一次明确提示。
+- 安装包不再包含 messaging-whatsapp-worker / Baileys，也不再依赖 grammy。
 
-### README 重写
+### 消息平台
 
-- 能力概览表格从 11 行扩展到 18 行，补上之前已实现但未列出的功能：探索工作台、Cowart 画布、MCP Apps Widget、浏览器扩展、密码管理、Git 工作流、项目长期记忆、插件市场等。
-- 特色章节按功能模块重组，新增探索工作台、Git 工作流、插件与市场、账号与认证章节。
-- 移除 v0.11.6–v0.11.8 的版本细节说明（已在历史 CHANGELOG 和 Releases 中保留）。
+- 设置页、会话菜单、配对与访问控制入口仅保留飞书与微信。
+- 保留通用 messaging gateway（Adapter / Registry / Binding / Config Store），便于后续按注册方式扩展新平台。
+- 自动化中的 Telegram forum topic 能力下线；飞书与微信绑定与收发路径保持现役。
+
+### 体验与文档
+
+- 修复切到其他 app 再切回后，中文输入首字符脱离 IME 组合的问题。
+- 设置 → 标签：创建改为标题下方内联编辑（名称 + 系统色），去掉弹窗；「标签层级」与「自动应用规则」统一「添加」按钮；保留行内添加子标签与现有层级 / 自动规则能力。
+- README 能力表与特色章节补全；消息接入说明同步为飞书与微信。
+
+### 工程清理
+
+- 删除孤儿 UI 组件、重复 onboarding 实现、未装配 TipTap 扩展、无用依赖，以及 design-qa 审计资产。
+- 清理已证明无调用链的死协议表面（早期 WhatsApp 子进程 RPC 常量、`LLM_Connection:refreshModels` RPC 壳、`onboarding:validateMcp` RPC 壳）；保留 SAVE 路径内 `refreshNow()` 与 `validateMcpConnection` 库函数。
+- 加强测试隔离与启动/退出路径稳定性；版本统一 `0.14.0`；IPC 穷尽、i18n、typecheck、正式构建验证通过。
 
 ## 2026-07-22 v0.13.0 长期任务工作台、Mermaid 与浏览器增强
 

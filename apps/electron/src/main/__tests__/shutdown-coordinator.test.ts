@@ -68,4 +68,29 @@ describe('cleanupApplicationResources', () => {
       'session-flush', 'session-cleanup', 'browser-flush', 'browser', 'oauth', 'models', 'messaging', 'power', 'lock',
     ])
   })
+
+  it('stops Cowart canvas and terminal panes when provided', async () => {
+    const { resources, calls } = createResources({
+      stopCowartCanvas: async () => { calls.push('cowart') },
+      destroyTerminalPanes: () => { calls.push('terminals') },
+    })
+
+    const results = await cleanupApplicationResources(resources)
+
+    expect(calls).toEqual([
+      'session-flush',
+      'session-cleanup',
+      'browser-flush',
+      'browser',
+      'oauth',
+      'models',
+      'messaging',
+      'cowart',
+      'terminals',
+      'power',
+      'lock',
+    ])
+    expect(results.map((result) => result.phase)).toContain('cowart-canvas-stop')
+    expect(results.map((result) => result.phase)).toContain('terminal-panes-destroy')
+  })
 })

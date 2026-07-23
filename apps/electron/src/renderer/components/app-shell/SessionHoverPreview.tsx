@@ -99,7 +99,7 @@ export function SessionHoverPreview({ item, disabled, children }: SessionHoverPr
         onMouseEnter={openPreview}
         onMouseLeave={scheduleClose}
         className={cn(
-          "w-[260px] rounded-[12px] border border-border/70 bg-background/95 p-4 shadow-xl backdrop-blur-xl",
+          "w-[260px] rounded-[12px] border border-border/70 bg-background/95 p-4 shadow-modal-small backdrop-blur-xl",
           "data-[side=right]:slide-in-from-left-1"
         )}
       >

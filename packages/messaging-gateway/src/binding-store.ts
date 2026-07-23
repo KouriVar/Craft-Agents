@@ -59,11 +59,11 @@ export class BindingStore {
 
   /**
    * Find the active binding for a (platform, channelId, threadId) tuple.
-   * `threadId` distinguishes Telegram supergroup forum topics from each
-   * other and from the supergroup's General topic / DMs (undefined).
+   * `threadId` distinguishes threads within a channel from each other and
+   * from the channel's default surface (undefined).
    *
-   * Bindings created without `threadId` (DMs, pre-topics-feature data)
-   * only match calls passing `threadId === undefined`.
+   * Bindings created without `threadId` only match calls passing
+   * `threadId === undefined`.
    */
   findByChannel(platform: PlatformType, channelId: string, threadId?: number): ChannelBinding | undefined {
     return this.bindings.find(
@@ -97,8 +97,8 @@ export class BindingStore {
     threadId?: number,
   ): ChannelBinding {
     // One channel → one session: evict any existing binding for the
-    // (platform, channelId, threadId) tuple. Different topics in the same
-    // supergroup are independently bindable.
+    // (platform, channelId, threadId) tuple. Different threads in the same
+    // channel are independently bindable.
     this.bindings = this.bindings.filter(
       (b) => !(b.platform === platform && b.channelId === channelId && (b.threadId ?? undefined) === threadId),
     )

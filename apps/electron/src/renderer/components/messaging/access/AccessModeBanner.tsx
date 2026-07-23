@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 
 interface Props {
   onLockDown: () => void
-  /** Optional override of the default copy (e.g. for non-Telegram platforms). */
+  /** Optional override of the default banner copy. */
   description?: string
 }
 
@@ -22,14 +22,14 @@ export function AccessModeBanner({ onLockDown, description }: Props) {
       <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">
-          {t('settings.messaging.telegram.access.banner.title')}
+          {t('settings.messaging.access.banner.title')}
         </div>
         <div className="mt-0.5 text-xs text-foreground/60">
-          {description ?? t('settings.messaging.telegram.access.banner.description')}
+          {description ?? t('settings.messaging.access.banner.description')}
         </div>
       </div>
       <Button size="sm" variant="outline" onClick={onLockDown}>
-        {t('settings.messaging.telegram.access.banner.lockDown')}
+        {t('settings.messaging.access.banner.lockDown')}
       </Button>
     </div>
   )

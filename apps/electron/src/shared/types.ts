@@ -1046,13 +1046,6 @@ export interface ElectronAPI {
     runtime: Record<string, MessagingPlatformRuntimeInfo | undefined>
   } | null>
   updateMessagingConfig(config: Record<string, unknown>): Promise<void>
-  testTelegramToken(token: string): Promise<{
-    success: boolean
-    botName?: string
-    botUsername?: string
-    error?: string
-  }>
-  saveTelegramToken(token: string): Promise<void>
   testLarkCredentials(creds: {
     appId: string
     appSecret: string
@@ -1077,24 +1070,10 @@ export interface ElectronAPI {
     }>
   >
   generateMessagingPairingCode(sessionId: string, platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
-  /** Telegram supergroup pairing — returns a code typed in the supergroup to capture its chatId. */
-  generateMessagingSupergroupCode(platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
-  /** Read the workspace's currently paired Telegram supergroup, if any. */
-  getMessagingSupergroup(): Promise<{
-    chatId: string
-    title: string
-    capturedAt: number
-  } | null>
-  /** Forget the paired Telegram supergroup (existing topic bindings stay on disk but stop matching). */
-  unbindMessagingSupergroup(): Promise<{ success: boolean }>
   unbindMessagingSession(sessionId: string, platform?: string): Promise<void>
   unbindMessagingBinding(bindingId: string): Promise<{ success: boolean }>
   onMessagingBindingChanged(callback: (workspaceId: string) => void): () => void
   onMessagingPlatformStatus(callback: (workspaceId: string, platform: string, status: MessagingPlatformRuntimeInfo) => void): () => void
-  // WhatsApp (subprocess-based Baileys adapter)
-  startWhatsAppConnect(): Promise<{ success: boolean }>
-  submitWhatsAppPhone(phoneNumber: string): Promise<{ success: boolean }>
-  onWhatsAppEvent(callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void): () => void
   startWeChatConnect(): Promise<{ success: boolean }>
   submitWeChatVerifyCode(code: string): Promise<{ success: boolean }>
   onWeChatEvent(callback: (payload: { workspaceId: string; event: WeChatUiEvent }) => void): () => void
@@ -1162,15 +1141,6 @@ export interface MessagingPendingSenderInfo {
   channelId?: string
   threadId?: number
 }
-
-/** Event payloads broadcast from the WhatsApp subprocess to the UI. */
-export type WhatsAppUiEvent =
-  | { type: 'qr'; qr: string }
-  | { type: 'pairing_code'; code: string }
-  | { type: 'connected'; jid?: string; name?: string }
-  | { type: 'disconnected'; loggedOut: boolean; reason?: string }
-  | { type: 'unavailable'; reason: string; message: string }
-  | { type: 'error'; message: string }
 
 export type WeChatUiEvent =
   | { type: 'qr'; qr: string }

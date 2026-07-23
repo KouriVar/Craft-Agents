@@ -474,20 +474,6 @@ export class MessagingGateway {
     }
 
     if (press.buttonId.startsWith('perm:')) {
-      if (platform === 'whatsapp') {
-        this.log.warn('ignored chat-side permission interaction for WhatsApp', {
-          event: 'whatsapp_permission_button_ignored',
-          channelId: press.channelId,
-          buttonId: press.buttonId,
-        })
-        await adapter.sendText(
-          press.channelId,
-          '⏸ Permission required. Approve it in the desktop app to continue.',
-          pressOpts,
-        )
-        return
-      }
-
       await this.handlePermissionButton(adapter, press)
       return
     }

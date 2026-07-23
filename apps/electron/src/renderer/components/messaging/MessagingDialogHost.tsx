@@ -17,7 +17,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { messagingDialogAtom } from '@/atoms/messaging'
 import { PairingCodeDialog } from './PairingCodeDialog'
-import { WhatsAppConnectDialog } from './WhatsAppConnectDialog'
 import { WeChatConnectDialog } from './WeChatConnectDialog'
 
 export function MessagingDialogHost() {
@@ -59,7 +58,7 @@ export function MessagingDialogHost() {
 
   const openPairing = async (
     sessionId: string,
-    platform: 'telegram' | 'whatsapp' | 'lark' | 'wechat',
+    platform: 'lark' | 'wechat',
   ) => {
     setState({
       kind: 'pairing',
@@ -90,14 +89,6 @@ export function MessagingDialogHost() {
     }
   }
 
-  const handleWhatsAppConnected = () => {
-    if (state.kind === 'wa_connect' && state.continueToPairingSessionId) {
-      void openPairing(state.continueToPairingSessionId, 'whatsapp')
-      return
-    }
-    close()
-  }
-
   const handleWeChatConnected = () => {
     if (state.kind === 'wechat_connect' && state.continueToPairingSessionId) {
       void openPairing(state.continueToPairingSessionId, 'wechat')
@@ -111,16 +102,11 @@ export function MessagingDialogHost() {
       <PairingCodeDialog
         open={state.kind === 'pairing'}
         onOpenChange={(o) => { if (!o) close() }}
-        platform={state.kind === 'pairing' ? state.platform : 'telegram'}
+        platform={state.kind === 'pairing' ? state.platform : 'lark'}
         code={state.kind === 'pairing' ? state.code : null}
         expiresAt={state.kind === 'pairing' ? state.expiresAt : null}
         botUsername={state.kind === 'pairing' ? state.botUsername : undefined}
         error={state.kind === 'pairing' ? state.error : undefined}
-      />
-      <WhatsAppConnectDialog
-        open={state.kind === 'wa_connect'}
-        onOpenChange={(o) => { if (!o) close() }}
-        onConnected={handleWhatsAppConnected}
       />
       <WeChatConnectDialog
         open={state.kind === 'wechat_connect'}
@@ -134,7 +120,7 @@ export function MessagingDialogHost() {
 function classifyMessagingError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (/not connected/i.test(msg)) {
-    return 'WhatsApp is not connected yet. Reconnect it in Settings → Messaging and try again.'
+    return 'The platform is not connected yet. Reconnect it in Settings → Messaging and try again.'
   }
   if (/rate.?limit/i.test(msg)) {
     return 'Too many pairing code requests. Please wait a moment and try again.'

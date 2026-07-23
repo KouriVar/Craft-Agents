@@ -1,46 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import { mockElectronModule } from '../../../test/mock-electron'
 
 const registeredChannels: string[] = []
 
-mock.module('electron', () => ({
-  ipcMain: {
-    handle: () => {},
-    on: () => {},
-  },
-  // Minimal stubs for symbols imported by IPC domain modules
-  app: {
-    isPackaged: false,
-    getAppPath: () => '/',
-    quit: () => {},
-    dock: { setIcon: () => {}, setBadge: () => {} },
-  },
-  nativeTheme: { shouldUseDarkColors: false },
-  nativeImage: {
-    createFromPath: () => ({ isEmpty: () => true }),
-    createFromDataURL: () => ({}),
-  },
-  dialog: {
-    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
-    showMessageBox: async () => ({ response: 0 }),
-  },
-  shell: {
-    openExternal: async () => {},
-    openPath: async () => '',
-    showItemInFolder: () => {},
-  },
-  BrowserWindow: {
-    fromWebContents: () => null,
-    getFocusedWindow: () => null,
-    getAllWindows: () => [],
-  },
-  BrowserView: class {},
-  Menu: {
-    buildFromTemplate: () => ({ popup: () => {} }),
-  },
-  session: {},
-}))
+mockElectronModule()
 
 function createMockServer(): RpcServer {
   return {
@@ -74,6 +39,7 @@ function createMockDeps(): HandlerDeps {
       onStateChange: () => {},
       onRemoved: () => {},
       onInteracted: () => {},
+      onProfileChanged: () => {},
     } as unknown as NonNullable<HandlerDeps['browserPaneManager']>,
     oauthFlowStore: {
       store: () => {},

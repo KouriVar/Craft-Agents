@@ -143,7 +143,7 @@ function getColumns(
               type="button"
               onClick={() => actions.onAddChild?.(row.original)}
               className="rounded-control p-1.5 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-              title={t('sidebarMenu.addNewLabel')}
+              title={t('settings.labels.addChildLabel')}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>

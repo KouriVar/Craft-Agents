@@ -3,7 +3,6 @@ import type {
   LoadedSource,
   PermissionMode,
   MessagingPlatformRuntimeInfo,
-  WhatsAppUiEvent,
 } from '../../shared/types'
 import type { MessagingBinding } from '../atoms/messaging'
 import type {
@@ -18,11 +17,10 @@ import type {
 // ============================================================================
 //
 // The real messaging flow is driven by IPC push events (platform status,
-// binding changes, WhatsApp pairing phases). To make the messaging UI
-// previewable, we replace those IPC calls with an in-memory event bus and
-// expose a `window.__playgroundMessaging` handle so variant/preview wrappers
-// can flip state (connected ↔ disconnected, WhatsApp phase, bindings) without
-// remounting the component.
+// binding changes). To make the messaging UI previewable, we replace those IPC
+// calls with an in-memory event bus and expose a `window.__playgroundMessaging`
+// handle so variant/preview wrappers can flip state (connected ↔ disconnected,
+// bindings) without remounting the component.
 
 type PlatformStatusListener = (
   workspaceId: string,
@@ -30,11 +28,10 @@ type PlatformStatusListener = (
   status: MessagingPlatformRuntimeInfo,
 ) => void
 type BindingListener = (workspaceId: string) => void
-type WhatsAppEventListener = (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void
 
 const PLAYGROUND_WORKSPACE_ID = 'playground-workspace'
 
-type AllowListPlatform = 'telegram' | 'whatsapp' | 'lark'
+type AllowListPlatform = 'lark' | 'wechat'
 
 interface AllowListState {
   accessMode: PlatformAccessMode
@@ -46,18 +43,17 @@ interface AllowListState {
 
 interface MessagingMockState {
   runtime: {
-    telegram: MessagingPlatformRuntimeInfo
-    whatsapp: MessagingPlatformRuntimeInfo
+    lark: MessagingPlatformRuntimeInfo
+    wechat: MessagingPlatformRuntimeInfo
   }
   bindings: MessagingBinding[]
   /** Workspace-level allow-list state per platform (Phase 1 mock surface). */
   allowList: Record<AllowListPlatform, AllowListState>
   platformStatusListeners: Set<PlatformStatusListener>
   bindingListeners: Set<BindingListener>
-  waEventListeners: Set<WhatsAppEventListener>
 }
 
-function defaultRuntime(platform: 'telegram' | 'whatsapp'): MessagingPlatformRuntimeInfo {
+function defaultRuntime(platform: AllowListPlatform): MessagingPlatformRuntimeInfo {
   return {
     platform,
     configured: false,
@@ -73,21 +69,19 @@ function defaultAllowList(): AllowListState {
 
 const messagingMockState: MessagingMockState = {
   runtime: {
-    telegram: defaultRuntime('telegram'),
-    whatsapp: defaultRuntime('whatsapp'),
+    lark: defaultRuntime('lark'),
+    wechat: defaultRuntime('wechat'),
   },
   bindings: [],
   allowList: {
-    telegram: defaultAllowList(),
-    whatsapp: defaultAllowList(),
     lark: defaultAllowList(),
+    wechat: defaultAllowList(),
   },
   platformStatusListeners: new Set(),
   bindingListeners: new Set(),
-  waEventListeners: new Set(),
 }
 
-function emitPlatformStatus(platform: 'telegram' | 'whatsapp') {
+function emitPlatformStatus(platform: AllowListPlatform) {
   const status = messagingMockState.runtime[platform]
   for (const listener of messagingMockState.platformStatusListeners) {
     try { listener(PLAYGROUND_WORKSPACE_ID, platform, status) } catch (err) { console.error(err) }
@@ -100,19 +94,12 @@ function emitBindingChanged() {
   }
 }
 
-function emitWhatsAppEvent(event: WhatsAppUiEvent) {
-  for (const listener of messagingMockState.waEventListeners) {
-    try { listener({ workspaceId: PLAYGROUND_WORKSPACE_ID, event }) } catch (err) { console.error(err) }
-  }
-}
-
 export interface PlaygroundMessagingHandle {
   /** Snapshot of current state (for debugging from DevTools). */
   state: MessagingMockState
-  setTelegramConnected: (connected: boolean, identity?: string) => void
-  setWhatsAppConnected: (connected: boolean, identity?: string) => void
+  setLarkConnected: (connected: boolean, identity?: string) => void
+  setWeChatConnected: (connected: boolean, identity?: string) => void
   setBindings: (bindings: MessagingBinding[]) => void
-  fireWAEvent: (event: WhatsAppUiEvent) => void
   reset: () => void
 }
 
@@ -135,44 +122,40 @@ export interface PlaygroundAllowListHandle {
 
 export const playgroundMessagingHandle: PlaygroundMessagingHandle = {
   state: messagingMockState,
-  setTelegramConnected(connected, identity) {
-    messagingMockState.runtime.telegram = {
-      platform: 'telegram',
+  setLarkConnected(connected, identity) {
+    messagingMockState.runtime.lark = {
+      platform: 'lark',
       configured: connected,
       connected,
       state: connected ? 'connected' : 'disconnected',
       identity,
       updatedAt: Date.now(),
     }
-    emitPlatformStatus('telegram')
+    emitPlatformStatus('lark')
   },
-  setWhatsAppConnected(connected, identity) {
-    messagingMockState.runtime.whatsapp = {
-      platform: 'whatsapp',
+  setWeChatConnected(connected, identity) {
+    messagingMockState.runtime.wechat = {
+      platform: 'wechat',
       configured: connected,
       connected,
       state: connected ? 'connected' : 'disconnected',
       identity,
       updatedAt: Date.now(),
     }
-    emitPlatformStatus('whatsapp')
+    emitPlatformStatus('wechat')
   },
   setBindings(bindings) {
     messagingMockState.bindings = bindings
     emitBindingChanged()
   },
-  fireWAEvent(event) {
-    emitWhatsAppEvent(event)
-  },
   reset() {
-    messagingMockState.runtime.telegram = defaultRuntime('telegram')
-    messagingMockState.runtime.whatsapp = defaultRuntime('whatsapp')
+    messagingMockState.runtime.lark = defaultRuntime('lark')
+    messagingMockState.runtime.wechat = defaultRuntime('wechat')
     messagingMockState.bindings = []
-    messagingMockState.allowList.telegram = defaultAllowList()
-    messagingMockState.allowList.whatsapp = defaultAllowList()
     messagingMockState.allowList.lark = defaultAllowList()
-    emitPlatformStatus('telegram')
-    emitPlatformStatus('whatsapp')
+    messagingMockState.allowList.wechat = defaultAllowList()
+    emitPlatformStatus('lark')
+    emitPlatformStatus('wechat')
     emitBindingChanged()
   },
 }
@@ -191,9 +174,8 @@ export const playgroundAllowListHandle: PlaygroundAllowListHandle = {
     messagingMockState.allowList[platform].bindings[bindingId] = access
   },
   reset() {
-    messagingMockState.allowList.telegram = defaultAllowList()
-    messagingMockState.allowList.whatsapp = defaultAllowList()
     messagingMockState.allowList.lark = defaultAllowList()
+    messagingMockState.allowList.wechat = defaultAllowList()
   },
 }
 
@@ -447,7 +429,7 @@ export const mockElectronAPI = {
   },
 
   // ------------------------------------------------------------------
-  // Messaging Gateway (Telegram + WhatsApp)
+  // Messaging Gateway (Lark + WeChat)
   // ------------------------------------------------------------------
 
   getMessagingConfig: async () => {
@@ -455,12 +437,12 @@ export const mockElectronAPI = {
     return {
       enabled: true,
       platforms: {
-        telegram: { enabled: true },
-        whatsapp: { enabled: true },
+        lark: { enabled: true },
+        wechat: { enabled: true },
       },
       runtime: {
-        telegram: messagingMockState.runtime.telegram,
-        whatsapp: messagingMockState.runtime.whatsapp,
+        lark: messagingMockState.runtime.lark,
+        wechat: messagingMockState.runtime.wechat,
       },
     }
   },
@@ -469,30 +451,16 @@ export const mockElectronAPI = {
     console.log('[Playground] updateMessagingConfig called:', config)
   },
 
-  testTelegramToken: async (token: string) => {
-    console.log('[Playground] testTelegramToken called')
-    if (token.includes(':') && token.length > 10) {
-      return { success: true, botName: 'Playground Bot', botUsername: 'playground_bot' }
-    }
-    return { success: false, error: 'Invalid token format (expected 1234567:ABC...)' }
-  },
-
-  saveTelegramToken: async (token: string) => {
-    console.log('[Playground] saveTelegramToken called')
-    void token
-    playgroundMessagingHandle.setTelegramConnected(true, 'Playground Bot')
-  },
-
   disconnectMessagingPlatform: async (platform: string) => {
     console.log('[Playground] disconnectMessagingPlatform called:', platform)
-    if (platform === 'telegram') playgroundMessagingHandle.setTelegramConnected(false)
-    if (platform === 'whatsapp') playgroundMessagingHandle.setWhatsAppConnected(false)
+    if (platform === 'lark') playgroundMessagingHandle.setLarkConnected(false)
+    if (platform === 'wechat') playgroundMessagingHandle.setWeChatConnected(false)
   },
 
   forgetMessagingPlatform: async (platform: string) => {
     console.log('[Playground] forgetMessagingPlatform called:', platform)
-    if (platform === 'telegram') playgroundMessagingHandle.setTelegramConnected(false)
-    if (platform === 'whatsapp') playgroundMessagingHandle.setWhatsAppConnected(false)
+    if (platform === 'lark') playgroundMessagingHandle.setLarkConnected(false)
+    if (platform === 'wechat') playgroundMessagingHandle.setWeChatConnected(false)
     // Drop bindings for that platform
     playgroundMessagingHandle.setBindings(
       messagingMockState.bindings.filter((b) => b.platform !== platform),
@@ -509,7 +477,7 @@ export const mockElectronAPI = {
     return {
       code: '482193',
       expiresAt: Date.now() + 5 * 60_000,
-      botUsername: platform === 'telegram' ? 'playground_bot' : undefined,
+      botUsername: undefined,
     }
   },
 
@@ -568,9 +536,8 @@ export const mockElectronAPI = {
     console.log('[Playground] getMessagingPendingSenders called:', platform)
     if (!platform) {
       return [
-        ...messagingMockState.allowList.telegram.pending,
-        ...messagingMockState.allowList.whatsapp.pending,
         ...messagingMockState.allowList.lark.pending,
+        ...messagingMockState.allowList.wechat.pending,
       ]
     }
     return [...messagingMockState.allowList[platform].pending]
@@ -648,10 +615,10 @@ export const mockElectronAPI = {
     access: BindingAccess,
   ) => {
     console.log('[Playground] setMessagingBindingAccess called:', bindingId)
-    // Playground stores binding access keyed under telegram by default —
+    // Playground stores binding access keyed under lark by default —
     // production records the binding's platform server-side, so the mock
     // doesn't need to be platform-aware to exercise the UI.
-    playgroundAllowListHandle.setBindingAccess('telegram', bindingId, access)
+    playgroundAllowListHandle.setBindingAccess('lark', bindingId, access)
     return { success: true }
   },
 
@@ -677,34 +644,6 @@ export const mockElectronAPI = {
     messagingMockState.platformStatusListeners.add(callback)
     return () => {
       messagingMockState.platformStatusListeners.delete(callback)
-    }
-  },
-
-  // WhatsApp subprocess-based pairing — we fire a synthetic QR after a short
-  // delay so the "show_qr" phase is visible by default, but variants can
-  // override this by calling __playgroundMessaging.fireWAEvent().
-  startWhatsAppConnect: async () => {
-    console.log('[Playground] startWhatsAppConnect called')
-    setTimeout(() => {
-      emitWhatsAppEvent({
-        type: 'qr',
-        qr: 'playground://whatsapp/qr/' + Math.random().toString(36).slice(2),
-      })
-    }, 400)
-    return { success: true }
-  },
-
-  submitWhatsAppPhone: async (phoneNumber: string) => {
-    console.log('[Playground] submitWhatsAppPhone called:', phoneNumber)
-    return { success: true }
-  },
-
-  onWhatsAppEvent: (
-    callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void,
-  ) => {
-    messagingMockState.waEventListeners.add(callback)
-    return () => {
-      messagingMockState.waEventListeners.delete(callback)
     }
   },
 }

@@ -68,9 +68,6 @@ export const routes = {
     /** Start OAuth flow for a source */
     oauth: (sourceSlug: string) => `action/oauth/${sourceSlug}` as const,
 
-    /** Open add source UI */
-    addSource: () => 'action/add-source' as const,
-
     // Note: test-source route can be added when API support is available
     // testSource: (sourceSlug: string) => `action/test-source/${sourceSlug}` as const,
 

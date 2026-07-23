@@ -61,6 +61,12 @@ export function createScriptRuntimeEnv(
   env.TMP = tmpDir;
   env.TEMP = tmpDir;
 
+  // Drop inherited host python/uv cache paths so non-python runtimes stay clean.
+  // Python below reintroduces session-local equivalents under dataDir.
+  delete env.UV_CACHE_DIR;
+  delete env.XDG_CACHE_HOME;
+  delete env.PYTHONPYCACHEPREFIX;
+
   if (options.language === 'python3') {
     const uvCacheDir = join(dataDir, '.uv-cache');
     const xdgCacheHome = join(dataDir, '.cache');

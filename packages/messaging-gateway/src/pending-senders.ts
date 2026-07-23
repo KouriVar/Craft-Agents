@@ -241,7 +241,8 @@ function isPendingSender(value: unknown): value is PendingSender {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   return (
-    (v.platform === 'telegram' || v.platform === 'whatsapp' || v.platform === 'lark') &&
+    typeof v.platform === 'string' &&
+    v.platform.length > 0 &&
     typeof v.userId === 'string' &&
     typeof v.lastAttemptAt === 'number' &&
     typeof v.attemptCount === 'number'

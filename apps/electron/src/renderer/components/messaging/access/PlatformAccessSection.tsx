@@ -1,13 +1,15 @@
 /**
- * TelegramAccessSection
+ * PlatformAccessSection
  *
- * Live (non-playground) wrapper that loads owners / accessMode / pending
+ * Generic (non-playground) wrapper that loads owners / accessMode / pending
  * senders from the messaging registry and renders the workspace-level
- * access controls inside the Telegram tile in `MessagingSettingsPage`.
+ * access controls inside a platform tile in `MessagingSettingsPage`.
+ *
+ * Platform-agnostic: works for any registered adapter (WeChat, Lark, …).
  *
  * Three visible parts:
  *  1. AccessModeBanner — only when `accessMode === 'open'`
- *  2. Collapsible "Allowed users" row (icon + chevron, mirrors PairedSupergroupSection)
+ *  2. Collapsible "Allowed users" row (icon + chevron)
  *     — expands to show OwnersListEditor with topic-row-style indent
  *  3. PendingSendersList + heading (rendered only when there are pending senders)
  */
@@ -48,38 +50,44 @@ function sameRow(a: PendingSender, b: PendingSender): boolean {
 
 interface Props {
   workspaceId: string
-  /** Workspace-level Telegram access mode. Controlled by the parent so the
-   *  same source of truth drives the banner, the collapsible subtitle, and
-   *  the platform-row dropdown's Lock-down / Unlock affordances. */
+  platform: string
+  /** Workspace-level access mode. Controlled by the parent so the same
+   *  source of truth drives the banner, the collapsible subtitle, and the
+   *  platform-row dropdown's Lock-down / Unlock affordances. */
   accessMode: PlatformAccessMode
   onAccessModeChange: (mode: PlatformAccessMode) => void
 }
 
-export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeChange }: Props) {
+export function PlatformAccessSection({
+  workspaceId,
+  platform,
+  accessMode,
+  onAccessModeChange,
+}: Props) {
   const { t } = useTranslation()
   const allBindings = useAtomValue(messagingBindingsAtom)
   const [owners, setOwners] = React.useState<PlatformOwner[]>([])
   const [pending, setPending] = React.useState<PendingSender[]>([])
 
-  // The banner stays visible whenever the bot is publicly addressable —
+  // The banner stays visible whenever the platform is publicly addressable —
   // either at the workspace level (`accessMode === 'open'`) OR via any
   // legacy binding still in `'open'` mode. Without the second check, the
   // operator would see the banner disappear after clicking "Lock down"
   // even though concrete bindings are still letting strangers in.
   const hasOpenBinding = React.useMemo(
-    () => allBindings.some((b) => b.platform === 'telegram' && b.accessMode === 'open'),
-    [allBindings],
+    () => allBindings.some((b) => b.platform === platform && b.accessMode === 'open'),
+    [allBindings, platform],
   )
   const showBanner = accessMode === 'open' || hasOpenBinding
 
   const loadAll = React.useCallback(async () => {
     const [o, p] = await Promise.all([
-      window.electronAPI.getMessagingPlatformOwners('telegram').catch(() => []),
-      window.electronAPI.getMessagingPendingSenders('telegram').catch(() => []),
+      window.electronAPI.getMessagingPlatformOwners(platform).catch(() => []),
+      window.electronAPI.getMessagingPendingSenders(platform).catch(() => []),
     ])
     setOwners(o)
     setPending(p)
-  }, [])
+  }, [platform])
 
   React.useEffect(() => {
     void loadAll()
@@ -97,8 +105,8 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
 
   const handleLockDown = async () => {
     try {
-      await window.electronAPI.setMessagingPlatformAccessMode('telegram', 'owner-only')
-      toast.success(t('toast.messagingTelegramLockedDown'))
+      await window.electronAPI.setMessagingPlatformAccessMode(platform, 'owner-only')
+      toast.success(t('toast.messagingLockedDown'))
       onAccessModeChange('owner-only')
       await loadAll()
     } catch (err) {
@@ -109,7 +117,7 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
   const handleRemoveOwner = async (userId: string) => {
     const next = owners.filter((o) => o.userId !== userId)
     try {
-      await window.electronAPI.setMessagingPlatformOwners('telegram', next)
+      await window.electronAPI.setMessagingPlatformOwners(platform, next)
       setOwners(next)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove owner')
@@ -123,7 +131,7 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
         ...(sender.bindingId ? { bindingId: sender.bindingId } : {}),
       }
       const result = await window.electronAPI.allowMessagingPendingSender(
-        'telegram',
+        platform,
         sender.userId,
         entryKey,
       )
@@ -131,9 +139,7 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
       // Drop only the row we just acted on. Other pending rows for the
       // same sender (different reason / binding) stay visible until the
       // operator decides on each.
-      setPending((prev) =>
-        prev.filter((p) => !sameRow(p, sender)),
-      )
+      setPending((prev) => prev.filter((p) => !sameRow(p, sender)))
       toast.success(`Allowed ${sender.displayName || sender.username || sender.userId}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to allow sender')
@@ -142,14 +148,10 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
 
   const handleIgnore = async (sender: PendingSender) => {
     try {
-      await window.electronAPI.dismissMessagingPendingSender(
-        'telegram',
-        sender.userId,
-        {
-          ...(sender.reason ? { reason: sender.reason } : {}),
-          ...(sender.bindingId ? { bindingId: sender.bindingId } : {}),
-        },
-      )
+      await window.electronAPI.dismissMessagingPendingSender(platform, sender.userId, {
+        ...(sender.reason ? { reason: sender.reason } : {}),
+        ...(sender.bindingId ? { bindingId: sender.bindingId } : {}),
+      })
       setPending((prev) => prev.filter((p) => !sameRow(p, sender)))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to dismiss sender')
@@ -161,14 +163,9 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
       {showBanner && (
         <AccessModeBanner
           onLockDown={handleLockDown}
-          // When the workspace is already locked but a binding is still
-          // in 'open' mode, swap the copy so the operator knows what to
-          // act on (the binding row, not the workspace toggle).
           {...(accessMode === 'owner-only' && hasOpenBinding
             ? {
-                description: t(
-                  'settings.messaging.telegram.access.banner.descriptionLegacyBinding',
-                ),
+                description: t('settings.messaging.access.banner.descriptionLegacyBinding'),
               }
             : {})}
         />
@@ -185,26 +182,17 @@ export function TelegramAccessSection({ workspaceId, accessMode, onAccessModeCha
         <>
           <SectionDivider />
           <SectionHeader
-            title={t('settings.messaging.telegram.access.pendingRequestsTitle')}
-            subtitle={t('settings.messaging.telegram.access.pendingRequestsSubtitle', {
+            title={t('settings.messaging.access.pendingRequestsTitle')}
+            subtitle={t('settings.messaging.access.pendingRequestsSubtitle', {
               count: pending.length,
             })}
           />
-          <PendingSendersList
-            pending={pending}
-            onAllow={handleAllow}
-            onIgnore={handleIgnore}
-          />
+          <PendingSendersList pending={pending} onAllow={handleAllow} onIgnore={handleIgnore} />
         </>
       )}
     </>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Collapsible Allowed users — mirrors the PairedSupergroupSection structure
-// so the two rows feel like siblings inside the Telegram card.
-// ---------------------------------------------------------------------------
 
 function AllowedUsersCollapsible({
   owners,
@@ -216,17 +204,14 @@ function AllowedUsersCollapsible({
   onRemove: (userId: string) => void
 }) {
   const { t } = useTranslation()
-  // Default open when there are owners to draw the operator's eye to who's
-  // on the list; closed when empty (the banner / pending list handles the
-  // "do something" prompt instead).
   const [isExpanded, setIsExpanded] = React.useState(owners.length > 0)
 
   const subtitle =
     accessMode === 'open'
-      ? t('settings.messaging.telegram.access.allowedUsersSubtitleOpen')
+      ? t('settings.messaging.access.allowedUsersSubtitleOpen')
       : owners.length === 0
-        ? t('settings.messaging.telegram.access.allowedUsersSubtitleEmpty')
-        : t('settings.messaging.telegram.access.allowedUsersSubtitle', { count: owners.length })
+        ? t('settings.messaging.access.allowedUsersSubtitleEmpty')
+        : t('settings.messaging.access.allowedUsersSubtitle', { count: owners.length })
 
   return (
     <div>
@@ -238,7 +223,7 @@ function AllowedUsersCollapsible({
         <SubRowIcon icon={Users} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">
-            {t('settings.messaging.telegram.access.allowedUsersTitle')}
+            {t('settings.messaging.access.allowedUsersTitle')}
           </div>
           <div className="mt-0.5 truncate text-xs text-foreground/50">{subtitle}</div>
         </div>
@@ -272,11 +257,6 @@ function AllowedUsersCollapsible({
   )
 }
 
-// ---------------------------------------------------------------------------
-// Shared row primitives — kept local to avoid pulling in the page-level ones
-// from MessagingSettingsPage. Matches geometry exactly (22px icon column).
-// ---------------------------------------------------------------------------
-
 function SubRowIcon({
   icon: Icon,
   size = SUB_ROW_ICON_SIZE,
@@ -307,9 +287,7 @@ function SectionDivider() {
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="px-4 pt-3 pb-1">
-      <div className="text-xs font-medium uppercase tracking-wide text-foreground/50">
-        {title}
-      </div>
+      <div className="text-xs font-medium uppercase tracking-wide text-foreground/50">{title}</div>
       <div className="mt-0.5 text-xs text-foreground/50">{subtitle}</div>
     </div>
   )

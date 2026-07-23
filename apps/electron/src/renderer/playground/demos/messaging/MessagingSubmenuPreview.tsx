@@ -3,8 +3,7 @@
  *
  * Renders a focused demo of just the "Connect Messaging" submenu shared with
  * the real SessionMenu. Clicking either branch runs the same code path:
- *   - When the platform is not connected, it opens the WhatsApp connect
- *     dialog (WhatsApp) or toasts (Telegram — playground has no router).
+ *   - When the platform is not connected, it toasts (playground has no router).
  *   - When connected, it dispatches a pairing dialog via messagingDialogAtom.
  *
  * We mount <MessagingDialogHost /> so the dispatched dialogs actually show
@@ -24,33 +23,33 @@ import { MessagingSessionMenuItem } from '../../../components/messaging/Messagin
 import { playgroundMessagingHandle } from '../../mock-utils'
 
 export interface MessagingSubmenuPreviewProps {
-  telegramConnected: boolean
-  whatsappConnected: boolean
+  larkConnected: boolean
+  wechatConnected: boolean
 }
 
 const PLAYGROUND_SESSION_ID = 'playground-session-xyz'
 
 export function MessagingSubmenuPreview({
-  telegramConnected,
-  whatsappConnected,
+  larkConnected,
+  wechatConnected,
 }: MessagingSubmenuPreviewProps) {
   const { t } = useTranslation()
 
   // Keep the mock messaging state in sync with the variant props so the
   // connect flow's config check reflects what the preview claims.
   React.useEffect(() => {
-    playgroundMessagingHandle.setTelegramConnected(
-      telegramConnected,
-      telegramConnected ? 'Playground Bot' : undefined,
+    playgroundMessagingHandle.setLarkConnected(
+      larkConnected,
+      larkConnected ? 'Playground App' : undefined,
     )
-  }, [telegramConnected])
+  }, [larkConnected])
 
   React.useEffect(() => {
-    playgroundMessagingHandle.setWhatsAppConnected(
-      whatsappConnected,
-      whatsappConnected ? 'Gyula' : undefined,
+    playgroundMessagingHandle.setWeChatConnected(
+      wechatConnected,
+      wechatConnected ? 'Gyula' : undefined,
     )
-  }, [whatsappConnected])
+  }, [wechatConnected])
 
   return (
     <div className="flex flex-col items-start gap-4 p-6">
@@ -66,7 +65,7 @@ export function MessagingSubmenuPreview({
         <StyledDropdownMenuContent align="start">
           <MessagingSessionMenuItem
             sessionId={PLAYGROUND_SESSION_ID}
-            onTelegramNotConfigured={() => toast.info(t('toast.telegramNotConfiguredOpenSettings'))}
+            onPlatformNotConfigured={() => toast.info(t('toast.messagingNotConfigured'))}
           />
         </StyledDropdownMenuContent>
       </DropdownMenu>

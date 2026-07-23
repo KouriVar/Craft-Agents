@@ -1,4 +1,7 @@
-preload = ["./packages/shared/src/unified-network-interceptor.ts"]
+preload = [
+  "./packages/shared/src/unified-network-interceptor.ts",
+  "./scripts/test-isolation-setup.ts",
+]
 
 # Use the hoisted linker so transitive deps resolve at top-level node_modules.
 # Vite + esbuild bundling expects this layout; bun's default isolated linker
@@ -8,3 +11,11 @@ preload = ["./packages/shared/src/unified-network-interceptor.ts"]
 # `bun install --linker=hoisted` for the same reason.
 [install]
 linker = "hoisted"
+
+# Packaged Electron builds (and other compile outputs) can contain copies of
+# *.test.ts / *.isolated.ts. Never discover those as the repo test suite.
+[test]
+pathIgnorePatterns = [
+  "**/release/**",
+  "**/dist/**",
+]

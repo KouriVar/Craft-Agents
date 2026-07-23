@@ -13,7 +13,7 @@ export interface MessagingBinding {
   sessionId: string
   platform: string
   channelId: string
-  /** Telegram supergroup forum topic id; undefined for DMs / non-Telegram. */
+  /** Thread id within the channel, if any; undefined for the default surface. */
   threadId?: number
   channelName?: string
   enabled: boolean
@@ -60,16 +60,12 @@ export type MessagingDialogState =
   | { kind: 'closed' }
   | {
       kind: 'pairing'
-      platform: 'telegram' | 'whatsapp' | 'lark' | 'wechat'
+      platform: 'lark' | 'wechat'
       sessionId: string
       code: string | null
       expiresAt: number | null
       botUsername?: string
       error?: string
-    }
-  | {
-      kind: 'wa_connect'
-      continueToPairingSessionId?: string
     }
   | {
       kind: 'wechat_connect'

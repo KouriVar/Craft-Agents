@@ -56,6 +56,7 @@ import {
   formatTurnAsMarkdown,
   formatActivityAsMarkdown,
   getAssistantTurnUiKey,
+  deriveTurnPhase,
   asRecord,
   getAnnotationNoteText,
   isAnnotationFollowUpSent,
@@ -318,7 +319,7 @@ function ChatScrollLocator({
       </div>
       <div
         className={cn(
-          "pointer-events-none w-[420px] rounded-[14px] border border-border/70 bg-background/95 px-4 py-3 shadow-xl backdrop-blur-xl transition-opacity",
+          "pointer-events-none w-[420px] rounded-[14px] border border-border/70 bg-background/95 px-4 py-3 shadow-modal-small backdrop-blur-xl transition-opacity",
           isBottom ? "absolute bottom-full right-0 mb-3" : "",
           hoveredKey ? "opacity-100" : "opacity-0"
         )}
@@ -833,34 +834,48 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     setExpandedActivityGroups,
   } = useTurnCardExpansion(session?.id)
 
-  // Auto-expand thinking/reasoning turns so users can watch the step-by-step
-  // progress. Once the final response arrives (turn is complete), it auto-collapses
-  // so the output is clean and only expanded if the user clicks.
-  const prevThinkingTurnIdsRef = useRef<Set<string>>(new Set())
+  // Auto-expand each turn once when activity starts so its progress is visible.
+  // Collapse it again as soon as the final response starts streaming. Tracking the
+  // transition (instead of expandedTurns) lets the user manually collapse it while
+  // work is still in progress without the next message forcing it open again.
+  const autoExpandedTurnIdsRef = React.useRef<Set<string>>(new Set())
+  const previousThinkingTurnIdsRef = React.useRef<Set<string>>(new Set())
+  const autoExpansionSessionIdRef = React.useRef(session?.id)
   useEffect(() => {
+    if (autoExpansionSessionIdRef.current !== session?.id) {
+      autoExpandedTurnIdsRef.current.clear()
+      previousThinkingTurnIdsRef.current.clear()
+      autoExpansionSessionIdRef.current = session?.id
+    }
+
     const turns = groupMessagesByTurn(session?.messages || [], { isSessionProcessing: session?.isProcessing ?? false })
     const currentThinkingIds = new Set<string>()
     for (let i = 0; i < turns.length; i++) {
       const turn = turns[i]
       if (turn.type !== 'assistant') continue
       const key = getAssistantTurnUiKey(turn, i)
-      // A turn is "thinking" when it has activities but hasn't delivered the final response yet
-      const isThinking = (turn.isStreaming || turn.activities?.length) && !turn.isComplete
-      if (isThinking) {
+      const phase = deriveTurnPhase(turn)
+      const isShowingWork = phase === 'tool_active' || phase === 'awaiting'
+      if (isShowingWork) {
         currentThinkingIds.add(key)
-        if (!expandedTurns.has(key)) {
+        if (!previousThinkingTurnIdsRef.current.has(key)) {
           toggleTurn(key, true)
+          autoExpandedTurnIdsRef.current.add(key)
         }
       }
     }
-    // Collapse turns that were thinking but now have a response (output mode)
-    for (const key of prevThinkingTurnIdsRef.current) {
-      if (!currentThinkingIds.has(key) && expandedTurns.has(key)) {
+
+    // Only collapse cards that this effect opened; existing user-expanded cards
+    // remain untouched. Streaming starts before completion, which is the desired
+    // handoff point from the activity timeline to the response body.
+    for (const key of autoExpandedTurnIdsRef.current) {
+      if (!currentThinkingIds.has(key)) {
         toggleTurn(key, false)
+        autoExpandedTurnIdsRef.current.delete(key)
       }
     }
-    prevThinkingTurnIdsRef.current = currentThinkingIds
-  }, [session?.messages, session?.isProcessing])
+    previousThinkingTurnIdsRef.current = currentThinkingIds
+  }, [session?.id, session?.messages, session?.isProcessing, toggleTurn])
 
   // ============================================================================
   // Search Highlighting (from session list search)

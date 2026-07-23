@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { RPC_CHANNELS } from '../../shared/types'
+import { createElectronTestMock } from '../../test/mock-electron'
 
 let clickHandler: (() => void) | null = null
 
@@ -20,7 +21,7 @@ mock.module('electron', () => {
     show(): void {}
   }
 
-  return {
+  return createElectronTestMock({
     Notification: MockNotification,
     app: {
       dock: { setIcon: () => {} },
@@ -29,11 +30,7 @@ mock.module('electron', () => {
     BrowserWindow: {
       getAllWindows: () => [],
     },
-    nativeImage: {
-      createFromPath: () => ({}),
-      createFromDataURL: () => ({}),
-    },
-  }
+  })
 })
 
 describe('notification click routing', () => {

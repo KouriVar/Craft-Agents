@@ -3,7 +3,7 @@
  *
  * Thin playground wrapper around the real MessagingSettingsPage that drives
  * the mock messaging state via `window.__playgroundMessaging` based on
- * variant props. Lets you toggle Telegram/WhatsApp connection status and
+ * variant props. Lets you toggle Lark/WeChat connection status and
  * seed bindings without the component needing playground-specific props.
  */
 
@@ -33,7 +33,7 @@ function buildBindings(preset: BindingsPreset): MessagingBinding[] {
           ...base,
           id: 'binding-1',
           sessionId: 'session-aaa',
-          platform: 'telegram',
+          platform: 'lark',
           channelId: '123456',
           channelName: 'Gyula (DM)',
         },
@@ -44,7 +44,7 @@ function buildBindings(preset: BindingsPreset): MessagingBinding[] {
           ...base,
           id: 'binding-1',
           sessionId: 'session-aaa',
-          platform: 'telegram',
+          platform: 'lark',
           channelId: '123456',
           channelName: 'Gyula (DM)',
         },
@@ -52,8 +52,8 @@ function buildBindings(preset: BindingsPreset): MessagingBinding[] {
           ...base,
           id: 'binding-2',
           sessionId: 'session-bbb',
-          platform: 'whatsapp',
-          channelId: '36201234567@s.whatsapp.net',
+          platform: 'wechat',
+          channelId: 'wxid_standup',
           channelName: 'Standup Bot',
           createdAt: Date.now() - 86_400_000,
         },
@@ -61,7 +61,7 @@ function buildBindings(preset: BindingsPreset): MessagingBinding[] {
           ...base,
           id: 'binding-3',
           sessionId: 'session-ccc',
-          platform: 'telegram',
+          platform: 'lark',
           channelId: '-10098765',
           channelName: 'Team Inbox',
           createdAt: Date.now() - 2 * 86_400_000,
@@ -79,29 +79,29 @@ const MOCK_SESSION_META: Record<string, SessionMeta> = {
   'session-aaa': {
     id: 'session-aaa',
     workspaceId: PLAYGROUND_WORKSPACE_ID,
-    name: 'Gyula DM — Telegram chat',
+    name: 'Gyula DM — Lark chat',
   },
   'session-bbb': {
     id: 'session-bbb',
     workspaceId: PLAYGROUND_WORKSPACE_ID,
-    name: 'Standup Bot — WhatsApp workflow',
+    name: 'Standup Bot — WeChat workflow',
   },
   'session-ccc': {
     id: 'session-ccc',
     workspaceId: PLAYGROUND_WORKSPACE_ID,
-    name: 'Team Inbox — Telegram group',
+    name: 'Team Inbox — Lark group',
   },
 }
 
 export interface MessagingSettingsPagePreviewProps {
-  telegramConnected: boolean
-  whatsappConnected: boolean
+  larkConnected: boolean
+  wechatConnected: boolean
   bindings: BindingsPreset
 }
 
 export function MessagingSettingsPagePreview({
-  telegramConnected,
-  whatsappConnected,
+  larkConnected,
+  wechatConnected,
   bindings,
 }: MessagingSettingsPagePreviewProps) {
   const setBindingsAtom = useSetAtom(setMessagingBindingsAtom)
@@ -126,18 +126,18 @@ export function MessagingSettingsPagePreview({
   }, [setSessionMetaMap])
 
   React.useEffect(() => {
-    playgroundMessagingHandle.setTelegramConnected(
-      telegramConnected,
-      telegramConnected ? 'Playground Bot' : undefined,
+    playgroundMessagingHandle.setLarkConnected(
+      larkConnected,
+      larkConnected ? 'Playground App' : undefined,
     )
-  }, [telegramConnected])
+  }, [larkConnected])
 
   React.useEffect(() => {
-    playgroundMessagingHandle.setWhatsAppConnected(
-      whatsappConnected,
-      whatsappConnected ? 'Gyula' : undefined,
+    playgroundMessagingHandle.setWeChatConnected(
+      wechatConnected,
+      wechatConnected ? 'Gyula' : undefined,
     )
-  }, [whatsappConnected])
+  }, [wechatConnected])
 
   React.useEffect(() => {
     const seeded = buildBindings(bindings)

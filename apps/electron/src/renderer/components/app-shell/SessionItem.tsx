@@ -24,13 +24,13 @@ import { messagingBindingsBySessionAtom } from "@/atoms/messaging"
 import { useAtomValue } from "jotai"
 import { extractLabelId } from "@craft-agent/shared/labels"
 
-const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {
-  telegram: {
-    label: 'Telegram',
+const PLATFORM_PILL: Record<'lark' | 'wechat', { label: string; colorClass: string }> = {
+  lark: {
+    label: 'Lark',
     colorClass: 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300',
   },
-  whatsapp: {
-    label: 'WhatsApp',
+  wechat: {
+    label: 'WeChat',
     colorClass: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
   },
 }
@@ -226,7 +226,7 @@ export function SessionItem({
               </span>
             )}
             {hasMessagingBinding && sessionBindings.map((binding) => {
-              const pill = PLATFORM_PILL[binding.platform as 'telegram' | 'whatsapp']
+              const pill = PLATFORM_PILL[binding.platform as 'lark' | 'wechat']
               if (!pill) return null
               return (
                 <EntityListBadge

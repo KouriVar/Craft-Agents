@@ -6,7 +6,7 @@
 <p>
   <a href="./CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-查看更新-7c3aed?style=flat-square"></a>
   <a href="../../releases"><img alt="Releases" src="https://img.shields.io/badge/releases-下载构建-2563eb?style=flat-square"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-0.13.0-111827?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.14.0-111827?style=flat-square">
   <img alt="Branch" src="https://img.shields.io/badge/branch-my--changes-64748b?style=flat-square">
 </p>
 
@@ -37,7 +37,7 @@
 | 🔌 插件市场 | Git/本地安装、公开市场浏览、Agent 插件与浏览器扩展分类管理 |
 | 🔐 账号与认证 | 外部 OAuth、插件连接器→原生数据源映射、重连断开 |
 | 🤖 模型运行时 | Pi 0.80.10、统一 ModelRuntime、热更新凭据、Kimi/Grok 等最新模型 |
-| 💬 消息接入 | Telegram、WhatsApp、飞书/Lark、微信 ilink 适配器 |
+| 💬 消息接入 | 飞书/Lark、微信 ilink 适配器 |
 | 🧰 桌面工具 | 内嵌终端、工作区文件浏览、专注模式、诊断导出、中文原生菜单 |
 | 🏗️ 本地打包 | macOS / Windows / Linux Electron 构建与运行时资源补齐 |
 

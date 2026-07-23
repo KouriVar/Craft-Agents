@@ -9,6 +9,7 @@
  * - All consumers must handle null gracefully without crashing
  */
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { installWindowShim, restoreWindowShim } from '../../../test/window-shim'
 
 // ============================================================================
 // Mock Setup
@@ -17,28 +18,24 @@ import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
 // Mock window.electronAPI
 const mockReadWorkspaceImage = mock((workspaceId: string, path: string) => Promise.resolve(null as string | null))
 
-// We need to mock the window object before importing the module
-const originalWindow = globalThis.window
-
 beforeEach(() => {
   // Reset mock
   mockReadWorkspaceImage.mockReset()
   mockReadWorkspaceImage.mockImplementation((_workspaceId: string, _path: string) => Promise.resolve(null))
 
-  // Setup mock window.electronAPI
-  ;(globalThis as unknown as { window: unknown }).window = {
+  // Setup mock window.electronAPI (always restored in afterEach)
+  installWindowShim({
     electronAPI: {
       readWorkspaceImage: mockReadWorkspaceImage,
     },
     getComputedStyle: () => ({
       getPropertyValue: () => '#ffffff',
     }),
-  }
+  })
 })
 
 afterEach(() => {
-  // Restore original window
-  ;(globalThis as unknown as { window: unknown }).window = originalWindow
+  restoreWindowShim()
 })
 
 // ============================================================================

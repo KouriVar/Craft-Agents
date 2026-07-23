@@ -14,10 +14,9 @@ import * as React from 'react'
 import { PairingCodeDialog } from '../../../components/messaging/PairingCodeDialog'
 
 export interface PairingCodeDialogPreviewProps {
-  platform: 'telegram' | 'whatsapp'
+  platform: 'lark' | 'wechat'
   code: string
   expiresInSeconds: number
-  botUsername: string
   error: string
 }
 
@@ -25,7 +24,6 @@ export function PairingCodeDialogPreview({
   platform,
   code,
   expiresInSeconds,
-  botUsername,
   error,
 }: PairingCodeDialogPreviewProps) {
   const [open, setOpen] = React.useState(true)
@@ -34,7 +32,7 @@ export function PairingCodeDialogPreview({
   // the dialog back up after the user has dismissed it.
   React.useEffect(() => {
     setOpen(true)
-  }, [platform, code, expiresInSeconds, botUsername, error])
+  }, [platform, code, expiresInSeconds, error])
 
   // Recompute expiresAt when the countdown prop changes so the timer restarts.
   const expiresAt = React.useMemo(() => {
@@ -51,7 +49,6 @@ export function PairingCodeDialogPreview({
         platform={platform}
         code={code || null}
         expiresAt={expiresAt}
-        botUsername={botUsername || undefined}
         error={error || undefined}
       />
       {!open && (

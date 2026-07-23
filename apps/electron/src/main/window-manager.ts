@@ -8,6 +8,7 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { classifyExternalUrl, formatBlockedUrlError } from '@craft-agent/shared/utils/url-safety'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
 import type { SavedWindow } from './window-state'
+import { recordStartupMilestone } from './resource-diagnostics'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -264,6 +265,7 @@ export class WindowManager {
 
     // Show window when first paint is ready (faster perceived startup)
     window.once('ready-to-show', () => {
+      recordStartupMilestone('first-window-ready-to-show')
       window.show()
     })
 
@@ -373,12 +375,24 @@ export class WindowManager {
     // In dev mode, retry the Vite dev server (it may not be ready yet) instead of falling back
     // to file:// which doesn't exist during development.
     let failLoadRetries = 0
+    let failLoadRetryTimer: ReturnType<typeof setTimeout> | null = null
+    const clearFailLoadRetry = () => {
+      if (failLoadRetryTimer) {
+        clearTimeout(failLoadRetryTimer)
+        failLoadRetryTimer = null
+      }
+    }
+    window.on('closed', clearFailLoadRetry)
     window.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
       windowLog.warn('Failed to load renderer:', errorCode, errorDescription)
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return
       if (VITE_DEV_SERVER_URL && failLoadRetries < 5) {
         failLoadRetries++
         windowLog.info(`Retrying Vite dev server (attempt ${failLoadRetries}/5)...`)
-        setTimeout(() => {
+        clearFailLoadRetry()
+        failLoadRetryTimer = setTimeout(() => {
+          failLoadRetryTimer = null
+          if (window.isDestroyed() || window.webContents.isDestroyed()) return
           const params = new URLSearchParams({ workspaceId }).toString()
           window.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
         }, 1000)

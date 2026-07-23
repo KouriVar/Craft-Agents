@@ -110,10 +110,12 @@ export function KanbanColumn({
 
       <div
         ref={setNodeRef}
-        className="flex flex-1 flex-col gap-2 overflow-y-auto rounded-lg p-2 transition-shadow"
+        className="flex flex-1 flex-col gap-2 overflow-y-auto rounded-lg p-2 transition-[outline-color]"
         style={{
           backgroundColor: color?.tint,
-          boxShadow: isOver && color ? `inset 0 0 0 2px ${color.solid}` : undefined,
+          ...(isOver && color
+            ? { outline: `2px solid ${color.solid}`, outlineOffset: '-2px' }
+            : { outline: '2px solid transparent', outlineOffset: '-2px' }),
         }}
       >
         {onCreateTask && <NewTaskComposer onCreate={onCreateTask} />}
@@ -260,8 +262,8 @@ function ColumnHeader({
       <PopoverContent
         align="start"
         sideOffset={4}
-        className="dark w-64 space-y-3 border-border/50 bg-background/80 p-3 backdrop-blur-xl backdrop-saturate-150"
-        style={{ borderRadius: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)' }}
+        className="dark w-64 space-y-3 border-border/50 bg-background/80 p-3 shadow-modal-small backdrop-blur-xl backdrop-saturate-150"
+        style={{ borderRadius: '8px' }}
         data-no-dnd="true"
       >
         {onRename && (

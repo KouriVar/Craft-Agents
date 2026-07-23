@@ -262,9 +262,12 @@ export function openTerminalPane(cwd: string): void {
   win.loadFile(htmlPath)
   win.once('ready-to-show', () => win.show())
 
+  // Cache before any navigation/close — `webContents.id` is unreliable after destroy.
+  const webContentsId = win.webContents.id
+
   win.webContents.once('did-finish-load', () => {
     try {
-      instances.set(win.webContents.id, {
+      instances.set(webContentsId, {
         window: win,
         process: createTerminalProcess(cwd, data => sendTerminalData(win, data), () => closeAfterExit(win)),
       })
@@ -275,14 +278,40 @@ export function openTerminalPane(cwd: string): void {
   })
 
   win.on('closed', () => {
-    const instance = instances.get(win.webContents.id)
+    const instance = instances.get(webContentsId)
     if (instance) {
       try {
         instance.process.kill()
       } catch {
         // Process might have already exited.
       }
-      instances.delete(win.webContents.id)
+      instances.delete(webContentsId)
     }
   })
+}
+
+/** Kill every standalone pane and embedded PTY before app.exit (quit path). */
+export function destroyAllTerminalPanes(): void {
+  for (const [id, instance] of [...instances.entries()]) {
+    try {
+      instance.process.kill()
+    } catch {
+      // Already exited.
+    }
+    try {
+      if (!instance.window.isDestroyed()) instance.window.destroy()
+    } catch {
+      // Window may already be gone.
+    }
+    instances.delete(id)
+  }
+
+  for (const [id, instance] of [...embeddedInstances.entries()]) {
+    try {
+      instance.process.kill()
+    } catch {
+      // Already exited.
+    }
+    embeddedInstances.delete(id)
+  }
 }

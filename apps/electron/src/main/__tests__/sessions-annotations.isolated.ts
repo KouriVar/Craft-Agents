@@ -1,15 +1,13 @@
 import { describe, expect, it, mock } from 'bun:test'
 import type { AnnotationV1 } from '@craft-agent/core/types'
+import { mockElectronModule } from '../../test/mock-electron'
 
-mock.module('electron', () => ({
+mockElectronModule({
   app: {
     isPackaged: false,
     getAppPath: () => process.cwd(),
   },
-  nativeImage: {
-    createFromPath: () => ({ isEmpty: () => true }),
-  },
-}))
+})
 
 mock.module('@sentry/electron/main', () => ({
   captureException: () => {},

@@ -906,6 +906,7 @@ app.whenReady().then(async () => {
       }
 
       // Bootstrap the WS RPC server via shared bootstrap function.
+      recordStartupMilestone('bootstrap-server-start')
       const instance = await bootstrapServer<SessionManager, HandlerDeps>({
         serverToken,
         rpcHost,
@@ -956,17 +957,6 @@ app.whenReady().then(async () => {
             // Route messaging diagnostics through the dedicated messaging log
             // at ~/.craft-agent/logs/messaging-gateway.log.
             logger: messagingGatewayLog,
-            // WhatsApp worker runs under Electron's embedded Node via
-            // ELECTRON_RUN_AS_NODE (WhatsAppAdapter defaults nodeBin to
-            // process.execPath). In dev we resolve worker.cjs from the
-            // monorepo; in packaged builds it's shipped via extraResources
-            // (see apps/electron/electron-builder.yml).
-            whatsapp: {
-              workerEntry: app.isPackaged
-                ? join(process.resourcesPath, 'messaging-whatsapp-worker', 'worker.cjs')
-                : join(process.cwd(), 'packages', 'messaging-whatsapp-worker', 'dist', 'worker.cjs'),
-              pairingMode: 'qr',
-            },
           })
           return {
             sessionManager: sm,
@@ -1008,6 +998,7 @@ app.whenReady().then(async () => {
           cleanupSessionFileWatchForClient(clientId)
         },
       })
+      recordStartupMilestone('bootstrap-server-ready')
 
       // Capture module-level references for before-quit cleanup and deep-link handlers
       sessionManager = instance.sessionManager
@@ -1031,7 +1022,9 @@ app.whenReady().then(async () => {
         const localWorkspaceIds = getWorkspaces()
           .filter((ws) => !ws.remoteServer)
           .map((ws) => ws.id)
+        recordStartupMilestone('messaging-workspaces-start')
         await messagingHandle.initializeWorkspaces(localWorkspaceIds)
+        recordStartupMilestone('messaging-workspaces-ready')
 
         // Compose fan-out event sink: RPC push + messaging gateway dispatch.
         // Always install — this lets workspaces enable messaging at runtime
@@ -1488,10 +1481,6 @@ app.on('before-quit', async (event) => {
   if (isQuitting) return
   isQuitting = true
 
-  if (cowartCanvasProcess && cowartCanvasProcess.exitCode === null) {
-    signalCowartCanvasProcess(cowartCanvasProcess, 'SIGTERM')
-  }
-
   // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
   windowManager?.setAppQuitting(true)
 
@@ -1533,6 +1522,11 @@ app.on('before-quit', async (event) => {
     oauthFlowStore,
     stopModelRefresh: () => getModelRefreshService().stopAll(),
     messagingHandle,
+    stopCowartCanvas: () => stopCowartCanvas(),
+    destroyTerminalPanes: async () => {
+      const { destroyAllTerminalPanes } = await import('./terminal-pane-manager')
+      destroyAllTerminalPanes()
+    },
     cleanupPowerManager: async () => {
       const { cleanup } = await import('./power-manager')
       cleanup()

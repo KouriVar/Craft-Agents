@@ -12,6 +12,10 @@ export interface ShutdownResources {
   oauthFlowStore?: { dispose(): void } | null
   stopModelRefresh(): void
   messagingHandle?: { dispose(): Promise<void> } | null
+  /** Detached Cowart canvas child process (SIGTERM → wait → SIGKILL). */
+  stopCowartCanvas?: (() => void | Promise<void>) | null
+  /** Standalone / embedded terminal PTY processes. */
+  destroyTerminalPanes?: (() => void) | null
   cleanupPowerManager(): void | Promise<void>
   releaseServerLock(): void
   logger: ShutdownLogger
@@ -62,6 +66,12 @@ export async function cleanupApplicationResources(resources: ShutdownResources):
   await run('model-refresh-stop', () => resources.stopModelRefresh())
   await run('messaging-dispose', resources.messagingHandle
     ? () => resources.messagingHandle!.dispose()
+    : null)
+  await run('cowart-canvas-stop', resources.stopCowartCanvas
+    ? () => resources.stopCowartCanvas!()
+    : null)
+  await run('terminal-panes-destroy', resources.destroyTerminalPanes
+    ? () => resources.destroyTerminalPanes!()
     : null)
   await run('power-cleanup', () => resources.cleanupPowerManager())
   await run('server-lock-release', () => resources.releaseServerLock())

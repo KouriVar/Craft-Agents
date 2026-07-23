@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
+import { mockElectronModule } from '../../test/mock-electron'
 
-mock.module('electron', () => ({
+mockElectronModule({
   app: { getPath: () => tmpdir() },
-}))
+})
 
 const { BrowserProfileStore } = await import('../browser-profile-store')
 

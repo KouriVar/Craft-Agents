@@ -13,30 +13,33 @@ const deletedIds: string[] = []
 let mockedProvider: 'anthropic' | 'pi' = 'anthropic'
 
 // Partial-mock baseline: import real modules via file paths (avoids recursive mock imports)
+const actualSharedConfigModule = await import('../../../../../packages/shared/src/config/index.ts')
 const actualSharedAgentModule = await import('../../../../../packages/shared/src/agent/index.ts')
 const actualSharedAgentBackendModule = await import('../../../../../packages/shared/src/agent/backend/index.ts')
 
-mock.module('electron', () => ({
-  app: {
-    isPackaged: false,
-    getAppPath: () => process.cwd(),
-    dock: { setIcon: () => {}, setBadge: () => {} },
-    setBadgeCount: () => {},
-  },
-  nativeImage: {
-    createFromPath: () => ({ isEmpty: () => true }),
-    createFromDataURL: () => ({}),
-  },
-  Notification: class {
-    static isSupported() { return false }
-    on() {}
-    show() {}
-  },
-  BrowserWindow: {
-    getAllWindows: () => [],
-    getFocusedWindow: () => null,
-  },
-}))
+const { createElectronTestMock } = await import('../../test/mock-electron')
+
+mock.module('electron', () =>
+  createElectronTestMock({
+    app: {
+      isPackaged: false,
+      getAppPath: () => process.cwd(),
+      dock: { setIcon: () => {}, setBadge: () => {} },
+      setBadgeCount: () => {},
+    },
+    Notification: class {
+      static isSupported() {
+        return false
+      }
+      on() {}
+      show() {}
+    },
+    BrowserWindow: {
+      getAllWindows: () => [],
+      getFocusedWindow: () => null,
+    },
+  }),
+)
 
 mock.module('@sentry/electron/main', () => ({
   captureException: () => {},
@@ -56,7 +59,9 @@ mock.module('../logger', () => {
   }
 })
 
+// Real config barrel + selective overrides (keeps exports like defaultMidStreamBehavior).
 mock.module('@craft-agent/shared/config', () => ({
+  ...actualSharedConfigModule,
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaces: () => [workspace],
   loadConfigDefaults: () => ({
@@ -71,42 +76,38 @@ mock.module('@craft-agent/shared/config', () => ({
   getToolIconsDir: () => '/tmp/tool-icons',
   getMiniModel: () => 'claude-haiku-4-5-20251001',
   getDefaultThinkingLevel: () => 'medium',
-  ConfigWatcher: class ConfigWatcher {
-    constructor(..._args: unknown[]) {}
-    start() {}
-    stop() {}
-  },
-  migrateLegacyCredentials: async () => {},
-  migrateLegacyLlmConnectionsConfig: async () => {},
-  migrateOrphanedDefaultConnections: async () => {},
-  MODEL_REGISTRY: [],
-  // Targeted stubs: prevent SyntaxError in tests that import these from the barrel
-  DEFAULT_MODEL: 'claude-sonnet-4-20250514',
-  DEFAULT_THEME: { mode: 'system' },
-  getDefaultModelsForConnection: () => ({ default: 'claude-sonnet-4-20250514', mini: 'claude-haiku-4-5-20251001' }),
+  getDefaultModelsForConnection: () => ({
+    default: 'claude-sonnet-4-20250514',
+    mini: 'claude-haiku-4-5-20251001',
+  }),
   getDefaultModelForConnection: () => 'claude-sonnet-4-20250514',
+  getSummarizationModel: () => 'claude-haiku-4-5-20251001',
+  getLlmConnections: () => [],
+  getSessionDraft: () => null,
+  getAllSessionDrafts: () => [],
+  getGitBashPath: () => null,
+  getPreferencesPath: () => '/tmp/preferences.json',
   setGitBashPath: () => {},
   clearGitBashPath: () => {},
   setActiveWorkspace: () => {},
-  getSummarizationModel: () => 'claude-haiku-4-5-20251001',
   ensureConfigDir: () => {},
   ensureConfigDefaults: () => {},
   addWorkspace: async () => null,
-  getAllSessionDrafts: () => [],
-  getGitBashPath: () => null,
-  // Handler-required stubs: prevent SyntaxError in handler modules loaded by registration test
-  getPreferencesPath: () => '/tmp/preferences.json',
-  getSessionDraft: () => null,
   setSessionDraft: async () => {},
   deleteSessionDraft: async () => {},
-  getLlmConnections: () => [],
   addLlmConnection: async () => null,
   updateLlmConnection: async () => null,
   deleteLlmConnection: async () => {},
   setDefaultLlmConnection: async () => {},
   touchLlmConnection: async () => {},
-  isCompatProvider: () => false,
-  isAnthropicProvider: () => true,
+  migrateLegacyCredentials: async () => {},
+  migrateLegacyLlmConnectionsConfig: async () => {},
+  migrateOrphanedDefaultConnections: async () => {},
+  ConfigWatcher: class ConfigWatcher {
+    constructor(..._args: unknown[]) {}
+    start() {}
+    stop() {}
+  },
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({

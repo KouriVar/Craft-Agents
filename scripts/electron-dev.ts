@@ -13,11 +13,10 @@ const ROOT_DIR = join(import.meta.dir, "..");
 const ELECTRON_DIR = join(ROOT_DIR, "apps/electron");
 const DIST_DIR = join(ELECTRON_DIR, "dist");
 
-// Replace grammY's bundled polyfills (node-fetch@2 + abort-controller@3) with
-// native Node globals. esbuild otherwise renames the polyfill's `class
-// AbortSignal` to `_AbortSignal` to dodge collision with the global, which
-// breaks node-fetch@2's `constructor.name === 'AbortSignal'` check and fails
-// every Telegram API call with a TypeError. Kept in sync with
+// Replace bundled node-fetch@2 + abort-controller@3 polyfills with native Node
+// globals. esbuild otherwise renames the polyfill's `class AbortSignal` to
+// `_AbortSignal` to dodge collision with the global, which breaks node-fetch@2's
+// `constructor.name === 'AbortSignal'` check. Kept in sync with
 // `apps/electron/package.json` build:main and `scripts/electron-build-main.ts`.
 const MAIN_PROCESS_ALIAS: Record<string, string> = {
   "node-fetch": join(ROOT_DIR, "apps/electron/src/main/shims/node-fetch.cjs"),
@@ -194,24 +193,6 @@ function copyResources(): void {
   if (existsSync(srcDir)) {
     cpSync(srcDir, destDir, { recursive: true, force: true });
     console.log("📦 Copied resources to dist");
-  }
-}
-
-// Build the WhatsApp worker bundle (dist/worker.cjs). Runs the canonical
-// `scripts/build-wa-worker.ts` as a subprocess so the dev path stays in
-// sync with the packaged/CI build. Cheap (~70ms) so we always rebuild.
-async function buildWaWorker(): Promise<void> {
-  console.log("📨 Building WhatsApp worker...");
-  const proc = spawn({
-    cmd: ["bun", "run", "scripts/build-wa-worker.ts"],
-    cwd: ROOT_DIR,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    console.error("❌ WhatsApp worker build failed");
-    process.exit(1);
   }
 }
 
@@ -434,9 +415,6 @@ async function main(): Promise<void> {
 
   // Build MCP servers for Codex sessions
   await buildMcpServers();
-
-  // Build WhatsApp worker bundle so the adapter can spawn it on demand
-  await buildWaWorker();
 
   const vitePort = process.env.CRAFT_VITE_PORT || "5173";
   const oauthDefines = getOAuthDefines();

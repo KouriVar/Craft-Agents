@@ -17,10 +17,11 @@ import { describe, it, expect, beforeEach, mock } from 'bun:test'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type { BrowserInstanceInfo } from '@craft-agent/shared/protocol'
+import { mockElectronModule } from '../../../test/mock-electron'
 
-mock.module('electron', () => ({
+mockElectronModule({
   ipcMain: { handle: () => {}, on: () => {} },
-}))
+})
 
 type HandlerFn = (...args: unknown[]) => unknown
 type Push = { channel: string; target: unknown; args: unknown[] }

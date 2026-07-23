@@ -374,6 +374,12 @@ export class SourceCredentialManager {
     } catch (error) {
       debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth:`, error);
     }
+
+    // Always mirror onto the in-memory source so isSourceUsable() reflects the
+    // failure immediately, even if the disk write above was skipped/failed.
+    source.config.isAuthenticated = false;
+    source.config.connectionStatus = 'needs_auth';
+    source.config.connectionError = errorMessage;
   }
 
   /**

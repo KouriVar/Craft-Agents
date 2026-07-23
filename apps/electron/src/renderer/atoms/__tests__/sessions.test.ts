@@ -12,6 +12,7 @@ import {
   initializeSessionsAtom,
   replaceLoadedSessionAtom,
 } from '../sessions'
+import { installWindowShim, restoreWindowShim } from '../../../test/window-shim'
 
 function msg(id: string, role: Message['role'] = 'user'): Message {
   return {
@@ -34,15 +35,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('session message loading atoms', () => {
-  const originalWindow = globalThis.window
-
   afterEach(() => {
-    if (originalWindow) {
-      globalThis.window = originalWindow
-    } else {
-      // @ts-expect-error test cleanup for window shim
-      delete globalThis.window
-    }
+    restoreWindowShim()
   })
 
   it('replaceLoadedSessionAtom marks authoritative full sessions as loaded', () => {
@@ -64,7 +58,7 @@ describe('session message loading atoms', () => {
     const sessionId = 'session-1'
     const calls: string[] = []
 
-    globalThis.window = {
+    installWindowShim({
       electronAPI: {
         getSessionMessages: async (id: string) => {
           calls.push(id)
@@ -74,7 +68,7 @@ describe('session message loading atoms', () => {
           })
         },
       },
-    } as unknown as typeof window
+    })
 
     store.set(sessionAtomFamily(sessionId), makeSession({ id: sessionId, messages: [] }))
     store.set(loadedSessionsAtom, new Set([sessionId]))
@@ -95,7 +89,7 @@ describe('session message loading atoms', () => {
     const sessionId = 'session-1'
     const calls: string[] = []
 
-    globalThis.window = {
+    installWindowShim({
       electronAPI: {
         getSessionMessages: async (id: string) => {
           calls.push(id)
@@ -108,7 +102,7 @@ describe('session message loading atoms', () => {
           })
         },
       },
-    } as unknown as typeof window
+    })
 
     store.set(sessionAtomFamily(sessionId), makeSession({
       id: sessionId,

@@ -1,14 +1,14 @@
 /**
  * MessagingSessionMenuItem
  *
- * The "Connect Messaging → Telegram / WhatsApp" submenu block shared by
+ * The "Connect Messaging → Lark / WeChat" submenu block shared by
  * SessionMenu (real context/dropdown menus) and the playground preview.
  *
  * Behavior:
  *  - If the target platform isn't connected yet, route the user to the right
- *    setup entry point (WhatsApp opens the connect dialog; Telegram defaults
- *    to navigating to messaging settings + toasting — callers can override
- *    that via `onTelegramNotConfigured`).
+ *    setup entry point (WeChat opens the connect dialog; Lark defaults to
+ *    navigating to messaging settings + toasting — callers can override that
+ *    via `onPlatformNotConfigured`).
  *  - If the platform is connected, dispatch `messagingDialogAtom` with a
  *    pairing-code dialog and kick off `generateMessagingPairingCode`.
  *
@@ -27,17 +27,17 @@ import { navigate, routes } from '@/lib/navigate'
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { messagingDialogAtom } from '@/atoms/messaging'
 
-export type MessagingPlatform = 'telegram' | 'whatsapp' | 'lark' | 'wechat'
+export type MessagingPlatform = 'lark' | 'wechat'
 
 export interface UseMessagingConnectOptions {
   /** Session to bind the pairing code to. */
   sessionId: string
   /**
-   * Called when the user clicks Telegram or Lark but the platform isn't
-   * connected yet. Default: navigate to messaging settings + toast.
-   * Playground overrides this to toast only (it has no router).
+   * Called when the user clicks Lark but the platform isn't connected yet.
+   * Default: navigate to messaging settings + toast. Playground overrides
+   * this to toast only (it has no router).
    */
-  onTelegramNotConfigured?: () => void
+  onPlatformNotConfigured?: () => void
   /**
    * Override the error classifier used when pairing-code generation fails.
    * Default: {@link classifyMessagingError} — matches "not connected" and
@@ -52,7 +52,7 @@ export interface UseMessagingConnectOptions {
  */
 export function useMessagingConnect({
   sessionId,
-  onTelegramNotConfigured,
+  onPlatformNotConfigured,
   classifyError = classifyMessagingError,
 }: UseMessagingConnectOptions) {
   const { t } = useTranslation()
@@ -67,17 +67,15 @@ export function useMessagingConnect({
       const runtime = cfg?.runtime?.[platform]
       const isConnected = Boolean(runtime?.connected)
       if (!isConnected) {
-        if (platform === 'whatsapp') {
-          setMessagingDialog({ kind: 'wa_connect', continueToPairingSessionId: sessionId })
-        } else if (platform === 'wechat') {
+        if (platform === 'wechat') {
           setMessagingDialog({ kind: 'wechat_connect', continueToPairingSessionId: sessionId })
-        } else if (onTelegramNotConfigured) {
-          onTelegramNotConfigured()
+        } else if (onPlatformNotConfigured) {
+          onPlatformNotConfigured()
         } else {
-          // Telegram + Lark share the "open Settings" path — both use
-          // a Settings dialog rather than an inline connect flow.
+          // Lark uses the "open Settings" path — a Settings dialog rather
+          // than an inline connect flow.
           navigate(routes.view.settings('messaging'))
-          toast.info(t('toast.telegramNotConfiguredOpenSettings'))
+          toast.info(t('toast.platformNotConfiguredOpenSettings'))
         }
         return
       }
@@ -112,7 +110,7 @@ export function useMessagingConnect({
         error: classifyError(err, t),
       })
     }
-  }, [sessionId, onTelegramNotConfigured, classifyError, setMessagingDialog, t])
+  }, [sessionId, onPlatformNotConfigured, classifyError, setMessagingDialog, t])
 }
 
 export interface MessagingSessionMenuItemProps extends UseMessagingConnectOptions {}
@@ -129,12 +127,6 @@ export function MessagingSessionMenuItem(props: MessagingSessionMenuItemProps) {
         <span className="flex-1">{t('sessionMenu.connectMessaging')}</span>
       </SubTrigger>
       <SubContent>
-        <MenuItem onClick={() => handleConnectMessaging('telegram')}>
-          <span>Telegram</span>
-        </MenuItem>
-        <MenuItem onClick={() => handleConnectMessaging('whatsapp')}>
-          <span>WhatsApp</span>
-        </MenuItem>
         <MenuItem onClick={() => handleConnectMessaging('lark')}>
           <span>Lark / Feishu</span>
         </MenuItem>

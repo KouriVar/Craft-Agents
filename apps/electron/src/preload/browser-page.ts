@@ -244,6 +244,7 @@ document.addEventListener('click', (event) => {
   if (form) capture(form)
 }, true)
 
+ipcRenderer.removeAllListeners(FILL_CHANNEL)
 ipcRenderer.on(FILL_CHANNEL, (_event, credential: { username: string; password: string }) => {
   const passwordInput = document.querySelector<HTMLInputElement>('input[autocomplete="current-password"], input[type="password"]')
   if (!passwordInput) return

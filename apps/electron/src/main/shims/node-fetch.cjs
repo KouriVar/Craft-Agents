@@ -1,7 +1,7 @@
 /**
  * Shim: replaces the bundled `node-fetch@2` with Electron/Node 18+ native `fetch`.
  *
- * Why: grammY's `shim.node.js` imports `node-fetch` and `abort-controller`.
+ * Why: some transitive deps import `node-fetch` and `abort-controller`.
  * When esbuild bundles `abort-controller`'s `class AbortSignal`, it renames it
  * to `_AbortSignal` to avoid collision with the global, which breaks
  * `node-fetch@2`'s check `signal.constructor.name === 'AbortSignal'`.

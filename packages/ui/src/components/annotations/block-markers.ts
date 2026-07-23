@@ -5,7 +5,8 @@ export function clearBlockAnnotationMarkers(root: HTMLElement): void {
   const blocks = root.querySelectorAll<HTMLElement>('[data-ca-block-annotated="true"]')
   blocks.forEach((block) => {
     block.removeAttribute('data-ca-block-annotated')
-    block.style.boxShadow = ''
+    block.style.outline = ''
+    block.style.outlineOffset = ''
     block.style.backgroundColor = ''
   })
 }
@@ -27,5 +28,7 @@ export function applyBlockAnnotationMarker(root: HTMLElement, annotation: Annota
 
   target.setAttribute('data-ca-block-annotated', 'true')
   target.style.backgroundColor = annotationColorToCss(annotation.style?.color)
-  target.style.boxShadow = 'inset 0 0 0 1px color-mix(in srgb, var(--info) 22%, transparent)'
+  // Prefer outline over boxShadow so craft-styles/no-nonstandard-shadows stays clean.
+  target.style.outline = '1px solid color-mix(in srgb, var(--info) 22%, transparent)'
+  target.style.outlineOffset = '-1px'
 }
