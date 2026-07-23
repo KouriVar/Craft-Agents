@@ -782,7 +782,11 @@ export function SessionResourcesPopover({ session, open, onOpenChange, alignOffs
             <div className="px-3 py-3">
               {codeRelated && (
                 <>
-                  <SessionGitSection workingDirectories={gitDirectoryCandidates} />
+                  <SessionGitSection
+                    workingDirectories={gitDirectoryCandidates}
+                    sessionId={session.id}
+                    projectId={session.projectId}
+                  />
                   <div className="my-3 h-px bg-border/50" />
                 </>
               )}

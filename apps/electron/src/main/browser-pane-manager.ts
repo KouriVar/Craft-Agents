@@ -11,6 +11,12 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statS
 import { randomUUID } from 'crypto'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import {
+  emitBrowserPageOpened,
+  emitBrowserTabAttached,
+  emitBrowserBookmarkCreated,
+  emitBrowserPageClosed,
+} from '@craft-agent/server-core/cognition'
+import {
   BrowserWindow,
   Menu,
   WebContentsView,
@@ -2076,6 +2082,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       createdAt: Date.now(),
     })
     this.emitProfileChanged('bookmarks')
+    emitBrowserBookmarkCreated({
+      workspaceId,
+      bookmarkId: bookmark.id,
+      url: bookmark.url,
+      title: bookmark.title,
+    })
     return bookmark
   }
 
@@ -2806,6 +2818,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.workspaceId = options.workspaceId
       }
       this.emitStateChange(instance)
+      emitBrowserTabAttached({
+        workspaceId: instance.workspaceId,
+        tabId: instance.id,
+        boundSessionId: sessionId,
+        ownerType: 'session',
+        url: instance.currentUrl,
+        title: instance.title,
+      })
     }
   }
 
@@ -3300,6 +3320,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (!view.webContents.isDestroyed()) view.webContents.close()
     }
     if (!this.tabLifecycle.finalizeClose(instance.id, instance)) return
+    emitBrowserPageClosed({
+      workspaceId: instance.workspaceId,
+      tabId: instance.id,
+      url: instance.currentUrl,
+      title: instance.title,
+      boundSessionId: instance.boundSessionId || instance.ownerSessionId,
+    })
     if (!this.isShuttingDown) this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
@@ -5060,6 +5087,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.lastNetworkActivityByWebContentsId.set(pageWc.id, Date.now())
       this.emitStateChange(instance)
       this.recordHistory(instance)
+      emitBrowserPageOpened({
+        workspaceId: instance.workspaceId,
+        tabId: instance.id,
+        url: instance.currentUrl,
+        title: instance.title,
+        ownerType: instance.ownerType,
+        boundSessionId: instance.boundSessionId,
+        agentControlActive: !!instance.agentControl?.active,
+        trigger: 'load',
+      })
       void this.pushToolbarState(instance)
       void this.extractThemeColor(instance)
       this.reapplyAgentControlVisual(instance)

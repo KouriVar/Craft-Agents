@@ -106,6 +106,7 @@ import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntr
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 import { buildExploreBriefPrompt, EXPLORE_BRIEF_OUTPUT_SCHEMA, parseExploreBriefResult } from './explore-brief'
 import { buildTaskCheckpointContent } from './task-checkpoint'
+import { getCognitionService, flushAllCognitionServices, maybeEmitGitChangesPresent } from '../cognition'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -947,6 +948,10 @@ interface ManagedSession {
   lastFinalMessageId?: string
   // Turn baseline: last final assistant message ID at turn start (runtime-only, not persisted)
   turnStartFinalMessageId?: string
+  /** Cognition Event Ledger turn id (runtime-only). */
+  cognitionTurnId?: string
+  /** Shared correlation id for started/checkpoint/stopped of one turn (runtime-only). */
+  cognitionCorrelationId?: string
   // External session metadata updates seen while processing (applied after turn stop)
   pendingExternalMetadata?: SessionHeader
   // Guard: suppress external metadata revert after programmatic writes (setSessionStatus/setSessionLabels).
@@ -2163,6 +2168,68 @@ export class SessionManager implements ISessionManager {
   // Flush all pending sessions (call on app quit).
   async flushAllSessions(): Promise<void> {
     await sessionPersistenceQueue.flushAll()
+    await flushAllCognitionServices()
+  }
+
+  /**
+   * Cognition Event Ledger accessor.
+   * `workspace.rootPath` is the CA-managed workspace data root — NOT the user project cwd.
+   */
+  private getCognitionFor(managed: ManagedSession) {
+    return getCognitionService(managed.workspace.rootPath, managed.workspace.id)
+  }
+
+  private beginCognitionTurn(managed: ManagedSession, resumedFromInterrupt: boolean): void {
+    try {
+      if (managed.hidden || managed.parentSessionId || managed.systemPromptPreset === 'mini') return
+      const { turnId, correlationId } = this.getCognitionFor(managed).beginTurn({
+        sessionId: managed.id,
+        projectId: managed.projectId,
+        model: managed.model,
+        resumedFromInterrupt,
+      })
+      managed.cognitionTurnId = turnId
+      managed.cognitionCorrelationId = correlationId
+    } catch (err) {
+      sessionLog.warn('Cognition beginTurn failed (non-fatal):', err)
+    }
+  }
+
+  private emitCognitionSessionStopped(
+    managed: ManagedSession,
+    reason: 'complete' | 'interrupted' | 'error' | 'timeout',
+  ): void {
+    try {
+      if (managed.hidden || managed.parentSessionId || managed.systemPromptPreset === 'mini') return
+      const turnId = managed.cognitionTurnId
+      if (!turnId) return
+      const latestCheckpoint = managed.taskCheckpoints?.at(-1)
+      this.getCognitionFor(managed).appendSessionStopped({
+        sessionId: managed.id,
+        projectId: managed.projectId,
+        turnId,
+        correlationId: managed.cognitionCorrelationId,
+        processingReason: reason,
+        checkpointId: latestCheckpoint?.id,
+        nextSteps: latestCheckpoint?.nextSteps,
+        blockers: latestCheckpoint?.blockers,
+        relatedFiles: latestCheckpoint?.relatedFiles,
+        errorCode: reason === 'error' ? 'session_error' : reason === 'timeout' ? 'session_timeout' : undefined,
+        hasTaskGoal: Boolean(managed.taskGoal),
+      })
+      void maybeEmitGitChangesPresent({
+        workspaceId: managed.workspace.id,
+        workspaceDataRoot: managed.workspace.rootPath,
+        sessionId: managed.id,
+        projectId: managed.projectId,
+        workingDirectory: managed.workingDirectory,
+        turnId,
+      }).catch(() => {})
+      managed.cognitionTurnId = undefined
+      managed.cognitionCorrelationId = undefined
+    } catch (err) {
+      sessionLog.warn('Cognition session.stopped failed (non-fatal):', err)
+    }
   }
 
   // ============================================
@@ -3118,6 +3185,20 @@ export class SessionManager implements ISessionManager {
     // the very end so a thrown branch-preflight failure above never announces an orphan.
     if (internal?.emitCreatedEvent !== false) {
       this.notifySessionCreated(workspaceId, storedSession.id)
+    }
+
+    try {
+      if (!managed.hidden && !managed.parentSessionId && managed.systemPromptPreset !== 'mini') {
+        this.getCognitionFor(managed).appendSessionCreated({
+          sessionId: managed.id,
+          name: managed.name,
+          projectId: managed.projectId,
+          parentSessionId: managed.parentSessionId,
+          hasTaskGoal: Boolean(managed.taskGoal),
+        })
+      }
+    } catch (err) {
+      sessionLog.warn('Cognition session.created failed (non-fatal):', err)
     }
 
     return managedToSession(managed, isBranch ? { messages: managed.messages } : undefined)
@@ -5497,6 +5578,7 @@ export class SessionManager implements ISessionManager {
     sessionLog.info(`[updateSessionModel] sessionId=${sessionId}, model=${model}, connection=${connection}`)
     const managed = this.sessions.get(sessionId)
     if (managed) {
+      const previousModel = managed.model ?? null
       managed.model = model ?? undefined
       // Also update connection if provided and not already locked
       if (connection && !managed.connectionLocked) {
@@ -5522,6 +5604,19 @@ export class SessionManager implements ISessionManager {
       // Notify renderer of the model change
       this.sendEvent({ type: 'session_model_changed', sessionId, model }, managed.workspace.id)
       sessionLog.info(`Session ${sessionId} model updated to: ${model ?? '(global config)'}`)
+      try {
+        if (!managed.hidden && !managed.parentSessionId && managed.systemPromptPreset !== 'mini') {
+          this.getCognitionFor(managed).appendModelChanged({
+            sessionId,
+            projectId: managed.projectId,
+            model,
+            previousModel,
+            connection: managed.llmConnection,
+          })
+        }
+      } catch (err) {
+        sessionLog.warn('Cognition session.model_changed failed (non-fatal):', err)
+      }
     }
   }
 
@@ -6054,6 +6149,10 @@ export class SessionManager implements ISessionManager {
     managed.streamingText = ''
     managed.processingGeneration++
     managed.turnStartFinalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
+
+    // Cognition: open a turn before clearing wasInterrupted (resumed detection).
+    const resumedFromInterrupt = Boolean(managed.wasInterrupted)
+    this.beginCognitionTurn(managed, resumedFromInterrupt)
 
     // Reset auth retry flag for this new message (allows one retry per message)
     // IMPORTANT: Skip reset if this is an auth retry call - the flag is already true
@@ -6736,6 +6835,10 @@ export class SessionManager implements ISessionManager {
       sessionLog.info(`Applying deferred external metadata for session ${sessionId} after processing stop`)
       this.applyExternalSessionMetadata(managed, pendingHeader)
     }
+
+    // 4b. Cognition: emit session.stopped for THIS turn before queue replay
+    // starts the next turn (which would overwrite cognitionTurnId).
+    this.emitCognitionSessionStopped(managed, reason)
 
     // 5. Check queue and process or complete
     if (managed.messageQueue.length > 0) {
@@ -7426,6 +7529,31 @@ export class SessionManager implements ISessionManager {
     this.persistSession(managed)
     await this.flushSession(managed.id)
     this.sendEvent({ type: 'session_metadata_changed', sessionId, changes }, managed.workspace.id)
+
+    try {
+      if (!managed.hidden && !managed.parentSessionId && managed.systemPromptPreset !== 'mini') {
+        const updatedFields: Array<'goal' | 'priority' | 'dueAt' | 'reminderAt' | 'acknowledgeReminder' | 'markReminderNotified'> = []
+        if ('goal' in patch) updatedFields.push('goal')
+        if ('priority' in patch) updatedFields.push('priority')
+        if ('dueAt' in patch) updatedFields.push('dueAt')
+        if ('reminderAt' in patch) updatedFields.push('reminderAt')
+        if (patch.acknowledgeReminder) updatedFields.push('acknowledgeReminder')
+        if (patch.markReminderNotified) updatedFields.push('markReminderNotified')
+        if (updatedFields.length) {
+          this.getCognitionFor(managed).appendTaskDetailsUpdated({
+            sessionId,
+            projectId: managed.projectId,
+            updatedFields,
+            hasTaskGoal: Boolean(managed.taskGoal),
+            priority: managed.taskPriority,
+            dueAt: managed.taskDueAt,
+            reminderAt: managed.taskReminderAt,
+          })
+        }
+      }
+    } catch (err) {
+      sessionLog.warn('Cognition task.details_updated failed (non-fatal):', err)
+    }
   }
 
   /** Save a durable resume point. Automatic checkpoints are deduplicated by final message id. */
@@ -7480,6 +7608,26 @@ export class SessionManager implements ISessionManager {
       sessionId,
       changes: { taskGoal: managed.taskGoal, taskCheckpoints: managed.taskCheckpoints },
     }, managed.workspace.id)
+
+    try {
+      if (!managed.hidden && !managed.parentSessionId && managed.systemPromptPreset !== 'mini') {
+        this.getCognitionFor(managed).appendCheckpointEvent({
+          sessionId,
+          projectId: managed.projectId,
+          checkpointId: checkpoint.id,
+          source: checkpoint.source,
+          outcome: checkpoint.outcome,
+          nextSteps: checkpoint.nextSteps,
+          blockers: checkpoint.blockers,
+          relatedFiles: checkpoint.relatedFiles,
+          messageId: checkpoint.messageId,
+          turnId: managed.cognitionTurnId,
+          correlationId: managed.cognitionCorrelationId,
+        })
+      }
+    } catch (err) {
+      sessionLog.warn('Cognition checkpoint.created failed (non-fatal):', err)
+    }
   }
 
   async deleteTaskCheckpoint(sessionId: string, checkpointId: string): Promise<void> {

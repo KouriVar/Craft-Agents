@@ -19,6 +19,7 @@ import {
   Tag,
   ToggleRight,
   UserCircle,
+  BrainCircuit,
 } from 'lucide-react'
 import type { SettingsSubpage } from '../../../shared/types'
 
@@ -29,6 +30,7 @@ export const AiSettingsIcon = ({ className }: IconProps) => <Sparkles className=
 export const AccountsSettingsIcon = ({ className }: IconProps) => <KeyRound className={className} />
 export const AppearanceIcon = ({ className }: IconProps) => <Palette className={className} />
 export const ExploreSettingsIcon = ({ className }: IconProps) => <Compass className={className} />
+export const CognitionSettingsIcon = ({ className }: IconProps) => <BrainCircuit className={className} />
 export const InputIcon = ({ className }: IconProps) => <Keyboard className={className} />
 export const WorkspaceIcon = ({ className }: IconProps) => <Building2 className={className} />
 export const PermissionsIcon = ({ className }: IconProps) => <ShieldCheck className={className} />
@@ -48,6 +50,7 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   accounts: AccountsSettingsIcon,
   appearance: AppearanceIcon,
   explore: ExploreSettingsIcon,
+  cognition: CognitionSettingsIcon,
   input: InputIcon,
   workspace: WorkspaceIcon,
   permissions: PermissionsIcon,

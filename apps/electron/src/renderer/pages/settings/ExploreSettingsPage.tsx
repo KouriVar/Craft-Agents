@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
-import { routes } from '@/lib/navigate'
+import { routes, navigate } from '@/lib/navigate'
 import {
   SettingsSection,
   SettingsCard,
@@ -120,6 +120,46 @@ export default function ExploreSettingsPage() {
                     checked={settings.remindersEnabled}
                     onCheckedChange={(checked) => update({ remindersEnabled: checked })}
                   />
+                  <SettingsToggle
+                    label={t('settings.explore.cognitionGuidanceEnabled')}
+                    description={t('settings.explore.cognitionGuidanceEnabledDesc')}
+                    checked={settings.cognitionGuidanceEnabled}
+                    onCheckedChange={(checked) => update({ cognitionGuidanceEnabled: checked })}
+                  />
+                  <SettingsToggle
+                    label={t('settings.explore.cognitionGuidanceAutoRefresh')}
+                    description={t('settings.explore.cognitionGuidanceAutoRefreshDesc')}
+                    checked={settings.cognitionGuidanceAutoRefresh}
+                    onCheckedChange={(checked) => update({ cognitionGuidanceAutoRefresh: checked })}
+                  />
+                  <SettingsRow
+                    label={t('settings.explore.cognitionGuidanceScope')}
+                    description={t('settings.explore.cognitionGuidanceScopeDesc')}
+                  >
+                    <SettingsSegmentedControl<string>
+                      size="sm"
+                      value={settings.cognitionGuidanceScope}
+                      onValueChange={(value) => update({
+                        cognitionGuidanceScope: value === 'activeSessions' ? 'activeSessions' : 'workspace',
+                      })}
+                      options={[
+                        { value: 'workspace', label: t('settings.explore.scopeWorkspace') },
+                        { value: 'activeSessions', label: t('settings.explore.scopeActive') },
+                      ]}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    label={t('settings.explore.cognitionDebug')}
+                    description={t('settings.explore.cognitionDebugDesc')}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => navigate(routes.view.settings('cognition'))}
+                      className="rounded-control bg-foreground/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-foreground/[0.08]"
+                    >
+                      {t('settings.explore.openCognitionDebug')}
+                    </button>
+                  </SettingsRow>
                   <SettingsRow
                     label={t('settings.explore.quietHours', { defaultValue: '免打扰时间' })}
                     description={t('settings.explore.quietHoursDesc', { defaultValue: '免打扰期间延后系统提醒；开始和结束相同表示关闭。' })}

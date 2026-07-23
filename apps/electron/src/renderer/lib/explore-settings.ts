@@ -6,6 +6,8 @@
  */
 export type ExploreAiFrequency = 'startup' | '6h' | '12h' | '24h'
 
+export type CognitionGuidanceScope = 'workspace' | 'activeSessions'
+
 export interface ExploreSettings {
   /** Whether to generate/show the "continue work" AI suggestions on the Explore home. */
   aiStatusEnabled: boolean
@@ -20,6 +22,12 @@ export interface ExploreSettings {
   /** Local quiet-hours boundaries in HH:mm. Equal values disable quiet hours. */
   quietHoursStart: string
   quietHoursEnd: string
+  /** Show cognition Guidance cards on Explore (suggestions ≠ tasks). */
+  cognitionGuidanceEnabled: boolean
+  /** On mount, call refreshCognitionGuidance before listing. */
+  cognitionGuidanceAutoRefresh: boolean
+  /** Filter guidance to workspace-wide or only sessions in the current task list. */
+  cognitionGuidanceScope: CognitionGuidanceScope
 }
 
 export const DEFAULT_EXPLORE_SETTINGS: ExploreSettings = {
@@ -30,9 +38,13 @@ export const DEFAULT_EXPLORE_SETTINGS: ExploreSettings = {
   remindersEnabled: true,
   quietHoursStart: '22:00',
   quietHoursEnd: '08:00',
+  cognitionGuidanceEnabled: true,
+  cognitionGuidanceAutoRefresh: true,
+  cognitionGuidanceScope: 'workspace',
 }
 
 const AI_FREQUENCIES: ExploreAiFrequency[] = ['startup', '6h', '12h', '24h']
+const GUIDANCE_SCOPES: CognitionGuidanceScope[] = ['workspace', 'activeSessions']
 
 export async function getExploreSettings(): Promise<ExploreSettings> {
   let value: Partial<ExploreSettings> | null = null
@@ -60,6 +72,16 @@ export async function getExploreSettings(): Promise<ExploreSettings> {
     quietHoursEnd: /^\d{2}:\d{2}$/.test(value.quietHoursEnd ?? '')
       ? value.quietHoursEnd!
       : DEFAULT_EXPLORE_SETTINGS.quietHoursEnd,
+    cognitionGuidanceEnabled: typeof value.cognitionGuidanceEnabled === 'boolean'
+      ? value.cognitionGuidanceEnabled
+      : DEFAULT_EXPLORE_SETTINGS.cognitionGuidanceEnabled,
+    cognitionGuidanceAutoRefresh: typeof value.cognitionGuidanceAutoRefresh === 'boolean'
+      ? value.cognitionGuidanceAutoRefresh
+      : DEFAULT_EXPLORE_SETTINGS.cognitionGuidanceAutoRefresh,
+    cognitionGuidanceScope:
+      value.cognitionGuidanceScope && GUIDANCE_SCOPES.includes(value.cognitionGuidanceScope)
+        ? value.cognitionGuidanceScope
+        : DEFAULT_EXPLORE_SETTINGS.cognitionGuidanceScope,
   }
 }
 

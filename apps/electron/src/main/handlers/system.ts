@@ -11,6 +11,7 @@ import { getGitRepositoryStatus, isUsableGitBashPath, runGitAction, validateGitB
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
+import { emitGitEventsAfterAction } from '@craft-agent/server-core/cognition'
 import { createDiagnosticBundle, redactDiagnosticValue } from '../diagnostics'
 import { collectResourceDiagnostic, getStartupDiagnostic } from '../resource-diagnostics'
 import {
@@ -132,9 +133,20 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     return getGitRepositoryStatus(safeDir)
   })
 
-  server.handle(RPC_CHANNELS.git.RUN_ACTION, async (ctx, dirPath: string, action: import('@craft-agent/shared/protocol').GitAction) => {
+  server.handle(RPC_CHANNELS.git.RUN_ACTION, async (ctx, dirPath: string, action: import('@craft-agent/shared/protocol').GitAction, options?: { sessionId?: string; projectId?: string }) => {
     const safeDir = await validateFilePath(dirPath, getWorkspaceAllowedDirs(ctx.workspaceId))
-    return runGitAction(safeDir, action)
+    const beforeStatus = await getGitRepositoryStatus(safeDir).catch(() => null)
+    const result = await runGitAction(safeDir, action)
+    void emitGitEventsAfterAction({
+      workspaceId: ctx.workspaceId ?? undefined,
+      dirPath: safeDir,
+      action,
+      result,
+      beforeStatus,
+      sessionId: options?.sessionId,
+      projectId: options?.projectId,
+    }).catch(() => {})
+    return result
   })
 
   // Git Bash detection and configuration (Windows only)

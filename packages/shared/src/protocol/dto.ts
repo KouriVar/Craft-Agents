@@ -1445,3 +1445,181 @@ export interface GitActionResult {
   url?: string
   error?: string
 }
+
+// ---------------------------------------------------------------------------
+// Cognition (Event Ledger diagnostics — Phase 2)
+// ---------------------------------------------------------------------------
+
+export interface CognitionListEventsRequest {
+  workspaceId: string
+  afterSequence?: number
+  beforeSequence?: number
+  projectId?: string
+  sessionId?: string
+  types?: string[]
+  fromTimestamp?: number
+  toTimestamp?: number
+  limit?: number
+  offset?: number
+}
+
+export interface CognitionEventSummary {
+  id: string
+  sequence: number
+  type: string
+  source: string
+  timestamp: number
+  sessionId?: string
+  projectId?: string
+  correlationId?: string
+  idempotencyKey?: string
+  summary: string
+  /** Compact payload for diagnostics — may omit large fields. */
+  payload: Record<string, unknown>
+}
+
+export interface CognitionStoreStatusDto {
+  schemaVersion: number
+  eventCount: number
+  nextSequence: number
+  lastProcessedSequence: number
+  lastEventAt?: number
+  lastProcessedEventId?: string
+  migrationsApplied: string[]
+  lastRepairNote?: string
+}
+
+export interface CognitionListObservationsRequest {
+  workspaceId: string
+  sessionId?: string
+  projectId?: string
+  categories?: string[]
+  limit?: number
+  offset?: number
+}
+
+export interface CognitionObservationDto {
+  id: string
+  workspaceId?: string
+  projectId?: string
+  sessionId?: string
+  title: string
+  summary: string
+  category: string
+  confidence: number
+  importance: number
+  sourceEventIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CognitionListLoopsRequest {
+  workspaceId: string
+  sessionId?: string
+  projectId?: string
+  statuses?: string[]
+  includeResolved?: boolean
+  limit?: number
+  offset?: number
+}
+
+export interface CognitionLoopDto {
+  id: string
+  workspaceId?: string
+  projectId?: string
+  sessionId?: string
+  title: string
+  summary: string
+  status: string
+  nextAction?: string
+  blocker?: string
+  waitingFor?: string
+  importance: number
+  confidence: number
+  observationIds: string[]
+  firstSeenAt: number
+  lastUpdatedAt: number
+  resolvedAt?: number
+  userManaged?: boolean
+}
+
+export interface CognitionLoopActionRequest {
+  workspaceId: string
+  loopId: string
+}
+
+export interface CognitionListReflectionsRequest {
+  workspaceId: string
+  type?: 'task' | 'daily'
+  sessionId?: string
+  projectId?: string
+  dayKey?: string
+  latestOnly?: boolean
+  limit?: number
+  offset?: number
+}
+
+export interface CognitionReflectionDto {
+  id: string
+  type: string
+  workspaceId?: string
+  projectId?: string
+  sessionId?: string
+  title: string
+  summary: string
+  completed: string[]
+  changes: string[]
+  unresolved: string[]
+  blockers: string[]
+  nextActions: string[]
+  sourceObservationIds: string[]
+  sourceLoopIds: string[]
+  createdAt: number
+  dayKey?: string
+}
+
+export interface CognitionListGuidanceRequest {
+  workspaceId: string
+  sessionId?: string
+  projectId?: string
+  types?: string[]
+  includeDismissed?: boolean
+  limit?: number
+  offset?: number
+}
+
+export interface CognitionGuidanceDto {
+  id: string
+  type: string
+  title: string
+  reason: string
+  action: string
+  importance: number
+  confidence: number
+  score?: number
+  targetLoopId?: string
+  targetSessionId?: string
+  sourceReflectionId?: string
+  sourceObservationIds: string[]
+  sourceLoopIds: string[]
+  projectId?: string
+  createdAt: number
+  dismissedAt?: number
+}
+
+export interface CognitionGuidanceActionRequest {
+  workspaceId: string
+  guidanceId: string
+}
+
+export interface CognitionRefreshGuidanceRequest {
+  workspaceId: string
+  projectId?: string
+  includeDaily?: boolean
+}
+
+export interface CognitionRefreshGuidanceResultDto {
+  dailyReflection: CognitionReflectionDto | null
+  guidanceCount: number
+}
+

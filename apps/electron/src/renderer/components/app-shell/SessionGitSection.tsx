@@ -19,7 +19,15 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { GitAction, GitRepositoryStatus } from '../../../shared/types'
 
-export function SessionGitSection({ workingDirectories }: { workingDirectories: string[] }) {
+export function SessionGitSection({
+  workingDirectories,
+  sessionId,
+  projectId,
+}: {
+  workingDirectories: string[]
+  sessionId?: string
+  projectId?: string
+}) {
   const { t } = useTranslation()
   const [status, setStatus] = React.useState<GitRepositoryStatus | null>(null)
   const [repositoryDirectory, setRepositoryDirectory] = React.useState<string | null>(null)
@@ -61,7 +69,10 @@ export function SessionGitSection({ workingDirectories }: { workingDirectories: 
   const run = React.useCallback(async (actionId: string, action: GitAction, errorLabel: string) => {
     if (!repositoryDirectory) return
     setBusy(actionId)
-    const result = await window.electronAPI.runGitAction(repositoryDirectory, action)
+    const result = await window.electronAPI.runGitAction(repositoryDirectory, action, {
+      sessionId,
+      projectId,
+    })
     setBusy(null)
     if (!result.ok) {
       toast.error(result.error || errorLabel)
@@ -72,7 +83,7 @@ export function SessionGitSection({ workingDirectories }: { workingDirectories: 
     if (action.type === 'commit') setCommitMessage('')
     if (action.type === 'createBranch') setNewBranch('')
     await refresh()
-  }, [refresh, repositoryDirectory])
+  }, [refresh, repositoryDirectory, sessionId, projectId])
 
   if (workingDirectories.length === 0 || (!loading && !status?.isRepository)) return null
 

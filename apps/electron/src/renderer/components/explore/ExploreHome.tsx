@@ -6,12 +6,13 @@ import { cn } from '@/lib/utils'
 import { getSessionTitle } from '@/utils/session'
 import { classifyBrowserNewTabIntent, type BrowserNewTabIntent } from '../browser/new-tab-intent'
 import { buildBrowserSearchUrl, resolveBrowserAddress } from '../browser/utils'
-import { DEFAULT_EXPLORE_SETTINGS, getExploreSettings } from '@/lib/explore-settings'
+import { DEFAULT_EXPLORE_SETTINGS, getExploreSettings, type ExploreSettings } from '@/lib/explore-settings'
 import { getOrGenerateExploreBrief } from '@/lib/explore-brief'
 import { navigate, routes } from '@/lib/navigate'
 import type { SessionMeta } from '@/atoms/sessions'
 import type { BrowserWorkspaceTab } from '@/atoms/browser-workspace'
 import { TodaySection } from './TodaySection'
+import { GuidanceSection } from './GuidanceSection'
 import { buildTodayTasks } from './task-today'
 import {
   DropdownMenu,
@@ -61,7 +62,15 @@ export function ExploreHome({
       setSettings(value)
       setSettingsLoaded(true)
     })
-    return () => { active = false }
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<ExploreSettings>).detail
+      if (detail) setSettings(detail)
+    }
+    window.addEventListener('craft:explore-settings-changed', onChanged)
+    return () => {
+      active = false
+      window.removeEventListener('craft:explore-settings-changed', onChanged)
+    }
   }, [])
 
   const request = useMemo(() => ({
@@ -154,11 +163,15 @@ export function ExploreHome({
   const recommendations = briefState.status === 'ready'
     ? briefState.brief.recommendations
     : fallbackRecommendations
-  const todaySessionIds = useMemo(() => new Set(
-    settings.proactiveSuggestionsEnabled
-      ? buildTodayTasks(taskSessions).slice(0, 6).map((item) => item.session.id)
-      : [],
-  ), [settings.proactiveSuggestionsEnabled, taskSessions])
+  const todayTaskItems = useMemo(
+    () => (settings.proactiveSuggestionsEnabled ? buildTodayTasks(taskSessions).slice(0, 6) : []),
+    [settings.proactiveSuggestionsEnabled, taskSessions],
+  )
+  const todaySessionIds = useMemo(
+    () => new Set(todayTaskItems.map((item) => item.session.id)),
+    [todayTaskItems],
+  )
+  const activeSessionIds = useMemo(() => taskSessions.map((s) => s.id), [taskSessions])
   const visibleRecommendations = useMemo(() => recommendations.filter((item) => (
     item.kind !== 'session' || !item.targetId || !todaySessionIds.has(item.targetId)
   )), [recommendations, todaySessionIds])
@@ -258,8 +271,30 @@ export function ExploreHome({
           </form>
         </section>
 
-        {settings.proactiveSuggestionsEnabled && (
-          <TodaySection sessions={taskSessions} onOpenSession={onOpenSession} />
+        {(settings.proactiveSuggestionsEnabled || settings.cognitionGuidanceEnabled) && (
+          <section aria-labelledby="continue-work-heading" className="flex flex-col gap-4">
+            <div className="px-0.5">
+              <h2 id="continue-work-heading" className="text-sm font-medium text-foreground">
+                {t('today.continueWork', { defaultValue: '继续工作' })}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t('today.continueWorkDesc', { defaultValue: '任务队列与可解释的下一步建议' })}
+              </p>
+            </div>
+            {settings.proactiveSuggestionsEnabled && (
+              <TodaySection sessions={taskSessions} onOpenSession={onOpenSession} />
+            )}
+            {settings.cognitionGuidanceEnabled && workspaceId && (
+              <GuidanceSection
+                workspaceId={workspaceId}
+                activeSessionIds={activeSessionIds}
+                scope={settings.cognitionGuidanceScope}
+                autoRefresh={settings.cognitionGuidanceAutoRefresh}
+                limit={5}
+                onOpenSession={onOpenSession}
+              />
+            )}
+          </section>
         )}
 
         <section aria-labelledby="brief-heading" className="flex flex-col gap-2.5">

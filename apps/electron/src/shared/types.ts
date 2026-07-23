@@ -250,6 +250,21 @@ import type {
   GitRepositoryStatus,
   GitAction,
   GitActionResult,
+  CognitionStoreStatusDto,
+  CognitionListEventsRequest,
+  CognitionEventSummary,
+  CognitionListObservationsRequest,
+  CognitionObservationDto,
+  CognitionListLoopsRequest,
+  CognitionLoopDto,
+  CognitionLoopActionRequest,
+  CognitionListReflectionsRequest,
+  CognitionReflectionDto,
+  CognitionListGuidanceRequest,
+  CognitionGuidanceDto,
+  CognitionGuidanceActionRequest,
+  CognitionRefreshGuidanceRequest,
+  CognitionRefreshGuidanceResultDto,
   ClaudeOAuthResult,
   UpdateInfo,
   WorkspaceSettings,
@@ -845,7 +860,21 @@ export interface ElectronAPI {
   // Git operations
   getGitBranch(dirPath: string): Promise<string | null>
   getGitStatus(dirPath: string): Promise<GitRepositoryStatus>
-  runGitAction(dirPath: string, action: GitAction): Promise<GitActionResult>
+  runGitAction(dirPath: string, action: GitAction, options?: { sessionId?: string; projectId?: string }): Promise<GitActionResult>
+
+  // Cognition Event Ledger (diagnostics — no filesystem paths exposed)
+  getCognitionStatus(workspaceId: string): Promise<CognitionStoreStatusDto>
+  listCognitionEvents(request: CognitionListEventsRequest): Promise<CognitionEventSummary[]>
+  listCognitionObservations(request: CognitionListObservationsRequest): Promise<CognitionObservationDto[]>
+  listCognitionLoops(request: CognitionListLoopsRequest): Promise<CognitionLoopDto[]>
+  resolveCognitionLoop(request: CognitionLoopActionRequest): Promise<CognitionLoopDto | null>
+  dismissCognitionLoop(request: CognitionLoopActionRequest): Promise<CognitionLoopDto | null>
+  listCognitionReflections(request: CognitionListReflectionsRequest): Promise<CognitionReflectionDto[]>
+  listCognitionGuidance(request: CognitionListGuidanceRequest): Promise<CognitionGuidanceDto[]>
+  dismissCognitionGuidance(request: CognitionGuidanceActionRequest): Promise<CognitionGuidanceDto | null>
+  refreshCognitionGuidance(request: CognitionRefreshGuidanceRequest): Promise<CognitionRefreshGuidanceResultDto>
+  clearCognitionEvents(workspaceId: string): Promise<{ ok: boolean }>
+  repairCognitionStore(workspaceId: string): Promise<CognitionStoreStatusDto>
 
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>
