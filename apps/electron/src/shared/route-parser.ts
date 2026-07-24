@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'browser' | 'automations' | 'projects' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'browser' | 'automations' | 'projects' | 'library' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'browser', 'automations', 'projects', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'browser', 'automations', 'projects', 'library', 'settings'
 ]
 
 /**
@@ -218,6 +218,26 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     return null
   }
 
+  // Library navigator (资源库)
+  if (first === 'library') {
+    if (segments.length === 1) {
+      return { navigator: 'library', details: null }
+    }
+    if (segments[1] === 'document' && segments[2]) {
+      return {
+        navigator: 'library',
+        details: { type: 'document', id: segments[2] },
+      }
+    }
+    if (segments[1] === 'archived') {
+      return { navigator: 'library', details: { type: 'filter', id: 'archived' } }
+    }
+    if (segments[1] === 'recent') {
+      return { navigator: 'library', details: { type: 'filter', id: 'recent' } }
+    }
+    return null
+  }
+
   // Automations navigator - supports type filters (scheduled, event, agentic)
   if (first === 'automations') {
     if (segments.length === 1) {
@@ -359,6 +379,12 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   if (parsed.navigator === 'projects') {
     if (!parsed.details) return 'projects'
     return `projects/project/${parsed.details.id}`
+  }
+
+  if (parsed.navigator === 'library') {
+    if (!parsed.details) return 'library'
+    if (parsed.details.type === 'filter') return `library/${parsed.details.id}`
+    return `library/document/${parsed.details.id}`
   }
 
   // Sessions navigator
@@ -503,6 +529,17 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
       return { type: 'view', name: 'projects', params: {} }
     }
     return { type: 'view', name: 'project-info', id: compound.details.id, params: {} }
+  }
+
+  // Library
+  if (compound.navigator === 'library') {
+    if (!compound.details) {
+      return { type: 'view', name: 'library', params: {} }
+    }
+    if (compound.details.type === 'filter') {
+      return { type: 'view', name: 'library', params: { filter: compound.details.id } }
+    }
+    return { type: 'view', name: 'library-document', id: compound.details.id, params: {} }
   }
 
   // Sessions
@@ -671,6 +708,25 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     }
   }
 
+  // Library
+  if (compound.navigator === 'library') {
+    if (!compound.details) {
+      return { navigator: 'library', filter: 'all', details: null }
+    }
+    if (compound.details.type === 'filter') {
+      return {
+        navigator: 'library',
+        filter: compound.details.id as 'recent' | 'archived',
+        details: null,
+      }
+    }
+    return {
+      navigator: 'library',
+      filter: 'all',
+      details: { type: 'document', documentId: compound.details.id },
+    }
+  }
+
   // Sessions
   const filter = compound.sessionFilter || { kind: 'allSessions' as const }
   if (compound.details) {
@@ -710,6 +766,21 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
       return { navigator: 'settings', subpage: 'shortcuts' }
     case 'preferences':
       return { navigator: 'settings', subpage: 'preferences' }
+    case 'privacy':
+    case 'cognition':
+    case 'explore':
+    case 'ai':
+    case 'accounts':
+    case 'appearance':
+    case 'input':
+    case 'messaging':
+    case 'server':
+    case 'app':
+      // Settings subpages derived from settings-registry (keep in sync with SETTINGS_PAGES)
+      if (isValidSettingsSubpage(parsed.name)) {
+        return { navigator: 'settings', subpage: parsed.name }
+      }
+      return null
     case 'sources':
       return { navigator: 'sources', details: null }
     case 'source-info':
@@ -779,6 +850,17 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
         }
       }
       return { navigator: 'projects', details: null }
+    case 'library':
+      return { navigator: 'library', filter: 'all', details: null }
+    case 'library-document':
+      if (parsed.id) {
+        return {
+          navigator: 'library',
+          filter: 'all',
+          details: { type: 'document', documentId: parsed.id },
+        }
+      }
+      return { navigator: 'library', filter: 'all', details: null }
     case 'session':
       if (parsed.id) {
         // Reconstruct filter from params
@@ -906,6 +988,22 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
       navigator: 'projects',
       details: state.details ? { type: 'project', id: state.details.projectSlug } : null,
     }
+  }
+
+  if (state.navigator === 'library') {
+    if (state.details?.type === 'document') {
+      return {
+        navigator: 'library',
+        details: { type: 'document', id: state.details.documentId },
+      }
+    }
+    if (state.filter && state.filter !== 'all') {
+      return {
+        navigator: 'library',
+        details: { type: 'filter', id: state.filter },
+      }
+    }
+    return { navigator: 'library', details: null }
   }
 
   // Sessions

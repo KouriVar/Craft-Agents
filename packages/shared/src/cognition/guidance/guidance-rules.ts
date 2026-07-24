@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'crypto'
 import { truncateText } from '../events/event-sanitizer.ts'
+import { mergeProvenance } from '../../privacy/provenance.ts'
 import { COGNITION_SCHEMA_VERSION } from '../types.ts'
 import type { CognitionLoop } from '../loops/types.ts'
 import type { CognitionReflection } from '../reflections/types.ts'
@@ -106,6 +107,12 @@ export function buildGuidanceFromLoops(input: BuildGuidanceInput): CognitionGuid
 
     const type = guidanceTypeForLoop(loop)
     const reflection = loop.sessionId ? reflectionsBySession.get(loop.sessionId) : undefined
+    const prov = mergeProvenance([
+      { sourceEventIds: loop.sourceEventIds, sourceKinds: loop.sourceKinds },
+      reflection
+        ? { sourceEventIds: reflection.sourceEventIds, sourceKinds: reflection.sourceKinds }
+        : null,
+    ])
     drafts.push({
       id: `guid_${randomUUID().slice(0, 12)}`,
       type,
@@ -121,6 +128,8 @@ export function buildGuidanceFromLoops(input: BuildGuidanceInput): CognitionGuid
       sourceReflectionId: reflection?.id,
       sourceObservationIds: [...loop.observationIds],
       sourceLoopIds: [loop.id],
+      sourceEventIds: prov.sourceEventIds,
+      sourceKinds: prov.sourceKinds,
       workspaceId: input.workspaceId ?? loop.workspaceId,
       projectId: loop.projectId,
       createdAt: now,

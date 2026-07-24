@@ -4,7 +4,8 @@
 
 import { randomUUID } from 'crypto'
 import { truncateText } from '../events/event-sanitizer.ts'
-import { COGNITION_SCHEMA_VERSION, type CognitionEvent, type CognitionEvidenceRef } from '../types.ts'
+import { mergeProvenance } from '../../privacy/provenance.ts'
+import { COGNITION_SCHEMA_VERSION, type CognitionEvent, type CognitionEvidenceRef, type CognitionEventSource } from '../types.ts'
 import type { CognitionObservation } from '../observations/types.ts'
 import type { CognitionLoop, CognitionLoopStatus } from './types.ts'
 
@@ -18,6 +19,8 @@ export interface LoopDraft {
   importance: number
   confidence: number
   observationIds: string[]
+  sourceEventIds?: string[]
+  sourceKinds?: Array<CognitionEventSource | 'unknown'>
   evidenceRefs: CognitionEvidenceRef[]
   evidenceFingerprint?: string
   workspaceId?: string
@@ -40,6 +43,8 @@ function draftToLoop(draft: LoopDraft, now = Date.now()): CognitionLoop {
     importance: draft.importance,
     confidence: draft.confidence,
     observationIds: [...draft.observationIds],
+    sourceEventIds: draft.sourceEventIds ? [...draft.sourceEventIds] : undefined,
+    sourceKinds: draft.sourceKinds ? [...draft.sourceKinds] : undefined,
     evidenceRefs: draft.evidenceRefs.slice(0, 12),
     evidenceFingerprint: draft.evidenceFingerprint,
     firstSeenAt: now,
@@ -48,7 +53,15 @@ function draftToLoop(draft: LoopDraft, now = Date.now()): CognitionLoop {
   }
 }
 
+function provenanceFromObs(obs: CognitionObservation) {
+  return mergeProvenance([{
+    sourceEventIds: obs.sourceEventIds,
+    sourceKinds: obs.sourceKinds ?? (obs.sourceEventIds.length ? undefined : ['unknown']),
+  }])
+}
+
 function fromObservation(obs: CognitionObservation): LoopDraft | null {
+  const prov = provenanceFromObs(obs)
   if (obs.category === 'blocker') {
     return {
       title: truncateText(`处理${obs.title}`, 160),
@@ -59,6 +72,8 @@ function fromObservation(obs: CognitionObservation): LoopDraft | null {
       importance: Math.max(obs.importance, 0.75),
       confidence: obs.confidence,
       observationIds: [obs.id],
+      sourceEventIds: prov.sourceEventIds,
+      sourceKinds: prov.sourceKinds,
       evidenceRefs: obs.evidenceRefs,
       evidenceFingerprint: obs.evidenceFingerprint,
       workspaceId: obs.workspaceId,
@@ -76,6 +91,8 @@ function fromObservation(obs: CognitionObservation): LoopDraft | null {
       importance: obs.importance,
       confidence: obs.confidence,
       observationIds: [obs.id],
+      sourceEventIds: prov.sourceEventIds,
+      sourceKinds: prov.sourceKinds,
       evidenceRefs: obs.evidenceRefs,
       evidenceFingerprint: obs.evidenceFingerprint,
       workspaceId: obs.workspaceId,
@@ -119,6 +136,10 @@ function fromBrowserResearchCluster(observations: CognitionObservation[]): LoopD
       importance: 0.65,
       confidence: 0.7,
       observationIds: group.map((o) => o.id),
+      ...mergeProvenance(group.map((o) => ({
+        sourceEventIds: o.sourceEventIds,
+        sourceKinds: o.sourceKinds,
+      }))),
       evidenceRefs: group.flatMap((o) => o.evidenceRefs).slice(0, 12),
       evidenceFingerprint: group[0]?.evidenceFingerprint,
       workspaceId: group[0]?.workspaceId,
@@ -145,6 +166,8 @@ function fromInterruptedEvent(event: CognitionEvent): LoopDraft | null {
     importance: 0.7,
     confidence: 0.8,
     observationIds: [],
+    sourceEventIds: [event.id],
+    sourceKinds: [event.source],
     evidenceRefs: event.evidenceRefs ?? [{ type: 'session', id: event.sessionId, label: 'Session' }],
     workspaceId: event.workspaceId,
     projectId: event.projectId,

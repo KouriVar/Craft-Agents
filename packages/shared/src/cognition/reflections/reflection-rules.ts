@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'crypto'
 import { truncateText } from '../events/event-sanitizer.ts'
+import { mergeProvenance } from '../../privacy/provenance.ts'
 import { COGNITION_SCHEMA_VERSION, type CognitionEvidenceRef } from '../types.ts'
 import type { CognitionObservation } from '../observations/types.ts'
 import type { CognitionLoop } from '../loops/types.ts'
@@ -119,6 +120,10 @@ export function buildTaskReflection(input: BuildTaskReflectionInput): CognitionR
   const lists = buildLists(observations, loops)
   const now = input.now ?? Date.now()
   const title = pickTitle(observations, loops, '会话工作进展')
+  const prov = mergeProvenance([
+    ...observations.map((o) => ({ sourceEventIds: o.sourceEventIds, sourceKinds: o.sourceKinds })),
+    ...loops.map((l) => ({ sourceEventIds: l.sourceEventIds, sourceKinds: l.sourceKinds })),
+  ])
 
   return {
     id: `refl_${randomUUID().slice(0, 12)}`,
@@ -131,6 +136,8 @@ export function buildTaskReflection(input: BuildTaskReflectionInput): CognitionR
     ...lists,
     sourceObservationIds: observations.map((o) => o.id),
     sourceLoopIds: loops.map((l) => l.id),
+    sourceEventIds: prov.sourceEventIds,
+    sourceKinds: prov.sourceKinds,
     evidenceRefs: mergeEvidence(observations, loops),
     createdAt: now,
     schemaVersion: COGNITION_SCHEMA_VERSION,
@@ -192,6 +199,10 @@ export function buildDailyReflection(input: BuildDailyReflectionInput): Cognitio
     ...lists,
     sourceObservationIds: observations.map((o) => o.id),
     sourceLoopIds: loops.map((l) => l.id),
+    ...mergeProvenance([
+      ...observations.map((o) => ({ sourceEventIds: o.sourceEventIds, sourceKinds: o.sourceKinds })),
+      ...loops.map((l) => ({ sourceEventIds: l.sourceEventIds, sourceKinds: l.sourceKinds })),
+    ]),
     evidenceRefs: mergeEvidence(observations, loops),
     createdAt: now,
     schemaVersion: COGNITION_SCHEMA_VERSION,

@@ -5894,6 +5894,14 @@ export class SessionManager implements ISessionManager {
     // Delete from disk too
     deleteStoredSession(workspaceRootPath, sessionId)
 
+    // Mark library document session links as orphaned (do not delete documents)
+    try {
+      const { getLibraryService } = await import('../library/LibraryService')
+      getLibraryService(workspaceRootPath, managed.workspace.id).markSessionOrphaned(sessionId)
+    } catch (error) {
+      sessionLog.warn(`Failed to orphan library links for deleted session ${sessionId}:`, error)
+    }
+
     // Notify all windows for this workspace that the session was deleted
     this.sendEvent({ type: 'session_deleted', sessionId }, managed.workspace.id)
     this.emitUnreadSummaryChanged()
@@ -9399,5 +9407,249 @@ export class SessionManager implements ISessionManager {
     }
 
     sessionLog.info('Cleanup complete')
+  }
+
+  /**
+   * Single RPC orchestration for Explore "完成并归档".
+   * Order: mark_done → create_checkpoint → resolve_loops → dismiss_guidance → archive → clear_snooze.
+   * Not a cross-file DB transaction; returns full steps[] on partial failure.
+   */
+  async completeAndArchive(
+    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
+  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse> {
+    const { getTodayStateStore } = await import('../today/TodayStateStore')
+    type Step = import('@craft-agent/shared/protocol').CompleteAndArchiveStepResult
+    const steps: Step[] = []
+    const sessionId = request.sessionId
+    const options = request.options ?? {}
+    const createFinalCheckpoint = options.createFinalCheckpoint !== false
+    const resolveOpenLoops = options.resolveOpenLoops !== false
+    const dismissGuidance = options.dismissGuidance !== false
+    const clearTodaySnooze = options.clearTodaySnooze !== false
+
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      return {
+        sessionId,
+        ok: false,
+        alreadyCompleted: false,
+        steps: [{ step: 'mark_done', status: 'failed', detail: 'Session not found', errorCode: 'session_not_found' }],
+      }
+    }
+
+    if (request.workspaceId && managed.workspace.id !== request.workspaceId) {
+      return {
+        sessionId,
+        ok: false,
+        alreadyCompleted: false,
+        steps: [{ step: 'mark_done', status: 'failed', detail: 'Workspace mismatch', errorCode: 'workspace_mismatch' }],
+      }
+    }
+
+    const store = getTodayStateStore(managed.workspace.rootPath)
+    if (request.idempotencyKey) {
+      const cached = store.getIdempotency(request.idempotencyKey)
+      if (cached) return cached
+    }
+
+    const alreadyDone = managed.sessionStatus === 'done' || managed.kanbanColumn === 'done'
+    const alreadyArchived = Boolean(managed.isArchived)
+    if (alreadyDone && alreadyArchived) {
+      if (clearTodaySnooze) {
+        store.clearSnoozesMatching((key) => key === sessionId || key.startsWith(`${sessionId}:`))
+        steps.push({ step: 'clear_snooze', status: 'already_done' })
+      } else {
+        steps.push({ step: 'clear_snooze', status: 'skipped' })
+      }
+      const response: import('@craft-agent/shared/protocol').CompleteAndArchiveResponse = {
+        sessionId,
+        ok: true,
+        alreadyCompleted: true,
+        steps: [
+          { step: 'mark_done', status: 'already_done' },
+          { step: 'create_checkpoint', status: 'skipped', detail: 'already completed' },
+          { step: 'resolve_loops', status: 'already_done' },
+          { step: 'dismiss_guidance', status: 'already_done' },
+          { step: 'archive', status: 'already_done' },
+          ...steps.filter((s) => s.step === 'clear_snooze'),
+        ],
+      }
+      if (request.idempotencyKey) store.setIdempotency(request.idempotencyKey, response)
+      return response
+    }
+
+    // 1. mark_done
+    try {
+      if (alreadyDone) {
+        steps.push({ step: 'mark_done', status: 'already_done' })
+      } else {
+        await this.setSessionStatus(sessionId, 'done')
+        await this.setKanbanColumn(sessionId, 'done')
+        steps.push({ step: 'mark_done', status: 'ok' })
+      }
+    } catch (err) {
+      steps.push({
+        step: 'mark_done',
+        status: 'failed',
+        detail: err instanceof Error ? err.message : String(err),
+        errorCode: 'mark_done_failed',
+      })
+      const response = { sessionId, ok: false, alreadyCompleted: false, steps }
+      if (request.idempotencyKey) store.setIdempotency(request.idempotencyKey, response)
+      return response
+    }
+
+    // 2. create_checkpoint (optional; failure does not block)
+    if (!createFinalCheckpoint) {
+      steps.push({ step: 'create_checkpoint', status: 'skipped' })
+    } else {
+      try {
+        await this.createTaskCheckpoint(sessionId, undefined, {
+          source: 'manual',
+          outcome: 'completed',
+        })
+        steps.push({ step: 'create_checkpoint', status: 'ok' })
+      } catch (err) {
+        steps.push({
+          step: 'create_checkpoint',
+          status: 'failed',
+          detail: err instanceof Error ? err.message : String(err),
+          errorCode: 'checkpoint_failed',
+        })
+      }
+    }
+
+    const cognition = this.getCognitionFor(managed)
+
+    // 3. resolve_loops
+    if (!resolveOpenLoops) {
+      steps.push({ step: 'resolve_loops', status: 'skipped' })
+    } else {
+      try {
+        const loops = await cognition.listLoops({
+          sessionId,
+          includeResolved: false,
+          limit: 200,
+        })
+        const openish = loops.filter((loop) =>
+          loop.status === 'open' || loop.status === 'waiting' || loop.status === 'blocked' || loop.status === 'stale',
+        )
+        let failed = 0
+        for (const loop of openish) {
+          const result = await cognition.resolveLoop(loop.id)
+          if (!result) failed += 1
+        }
+        if (failed > 0) {
+          steps.push({
+            step: 'resolve_loops',
+            status: 'failed',
+            detail: `${failed} loop(s) failed to resolve`,
+            errorCode: 'resolve_loops_partial',
+          })
+        } else {
+          steps.push({
+            step: 'resolve_loops',
+            status: openish.length === 0 ? 'already_done' : 'ok',
+            detail: openish.length ? `resolved ${openish.length}` : undefined,
+          })
+        }
+      } catch (err) {
+        steps.push({
+          step: 'resolve_loops',
+          status: 'failed',
+          detail: err instanceof Error ? err.message : String(err),
+          errorCode: 'resolve_loops_failed',
+        })
+      }
+    }
+
+    // 4. dismiss_guidance
+    if (!dismissGuidance) {
+      steps.push({ step: 'dismiss_guidance', status: 'skipped' })
+    } else {
+      try {
+        const guidance = await cognition.listGuidance({
+          sessionId,
+          includeDismissed: false,
+          limit: 200,
+          forToday: false,
+        })
+        let failed = 0
+        for (const item of guidance) {
+          const result = await cognition.dismissGuidance(item.id)
+          if (!result) failed += 1
+        }
+        if (failed > 0) {
+          steps.push({
+            step: 'dismiss_guidance',
+            status: 'failed',
+            detail: `${failed} guidance item(s) failed to dismiss`,
+            errorCode: 'dismiss_guidance_partial',
+          })
+        } else {
+          steps.push({
+            step: 'dismiss_guidance',
+            status: guidance.length === 0 ? 'already_done' : 'ok',
+            detail: guidance.length ? `dismissed ${guidance.length}` : undefined,
+          })
+        }
+      } catch (err) {
+        steps.push({
+          step: 'dismiss_guidance',
+          status: 'failed',
+          detail: err instanceof Error ? err.message : String(err),
+          errorCode: 'dismiss_guidance_failed',
+        })
+      }
+    }
+
+    // 5. archive (must succeed for overall ok)
+    let archiveOk = false
+    try {
+      if (alreadyArchived) {
+        steps.push({ step: 'archive', status: 'already_done' })
+        archiveOk = true
+      } else {
+        await this.archiveSession(sessionId)
+        steps.push({ step: 'archive', status: 'ok' })
+        archiveOk = true
+      }
+    } catch (err) {
+      steps.push({
+        step: 'archive',
+        status: 'failed',
+        detail: err instanceof Error ? err.message : String(err),
+        errorCode: 'archive_failed',
+      })
+      archiveOk = false
+    }
+
+    // 6. clear_snooze
+    if (!clearTodaySnooze) {
+      steps.push({ step: 'clear_snooze', status: 'skipped' })
+    } else {
+      try {
+        store.clearSnoozesMatching((key) => key === sessionId || key.startsWith(`${sessionId}:`) || key === `session:${sessionId}`)
+        steps.push({ step: 'clear_snooze', status: 'ok' })
+      } catch (err) {
+        steps.push({
+          step: 'clear_snooze',
+          status: 'failed',
+          detail: err instanceof Error ? err.message : String(err),
+          errorCode: 'clear_snooze_failed',
+        })
+      }
+    }
+
+    const response: import('@craft-agent/shared/protocol').CompleteAndArchiveResponse = {
+      sessionId,
+      ok: archiveOk,
+      alreadyCompleted: false,
+      steps,
+    }
+    if (request.idempotencyKey && archiveOk) {
+      store.setIdempotency(request.idempotencyKey, response)
+    }
+    return response
   }
 }

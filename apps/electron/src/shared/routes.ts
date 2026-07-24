@@ -199,6 +199,14 @@ export const routes = {
         ? `projects/project/${projectSlug}` as const
         : 'projects' as const,
 
+    /** Library view (资源库) */
+    library: (documentId?: string) =>
+      documentId
+        ? `library/document/${documentId}` as const
+        : 'library' as const,
+    libraryRecent: () => 'library/recent' as const,
+    libraryArchived: () => 'library/archived' as const,
+
     /** Kanban board view (sessions navigator, board view mode, all sessions) */
     board: () => 'board' as const,
   },

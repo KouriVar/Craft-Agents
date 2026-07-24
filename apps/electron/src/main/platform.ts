@@ -68,5 +68,33 @@ export function createElectronPlatform(opts: ElectronPlatformOptions): PlatformS
     isDebugMode: opts.isDebugMode,
     getLogFilePath: opts.getLogFilePath,
     captureError: opts.captureError,
+    async htmlToPdf(html: string) {
+      const { BrowserWindow } = await import('electron')
+      const win = new BrowserWindow({
+        show: false,
+        width: 800,
+        height: 1100,
+        webPreferences: {
+          offscreen: true,
+          javascript: false,
+          sandbox: true,
+        },
+      })
+      try {
+        const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+        await win.loadURL(dataUrl)
+        // Brief settle for layout
+        await new Promise((r) => setTimeout(r, 120))
+        const pdf = await win.webContents.printToPDF({
+          printBackground: true,
+          margins: { marginType: 'default' },
+          pageSize: 'A4',
+          landscape: false,
+        })
+        return Buffer.from(pdf)
+      } finally {
+        if (!win.isDestroyed()) win.destroy()
+      }
+    },
   }
 }

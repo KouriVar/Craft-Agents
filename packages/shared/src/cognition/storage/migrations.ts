@@ -1,6 +1,6 @@
 /**
  * Cognition schema migrations (workspace-local).
- * Phase 2 ships schemaVersion 1 with no upgrade steps yet.
+ * v1 → v2: provenance sourceKinds fields (lazy/backfill; migration is a marker).
  */
 
 import {
@@ -13,7 +13,20 @@ import { COGNITION_SCHEMA_VERSION, type CognitionManifest } from '../types.ts'
 type MigrationFn = (manifest: CognitionManifest, workspaceDataRoot: string) => CognitionManifest
 
 const MIGRATIONS: Array<{ id: string; from: number; to: number; run: MigrationFn }> = [
-  // Future: { id: 'cognition-1-to-2', from: 1, to: 2, run: ... }
+  {
+    id: 'cognition-1-to-2-source-kinds',
+    from: 1,
+    to: 2,
+    run: (manifest) => {
+      // Data backfill is lazy / background (see backfillSourceKindsLimited).
+      // Migration only bumps schemaVersion so readers know v2 fields are expected.
+      return {
+        ...manifest,
+        lastRepairNote: manifest.lastRepairNote
+          ?? 'Marked cognition schema v2 (sourceKinds); entities backfilled lazily',
+      }
+    },
+  },
 ]
 
 export function ensureCognitionMigrations(workspaceDataRoot: string): CognitionManifest {
@@ -37,6 +50,15 @@ export function ensureCognitionMigrations(workspaceDataRoot: string): CognitionM
 
   if (manifest.schemaVersion < COGNITION_SCHEMA_VERSION && MIGRATIONS.length === 0) {
     manifest = { ...manifest, schemaVersion: COGNITION_SCHEMA_VERSION }
+  }
+
+  // Fresh installs: createEmptyManifest uses COGNITION_SCHEMA_VERSION already.
+  if (manifest.schemaVersion < COGNITION_SCHEMA_VERSION) {
+    // If somehow stuck below target without matching from=, jump carefully
+    const pending = MIGRATIONS.find((m) => m.from === manifest.schemaVersion)
+    if (!pending) {
+      manifest = { ...manifest, schemaVersion: COGNITION_SCHEMA_VERSION }
+    }
   }
 
   saveManifest(workspaceDataRoot, manifest)

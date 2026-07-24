@@ -137,6 +137,11 @@ export interface ISessionManager {
   generateExploreBrief(
     request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
   ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
+
+  /** Explore "完成并归档" — mark done, optional checkpoint/loops/guidance, archive, clear snooze. */
+  completeAndArchive(
+    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
+  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>

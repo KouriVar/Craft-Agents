@@ -34,6 +34,7 @@ import {
   Info,
   MailOpen,
   FolderKanban,
+  Library,
   List,
   LayoutGrid,
   Star,
@@ -165,6 +166,7 @@ import {
   isBrowserNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
+  isLibraryNavigation,
   type NavigationState,
 } from '@/contexts/NavigationContext'
 import type { SettingsSubpage } from '../../../shared/types'
@@ -179,6 +181,7 @@ import { BrowserTabsListPanel } from '../browser/BrowserTabsListPanel'
 import { BrowserCollectionListPanel } from '../browser/BrowserCollectionListPanel'
 import { AutomationsListPanel } from '../automations/AutomationsListPanel'
 import { ProjectsListPanel } from './ProjectsListPanel'
+import { LibraryListPanel } from '../library/LibraryListPanel'
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from '../automations/types'
 import { useAutomations } from '@/hooks/useAutomations'
 import { useProjects } from '@/hooks/useProjects'
@@ -2661,6 +2664,10 @@ function AppShellContent({
     navigate(routes.view.projects())
   }, [])
 
+  const handleLibraryClick = useCallback(() => {
+    navigate(routes.view.library())
+  }, [])
+
   const handleAutomationsScheduledClick = useCallback(() => {
     navigate(routes.view.automationsScheduled())
   }, [])
@@ -3352,6 +3359,13 @@ function AppShellContent({
                                 : ('ghost' as const),
                         onClick: () => handleJumpToProjectSessions(p.config.id),
                       })),
+                    },
+                    {
+                          id: 'nav:library',
+                          title: t('sidebar.library'),
+                      icon: Library,
+                      variant: isLibraryNavigation(navState) ? 'default' : 'ghost',
+                      onClick: handleLibraryClick,
                     },
                     {
                           id: 'nav:automations',
@@ -4553,6 +4567,13 @@ function AppShellContent({
                 onAddProject={openAddProject}
                 onJumpToSessions={handleJumpToProjectSessions}
                   selectedProjectSlug={isProjectsNavigation(navState) ? (navState.details?.projectSlug ?? null) : null}
+              />
+            )}
+            {isLibraryNavigation(navState) && activeWorkspaceId && (
+              <LibraryListPanel
+                workspaceId={activeWorkspaceId}
+                filter={navState.filter ?? 'all'}
+                selectedDocumentId={navState.details?.documentId ?? null}
               />
             )}
             {isAutomationsNavigation(navState) && (

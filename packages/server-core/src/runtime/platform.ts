@@ -62,6 +62,12 @@ export interface PlatformServices {
   isDebugMode: boolean
   getLogFilePath?(): string | undefined
   captureError?(error: Error): void
+
+  /**
+   * Render standalone HTML to PDF (Electron printToPDF).
+   * Optional — unavailable on headless.
+   */
+  htmlToPdf?(html: string): Promise<Buffer>
 }
 
 // ── Logger helpers ──────────────────────────────────────────────────────────

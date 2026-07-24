@@ -15,6 +15,7 @@ import { stripBom } from '../../utils/files.ts'
 import {
   sanitizeCognitionEventInput,
   CognitionSanitizeError,
+  CognitionPrivacyDeniedError,
 } from '../events/event-sanitizer.ts'
 import {
   createEmptyManifest,
@@ -35,6 +36,8 @@ import {
   type CognitionManifest,
   type CognitionStoreStatus,
 } from '../types.ts'
+import type { PrivacyPolicyGate, PolicyInput } from '../../privacy/types.ts'
+import { defaultAspectForEventSource } from '../../privacy/decide.ts'
 
 const log = createLogger('cognition-event-store')
 
@@ -54,14 +57,30 @@ export function generateCognitionEventId(): string {
 export interface CognitionEventStoreOptions {
   /** CA-managed workspace data root — NOT user project cwd. */
   workspaceDataRoot: string
+  /**
+   * Injected privacy gate. Store MUST NOT read preferences itself.
+   * When omitted (tests), defaults to allow-all.
+   */
+  policyGate?: PrivacyPolicyGate
+}
+
+const ALLOW_ALL_GATE: PrivacyPolicyGate = {
+  decide: () => ({ decision: 'allow', code: 'allow', reason: 'no_policy_gate' }),
 }
 
 export class CognitionEventStore {
   readonly workspaceDataRoot: string
+  private readonly policyGate: PrivacyPolicyGate
   private idempotencyIndex: Map<string, CognitionEvent> | null = null
 
   constructor(options: CognitionEventStoreOptions) {
     this.workspaceDataRoot = options.workspaceDataRoot
+    this.policyGate = options.policyGate ?? ALLOW_ALL_GATE
+  }
+
+  /** Test/diagnostic: expose whether a custom gate was injected. */
+  hasCustomPolicyGate(): boolean {
+    return this.policyGate !== ALLOW_ALL_GATE
   }
 
   private eventsPath(): string {
@@ -71,6 +90,21 @@ export class CognitionEventStore {
   private ensureReady(): CognitionManifest {
     ensureCognitionDir(this.workspaceDataRoot)
     return ensureCognitionMigrations(this.workspaceDataRoot)
+  }
+
+  private decideIngest(input: CognitionEventInput) {
+    const policyInput: PolicyInput = {
+      feature: 'cognition_ingest',
+      source: input.source,
+      aspect: defaultAspectForEventSource(input.source),
+      mode: 'background',
+      workspaceId: input.workspaceId,
+      sessionId: input.sessionId,
+      purpose: `ingest:${input.type}`,
+      scope: input.type,
+      sentToModel: false,
+    }
+    return this.policyGate.decide(policyInput)
   }
 
   private async loadIdempotencyIndex(): Promise<Map<string, CognitionEvent>> {
@@ -133,6 +167,18 @@ export class CognitionEventStore {
   async appendEvent(input: CognitionEventInput): Promise<AppendCognitionEventResult> {
     return withMutex(this.workspaceDataRoot, async () => {
       this.ensureReady()
+
+      const decision = this.decideIngest(input)
+      if (decision.decision !== 'allow') {
+        // Expected policy outcome — keep diagnostics quiet (not user-facing).
+        log.debug('Cognition append denied by privacy policy', {
+          type: input.type,
+          source: input.source,
+          code: decision.code,
+        })
+        throw new CognitionPrivacyDeniedError(decision.code)
+      }
+
       const sanitized = sanitizeCognitionEventInput(input, {
         workspaceDataRoot: this.workspaceDataRoot,
       })

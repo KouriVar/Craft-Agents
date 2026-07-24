@@ -1,9 +1,8 @@
 /**
- * ExploreSettingsPage
+ * ExploreSettingsPage — Explore home display switches (C/D) + reminders.
  *
- * Settings for the Explore unified entry. Phase 1 exposes the AI work-resume
- * preferences (enable / frequency / count); the generation itself lands in
- * Phase 2.
+ * Phase C: showTodaySection / showSessionComposer are canonical.
+ * Legacy Brief / proactive / cognitionGuidance toggles no longer drive the home.
  */
 
 import { useEffect, useState } from 'react'
@@ -17,14 +16,12 @@ import {
   SettingsCard,
   SettingsRow,
   SettingsToggle,
-  SettingsSegmentedControl,
 } from '@/components/settings'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import {
   DEFAULT_EXPLORE_SETTINGS,
   getExploreSettings,
   saveExploreSettings,
-  type ExploreAiFrequency,
   type ExploreSettings,
 } from '@/lib/explore-settings'
 
@@ -47,7 +44,7 @@ export default function ExploreSettingsPage() {
 
   const update = (patch: Partial<ExploreSettings>) => {
     setSettings((prev) => {
-      const next = { ...prev, ...patch }
+      const next = { ...prev, ...patch, _phaseCMigrated: true }
       void saveExploreSettings(next)
       return next
     })
@@ -61,71 +58,64 @@ export default function ExploreSettingsPage() {
           <div className="px-5 py-7 max-w-3xl mx-auto">
             <div className="space-y-8">
               <SettingsSection
-                title={t('settings.explore.aiResume')}
-                description={t('settings.explore.aiResumeDesc')}
+                title={t('settings.explore.homeDisplay')}
+                description={t('settings.explore.homeDisplayDesc')}
               >
                 <SettingsCard>
                   <SettingsToggle
-                    label={t('settings.explore.aiEnabled')}
-                    description={t('settings.explore.aiEnabledDesc')}
-                    checked={settings.aiStatusEnabled}
-                    onCheckedChange={(checked) => update({ aiStatusEnabled: checked })}
+                    label={t('settings.explore.showTodaySection')}
+                    description={t('settings.explore.showTodaySectionDesc')}
+                    checked={settings.showTodaySection}
+                    onCheckedChange={(checked) => update({ showTodaySection: checked })}
                   />
-                  <SettingsRow
-                    label={t('settings.explore.aiFrequency')}
-                    description={t('settings.explore.aiFrequencyDesc')}
-                  >
-                    <SettingsSegmentedControl<ExploreAiFrequency>
-                      size="sm"
-                      value={settings.aiFrequency}
-                      onValueChange={(value) => update({ aiFrequency: value })}
-                      options={[
-                        { value: 'startup', label: t('settings.explore.freqStartup') },
-                        { value: '6h', label: t('settings.explore.freq6h') },
-                        { value: '12h', label: t('settings.explore.freq12h') },
-                        { value: '24h', label: t('settings.explore.freq24h') },
-                      ]}
-                    />
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t('settings.explore.aiCount')}
-                    description={t('settings.explore.aiCountDesc')}
-                  >
-                    <SettingsSegmentedControl<string>
-                      size="sm"
-                      value={String(settings.aiCount)}
-                      onValueChange={(value) => update({ aiCount: value === '5' ? 5 : 3 })}
-                      options={[
-                        { value: '3', label: '3' },
-                        { value: '5', label: '5' },
-                      ]}
-                    />
-                  </SettingsRow>
+                  <SettingsToggle
+                    label={t('settings.explore.showSessionComposer')}
+                    description={t('settings.explore.showSessionComposerDesc')}
+                    checked={settings.showSessionComposer}
+                    onCheckedChange={(checked) => update({ showSessionComposer: checked })}
+                  />
                 </SettingsCard>
               </SettingsSection>
+
               <SettingsSection
-                title={t('settings.explore.proactiveTitle', { defaultValue: '主动工作台' })}
-                description={t('settings.explore.proactiveDesc', { defaultValue: '控制 Today、主动建议和任务提醒。' })}
+                title={t('settings.explore.remindersTitle')}
+                description={t('settings.explore.remindersSectionDesc')}
               >
                 <SettingsCard>
                   <SettingsToggle
-                    label={t('settings.explore.proactiveEnabled', { defaultValue: '主动建议' })}
-                    description={t('settings.explore.proactiveEnabledDesc', { defaultValue: '根据任务状态、检查点和时间给出下一步建议。' })}
-                    checked={settings.proactiveSuggestionsEnabled}
-                    onCheckedChange={(checked) => update({ proactiveSuggestionsEnabled: checked })}
-                  />
-                  <SettingsToggle
-                    label={t('settings.explore.remindersEnabled', { defaultValue: '任务提醒' })}
-                    description={t('settings.explore.remindersEnabledDesc', { defaultValue: '在设置的时间通过系统通知提醒你继续任务。' })}
+                    label={t('settings.explore.remindersEnabled')}
+                    description={t('settings.explore.remindersEnabledDesc')}
                     checked={settings.remindersEnabled}
                     onCheckedChange={(checked) => update({ remindersEnabled: checked })}
                   />
-                  <SettingsToggle
-                    label={t('settings.explore.cognitionGuidanceEnabled')}
-                    description={t('settings.explore.cognitionGuidanceEnabledDesc')}
-                    checked={settings.cognitionGuidanceEnabled}
-                    onCheckedChange={(checked) => update({ cognitionGuidanceEnabled: checked })}
-                  />
+                  <SettingsRow
+                    label={t('settings.explore.quietHours')}
+                    description={t('settings.explore.quietHoursDesc')}
+                  >
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="time"
+                        value={settings.quietHoursStart}
+                        onChange={(event) => update({ quietHoursStart: event.target.value })}
+                        className="rounded-control border border-border/60 bg-background px-2 py-1"
+                      />
+                      <span>—</span>
+                      <input
+                        type="time"
+                        value={settings.quietHoursEnd}
+                        onChange={(event) => update({ quietHoursEnd: event.target.value })}
+                        className="rounded-control border border-border/60 bg-background px-2 py-1"
+                      />
+                    </div>
+                  </SettingsRow>
+                </SettingsCard>
+              </SettingsSection>
+
+              <SettingsSection
+                title={t('settings.explore.cognitionDebug')}
+                description={t('settings.explore.cognitionDebugDesc')}
+              >
+                <SettingsCard>
                   <SettingsToggle
                     label={t('settings.explore.cognitionGuidanceAutoRefresh')}
                     description={t('settings.explore.cognitionGuidanceAutoRefreshDesc')}
@@ -133,52 +123,16 @@ export default function ExploreSettingsPage() {
                     onCheckedChange={(checked) => update({ cognitionGuidanceAutoRefresh: checked })}
                   />
                   <SettingsRow
-                    label={t('settings.explore.cognitionGuidanceScope')}
-                    description={t('settings.explore.cognitionGuidanceScopeDesc')}
-                  >
-                    <SettingsSegmentedControl<string>
-                      size="sm"
-                      value={settings.cognitionGuidanceScope}
-                      onValueChange={(value) => update({
-                        cognitionGuidanceScope: value === 'activeSessions' ? 'activeSessions' : 'workspace',
-                      })}
-                      options={[
-                        { value: 'workspace', label: t('settings.explore.scopeWorkspace') },
-                        { value: 'activeSessions', label: t('settings.explore.scopeActive') },
-                      ]}
-                    />
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t('settings.explore.cognitionDebug')}
+                    label={t('settings.explore.openCognitionDebug')}
                     description={t('settings.explore.cognitionDebugDesc')}
                   >
                     <button
                       type="button"
+                      className="text-xs font-medium text-accent hover:underline"
                       onClick={() => navigate(routes.view.settings('cognition'))}
-                      className="rounded-control bg-foreground/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-foreground/[0.08]"
                     >
                       {t('settings.explore.openCognitionDebug')}
                     </button>
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t('settings.explore.quietHours', { defaultValue: '免打扰时间' })}
-                    description={t('settings.explore.quietHoursDesc', { defaultValue: '免打扰期间延后系统提醒；开始和结束相同表示关闭。' })}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="time"
-                        value={settings.quietHoursStart}
-                        onChange={(event) => update({ quietHoursStart: event.target.value })}
-                        className="h-8 rounded-control border border-border bg-background px-2 text-xs text-foreground"
-                      />
-                      <span className="text-xs text-muted-foreground">–</span>
-                      <input
-                        type="time"
-                        value={settings.quietHoursEnd}
-                        onChange={(event) => update({ quietHoursEnd: event.target.value })}
-                        className="h-8 rounded-control border border-border bg-background px-2 text-xs text-foreground"
-                      />
-                    </div>
                   </SettingsRow>
                 </SettingsCard>
               </SettingsSection>

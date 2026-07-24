@@ -3,7 +3,7 @@
  * Rebuildable; every field must be traceable via source*Ids / evidenceRefs.
  */
 
-import type { CognitionEvidenceRef } from '../types.ts'
+import type { CognitionEvidenceRef, CognitionEventSource } from '../types.ts'
 
 export type CognitionReflectionType = 'task' | 'daily'
 
@@ -22,6 +22,8 @@ export interface CognitionReflection {
   nextActions: string[]
   sourceObservationIds: string[]
   sourceLoopIds: string[]
+  sourceEventIds?: string[]
+  sourceKinds?: Array<CognitionEventSource | 'unknown'>
   evidenceRefs: CognitionEvidenceRef[]
   createdAt: number
   schemaVersion: number

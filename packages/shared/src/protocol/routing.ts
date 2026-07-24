@@ -49,6 +49,11 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   // dialog — native folder dialog
   RPC_CHANNELS.dialog.OPEN_FOLDER,
 
+  // library — destructive / repair ops stay local until remote confirm UX exists
+  RPC_CHANNELS.library.DELETE,
+  RPC_CHANNELS.library.RESTORE_VERSION,
+  RPC_CHANNELS.library.REPAIR,
+
   // auth — local auth state + native dialogs
   RPC_CHANNELS.auth.LOGOUT,
   RPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION,
@@ -282,6 +287,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.GET_MESSAGES,
   RPC_CHANNELS.sessions.SEND_MESSAGE,
   RPC_CHANNELS.sessions.GENERATE_EXPLORE_BRIEF,
+  RPC_CHANNELS.sessions.COMPLETE_AND_ARCHIVE,
   RPC_CHANNELS.sessions.CANCEL,
   RPC_CHANNELS.sessions.KILL_SHELL,
   RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
@@ -303,6 +309,11 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.IMPORT,
   RPC_CHANNELS.sessions.EXPORT_REMOTE_TRANSFER,
   RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER,
+
+  // today — Explore Today snooze state (workspace-local product state)
+  RPC_CHANNELS.today.GET_STATE,
+  RPC_CHANNELS.today.SNOOZE,
+  RPC_CHANNELS.today.CLEAR_SNOOZE,
 
   // transfer — chunked large-payload import (sessions, resources)
   RPC_CHANNELS.transfer.START,
@@ -536,6 +547,43 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.messaging.DISMISS_PENDING_SENDER,
   RPC_CHANNELS.messaging.ALLOW_PENDING_SENDER,
   RPC_CHANNELS.messaging.SET_BINDING_ACCESS,
+
+  // cognition — workspace cognition ledger / product reads
+  RPC_CHANNELS.cognition.GET_STATUS,
+  RPC_CHANNELS.cognition.LIST_EVENTS,
+  RPC_CHANNELS.cognition.LIST_OBSERVATIONS,
+  RPC_CHANNELS.cognition.LIST_LOOPS,
+  RPC_CHANNELS.cognition.RESOLVE_LOOP,
+  RPC_CHANNELS.cognition.DISMISS_LOOP,
+  RPC_CHANNELS.cognition.LIST_REFLECTIONS,
+  RPC_CHANNELS.cognition.LIST_GUIDANCE,
+  RPC_CHANNELS.cognition.DISMISS_GUIDANCE,
+  RPC_CHANNELS.cognition.REFRESH_GUIDANCE,
+  RPC_CHANNELS.cognition.CLEAR,
+  RPC_CHANNELS.cognition.REPAIR,
+
+  // privacy — workspace privacy policy / mode / access log
+  RPC_CHANNELS.privacy.GET_POLICY,
+  RPC_CHANNELS.privacy.SET_POLICY,
+  RPC_CHANNELS.privacy.GET_PRIVACY_MODE,
+  RPC_CHANNELS.privacy.SET_PRIVACY_MODE,
+  RPC_CHANNELS.privacy.LIST_ACCESS_LOG,
+  RPC_CHANNELS.privacy.CLEAR_DATA,
+  RPC_CHANNELS.privacy.GET_STORAGE_USAGE,
+
+  // library — workspace document library (资源库)
+  // Read + safe writes remain remote-eligible; delete/repair/restore are LOCAL_ONLY (see above).
+  RPC_CHANNELS.library.LIST,
+  RPC_CHANNELS.library.GET,
+  RPC_CHANNELS.library.CREATE,
+  RPC_CHANNELS.library.CREATE_FROM_SESSION,
+  RPC_CHANNELS.library.UPDATE,
+  RPC_CHANNELS.library.ARCHIVE,
+  RPC_CHANNELS.library.UNARCHIVE,
+  RPC_CHANNELS.library.LIST_VERSIONS,
+  RPC_CHANNELS.library.GET_VERSION,
+  RPC_CHANNELS.library.EXPORT,
+  RPC_CHANNELS.library.UNLINK_SESSION,
 ])
 
 // ---------------------------------------------------------------------------

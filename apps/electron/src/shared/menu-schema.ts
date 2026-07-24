@@ -394,6 +394,7 @@ const SETTINGS_ICONS: Record<SettingsSubpage, string> = {
   accounts: 'KeyRound',
   appearance: 'Palette',
   explore: 'Compass',
+  privacy: 'Shield',
   cognition: 'BrainCircuit',
   input: 'Keyboard',
   workspace: 'Building2',

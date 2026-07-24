@@ -56,7 +56,7 @@ export default function CognitionDebugPage() {
         window.electronAPI.listCognitionObservations({ workspaceId, limit: 40 }),
         window.electronAPI.listCognitionLoops({ workspaceId, includeResolved: true, limit: 40 }),
         window.electronAPI.listCognitionReflections({ workspaceId, latestOnly: true, limit: 20 }),
-        window.electronAPI.listCognitionGuidance({ workspaceId, includeDismissed: true, limit: 40 }),
+        window.electronAPI.listCognitionGuidance({ workspaceId, includeDismissed: true, limit: 40, forDebug: true }),
       ])
       setStatus(nextStatus)
       setEvents(nextEvents)

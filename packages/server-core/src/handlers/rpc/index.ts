@@ -28,6 +28,9 @@ import { registerWorkspaceCoreHandlers } from './workspace'
 import { registerMessagingHandlers } from './messaging'
 import { registerWidgetHandlers } from './widgets'
 import { registerCognitionHandlers } from './cognition'
+import { registerPrivacyHandlers } from './privacy'
+import { registerTodayHandlers } from './today'
+import { registerLibraryHandlers } from './library'
 
 export function registerCoreRpcHandlers(
   server: RpcServer,
@@ -57,4 +60,7 @@ export function registerCoreRpcHandlers(
   registerMessagingHandlers(server, deps)
   registerWidgetHandlers(server, deps)
   registerCognitionHandlers(server, deps)
+  registerPrivacyHandlers(server, deps)
+  registerTodayHandlers(server, deps)
+  registerLibraryHandlers(server, deps)
 }

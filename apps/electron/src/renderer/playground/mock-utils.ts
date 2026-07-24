@@ -313,6 +313,24 @@ export const mockElectronAPI = {
     model: 'deepseek-v4-flash',
   }),
 
+  completeAndArchiveSession: async (request: { sessionId: string }) => ({
+    sessionId: request.sessionId,
+    ok: true,
+    alreadyCompleted: false,
+    steps: [
+      { step: 'mark_done' as const, status: 'ok' as const },
+      { step: 'create_checkpoint' as const, status: 'ok' as const },
+      { step: 'resolve_loops' as const, status: 'already_done' as const },
+      { step: 'dismiss_guidance' as const, status: 'already_done' as const },
+      { step: 'archive' as const, status: 'ok' as const },
+      { step: 'clear_snooze' as const, status: 'ok' as const },
+    ],
+  }),
+
+  getTodayState: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
+  snoozeTodayItem: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
+  clearTodaySnooze: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
+
   writePreferences: async (prefs: unknown) => {
     console.log('[Playground] writePreferences called:', prefs)
   },

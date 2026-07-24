@@ -184,10 +184,14 @@ export class WsRpcClient implements RpcClient {
       }
 
       const id = crypto.randomUUID()
+      // Session→document AI organize can exceed the default 30s (model + quality retry).
+      const timeoutMs = channel === 'library:createFromSession'
+        ? Math.max(this.requestTimeout, 180_000)
+        : this.requestTimeout
       const timeout = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`Request timeout: ${channel} (${this.requestTimeout}ms)`))
-      }, this.requestTimeout)
+        reject(new Error(`Request timeout: ${channel} (${timeoutMs}ms)`))
+      }, timeoutMs)
 
       this.pending.set(id, { resolve, reject, timeout })
 

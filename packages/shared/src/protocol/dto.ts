@@ -978,6 +978,132 @@ export interface ExploreBriefResult {
 }
 
 // ---------------------------------------------------------------------------
+// Complete and archive (v0.16 Phase C) — single RPC
+// ---------------------------------------------------------------------------
+
+export interface CompleteAndArchiveRequest {
+  workspaceId: string
+  sessionId: string
+  options?: {
+    createFinalCheckpoint?: boolean
+    resolveOpenLoops?: boolean
+    dismissGuidance?: boolean
+    clearTodaySnooze?: boolean
+  }
+  /** Client idempotency key; same key retries return the same logical result. */
+  idempotencyKey?: string
+}
+
+export type CompleteAndArchiveStepName =
+  | 'mark_done'
+  | 'create_checkpoint'
+  | 'resolve_loops'
+  | 'dismiss_guidance'
+  | 'archive'
+  | 'clear_snooze'
+
+export interface CompleteAndArchiveStepResult {
+  step: CompleteAndArchiveStepName
+  status: 'ok' | 'skipped' | 'failed' | 'already_done'
+  detail?: string
+  errorCode?: string
+}
+
+export interface CompleteAndArchiveResponse {
+  sessionId: string
+  ok: boolean
+  alreadyCompleted: boolean
+  steps: CompleteAndArchiveStepResult[]
+}
+
+// ---------------------------------------------------------------------------
+// Today product state (snooze) — v0.16 Phase C
+// ---------------------------------------------------------------------------
+
+export interface TodaySnoozeDto {
+  schemaVersion: 1
+  targetKey: string
+  until: number | null
+  createdAt: number
+  source: 'user'
+}
+
+export interface TodayStateDto {
+  schemaVersion: 1
+  snoozes: TodaySnoozeDto[]
+}
+
+export interface TodayGetStateRequest {
+  workspaceId: string
+}
+
+export interface TodaySnoozeRequest {
+  workspaceId: string
+  targetKey: string
+  /** Unix ms, or null = pause until user clears ("暂时不再提醒") */
+  until: number | null
+}
+
+export interface TodayClearSnoozeRequest {
+  workspaceId: string
+  targetKey: string
+}
+
+// ---------------------------------------------------------------------------
+// Library (资源库) — v0.16 Phase D
+// Re-export shared library types for protocol consumers.
+// ---------------------------------------------------------------------------
+
+export type {
+  LibraryManifest,
+  DocumentMeta,
+  DocumentSessionLink,
+  DocumentSourceReference,
+  DocumentVersionMeta,
+  DocumentGenerationMeta,
+  LibraryIndexEntry,
+  LibraryResourcesIndex,
+  LibraryListQuery,
+  LibraryDocumentDto,
+  LibraryCreateBlankRequest,
+  LibraryCreateFromSessionRequest,
+  LibraryCreateFromSessionResponse,
+  LibraryPrivacyGateResult,
+  LibraryUpdateRequest,
+  LibraryExportRequest,
+  LibraryExportResult,
+  LibraryDocumentTemplateId,
+  LibraryVersionOp,
+  LibraryGenerateMode,
+  LibraryExportFormat,
+  LibrarySessionStats,
+  SessionContentBlock,
+  GeneratedDocumentResult,
+} from '../library/types.ts'
+
+export interface LibraryGetRequest {
+  workspaceId: string
+  documentId: string
+}
+
+export interface LibraryDocumentActionRequest {
+  workspaceId: string
+  documentId: string
+}
+
+export interface LibraryGetVersionRequest {
+  workspaceId: string
+  documentId: string
+  versionId: string
+}
+
+export interface LibraryUnlinkSessionRequest {
+  workspaceId: string
+  documentId: string
+  sessionId: string
+}
+
+// ---------------------------------------------------------------------------
 // Plan types
 // ---------------------------------------------------------------------------
 
@@ -1586,6 +1712,10 @@ export interface CognitionListGuidanceRequest {
   includeDismissed?: boolean
   limit?: number
   offset?: number
+  /** Debug page: skip product/Today policy filter. */
+  forDebug?: boolean
+  /** Product Today path (default true when not forDebug). */
+  forToday?: boolean
 }
 
 export interface CognitionGuidanceDto {
@@ -1602,6 +1732,11 @@ export interface CognitionGuidanceDto {
   sourceReflectionId?: string
   sourceObservationIds: string[]
   sourceLoopIds: string[]
+  /** Provenance kinds (v2). */
+  sourceKinds?: string[]
+  sourceEventIds?: string[]
+  /** When forDebug + policy would hide on product path. */
+  policyHidden?: boolean
   projectId?: string
   createdAt: number
   dismissedAt?: number
@@ -1622,4 +1757,145 @@ export interface CognitionRefreshGuidanceResultDto {
   dailyReflection: CognitionReflectionDto | null
   guidanceCount: number
 }
+
+// ---------------------------------------------------------------------------
+// Privacy / context-awareness (v0.16 Phase B)
+// ---------------------------------------------------------------------------
+
+export type PrivacyPermission3Dto = 'deny' | 'ask' | 'allow'
+
+export interface PrivacyPolicyDto {
+  schemaVersion: number
+  contextAwarenessEnabled: boolean
+  today: { useContext: boolean }
+  privacyMode: {
+    active: boolean
+    activatedAt?: number
+    resumeAt?: number | null
+    pauseAutomations: boolean
+    persistAcrossRestart: boolean
+  }
+  sources: {
+    session: {
+      meta: PrivacyPermission3Dto
+      body: PrivacyPermission3Dto
+      attachments: PrivacyPermission3Dto
+      archived: PrivacyPermission3Dto
+    }
+    browser: {
+      urlTitle: PrivacyPermission3Dto
+      pageContent: PrivacyPermission3Dto
+      history: PrivacyPermission3Dto
+    }
+    git: {
+      statusMeta: PrivacyPermission3Dto
+      diffContent: PrivacyPermission3Dto
+      mutate: PrivacyPermission3Dto
+    }
+    files: {
+      metadata: PrivacyPermission3Dto
+      content: PrivacyPermission3Dto
+      roots: string[]
+    }
+    messaging: {
+      wechat: PrivacyPermission3Dto
+      lark: PrivacyPermission3Dto
+    }
+    automation: PrivacyPermission3Dto
+    mcpPlugins: PrivacyPermission3Dto
+    projectMemory: PrivacyPermission3Dto
+    library: {
+      generateWithModel: PrivacyPermission3Dto
+      autoDetectSync: boolean
+    }
+  }
+  retention: {
+    accessLogDays: number
+    accessLogMaxEntries: number
+    cognitionDays?: number | null
+  }
+  updatedAt: number
+  resolvedFrom?: Array<'privacy_mode' | 'workspace' | 'user' | 'default'>
+  effectivePrivacyModeActive?: boolean
+  policyVersion?: string
+}
+
+export interface PrivacyGetPolicyRequest {
+  workspaceId: string
+}
+
+export interface PrivacySetPolicyRequest {
+  workspaceId: string
+  /** User-level policy patch (preferences.privacy). */
+  policy: Partial<PrivacyPolicyDto>
+  /** When true, write workspace override instead of user prefs. */
+  workspaceOverride?: boolean
+}
+
+export interface PrivacyModeDto {
+  active: boolean
+  activatedAt?: number
+  resumeAt?: number | null
+  pauseAutomations: boolean
+  persistAcrossRestart: boolean
+}
+
+export interface PrivacySetModeRequest {
+  workspaceId: string
+  mode: Partial<PrivacyModeDto> & { active: boolean }
+}
+
+export interface PrivacyListAccessLogRequest {
+  workspaceId: string
+  limit?: number
+}
+
+export interface PrivacyAccessLogEntryDto {
+  schemaVersion: number
+  id: string
+  at: number
+  feature: string
+  sources: string[]
+  scope: string
+  purpose: string
+  sentToModel: boolean
+  connectionId?: string
+  model?: string
+  decision: string
+  code: string
+  workspaceId: string
+  policyVersion: string
+}
+
+export interface PrivacyClearDataRequest {
+  workspaceId: string
+  target: {
+    cognition?: boolean
+    accessLog?: boolean
+    exploreBriefCache?: boolean
+    browserCognitionEvents?: boolean
+  }
+}
+
+export interface PrivacyClearDataResultDto {
+  cleared: string[]
+  skipped: string[]
+}
+
+export interface PrivacyStorageUsageDto {
+  workspaceId: string
+  cognitionBytes: number
+  accessLogBytes: number
+  privacyDirBytes: number
+  totalBytes: number
+}
+
+/** Hard-coded never-collect kinds shown in Settings → Privacy. */
+export const PRIVACY_NEVER_COLLECT_DTO = [
+  'cookie',
+  'token',
+  'password',
+  'form_sensitive',
+] as const
+
 

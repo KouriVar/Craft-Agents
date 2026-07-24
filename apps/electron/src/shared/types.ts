@@ -265,6 +265,16 @@ import type {
   CognitionGuidanceActionRequest,
   CognitionRefreshGuidanceRequest,
   CognitionRefreshGuidanceResultDto,
+  PrivacyGetPolicyRequest,
+  PrivacySetPolicyRequest,
+  PrivacyPolicyDto,
+  PrivacyModeDto,
+  PrivacySetModeRequest,
+  PrivacyListAccessLogRequest,
+  PrivacyAccessLogEntryDto,
+  PrivacyClearDataRequest,
+  PrivacyClearDataResultDto,
+  PrivacyStorageUsageDto,
   ClaudeOAuthResult,
   UpdateInfo,
   WorkspaceSettings,
@@ -304,6 +314,9 @@ export interface ElectronAPI {
   generateExploreBrief(
     request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
   ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
+  completeAndArchiveSession(
+    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
+  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
@@ -876,6 +889,36 @@ export interface ElectronAPI {
   clearCognitionEvents(workspaceId: string): Promise<{ ok: boolean }>
   repairCognitionStore(workspaceId: string): Promise<CognitionStoreStatusDto>
 
+  // Privacy / context-awareness
+  getPrivacyPolicy(request: PrivacyGetPolicyRequest): Promise<PrivacyPolicyDto>
+  setPrivacyPolicy(request: PrivacySetPolicyRequest): Promise<PrivacyPolicyDto>
+  getPrivacyMode(workspaceId: string): Promise<PrivacyModeDto>
+  setPrivacyMode(request: PrivacySetModeRequest): Promise<PrivacyPolicyDto>
+  listPrivacyAccessLog(request: PrivacyListAccessLogRequest): Promise<PrivacyAccessLogEntryDto[]>
+  clearPrivacyData(request: PrivacyClearDataRequest): Promise<PrivacyClearDataResultDto>
+  getPrivacyStorageUsage(workspaceId: string): Promise<PrivacyStorageUsageDto>
+
+  // Explore Today product state
+  getTodayState(request: import('@craft-agent/shared/protocol').TodayGetStateRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
+  snoozeTodayItem(request: import('@craft-agent/shared/protocol').TodaySnoozeRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
+  clearTodaySnooze(request: import('@craft-agent/shared/protocol').TodayClearSnoozeRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
+
+  // Library (资源库)
+  listLibraryDocuments(query: import('@craft-agent/shared/protocol').LibraryListQuery): Promise<import('@craft-agent/shared/protocol').LibraryIndexEntry[]>
+  getLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryGetRequest): Promise<import('@craft-agent/shared/protocol').LibraryDocumentDto | null>
+  createLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryCreateBlankRequest): Promise<import('@craft-agent/shared/protocol').LibraryDocumentDto>
+  createLibraryDocumentFromSession(request: import('@craft-agent/shared/protocol').LibraryCreateFromSessionRequest): Promise<import('@craft-agent/shared/protocol').LibraryCreateFromSessionResponse>
+  updateLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryUpdateRequest): Promise<import('@craft-agent/shared/protocol').LibraryDocumentDto | null>
+  archiveLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryDocumentActionRequest): Promise<import('@craft-agent/shared/protocol').DocumentMeta | null>
+  unarchiveLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryDocumentActionRequest): Promise<import('@craft-agent/shared/protocol').DocumentMeta | null>
+  deleteLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryDocumentActionRequest): Promise<{ ok: boolean }>
+  listLibraryVersions(request: import('@craft-agent/shared/protocol').LibraryDocumentActionRequest): Promise<import('@craft-agent/shared/protocol').DocumentVersionMeta[]>
+  getLibraryVersion(request: import('@craft-agent/shared/protocol').LibraryGetVersionRequest): Promise<{ meta: import('@craft-agent/shared/protocol').DocumentVersionMeta; body: string } | null>
+  restoreLibraryVersion(request: import('@craft-agent/shared/protocol').LibraryGetVersionRequest): Promise<import('@craft-agent/shared/protocol').LibraryDocumentDto | null>
+  exportLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryExportRequest): Promise<import('@craft-agent/shared/protocol').LibraryExportResult>
+  repairLibrary(workspaceId: string): Promise<{ ok: boolean; rebuiltIndex: number; orphanBodies: string[]; missingBodies: string[] }>
+  unlinkLibrarySession(request: import('@craft-agent/shared/protocol').LibraryUnlinkSessionRequest): Promise<import('@craft-agent/shared/protocol').DocumentMeta | null>
+
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>
   browseForGitBash(): Promise<string | null>
@@ -1300,6 +1343,16 @@ export interface ProjectsNavigationState {
 }
 
 /**
+ * Library navigation state (资源库)
+ */
+export interface LibraryNavigationState {
+  navigator: 'library'
+  filter?: 'all' | 'recent' | 'archived'
+  details: { type: 'document'; documentId: string } | null
+  rightSidebar?: RightSidebarPanel
+}
+
+/**
  * Unified navigation state
  */
 export type NavigationState =
@@ -1311,6 +1364,7 @@ export type NavigationState =
   | BrowserNavigationState
   | AutomationsNavigationState
   | ProjectsNavigationState
+  | LibraryNavigationState
 
 export const isSessionsNavigation = (state: NavigationState): state is SessionsNavigationState => state.navigator === 'sessions'
 
@@ -1327,6 +1381,8 @@ export const isBrowserNavigation = (state: NavigationState): state is BrowserNav
 export const isAutomationsNavigation = (state: NavigationState): state is AutomationsNavigationState => state.navigator === 'automations'
 
 export const isProjectsNavigation = (state: NavigationState): state is ProjectsNavigationState => state.navigator === 'projects'
+
+export const isLibraryNavigation = (state: NavigationState): state is LibraryNavigationState => state.navigator === 'library'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'browser',
@@ -1369,6 +1425,14 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `projects/project/${state.details.projectSlug}`
     }
     return 'projects'
+  }
+  if (state.navigator === 'library') {
+    if (state.details?.type === 'document') {
+      return `library/document/${state.details.documentId}`
+    }
+    if (state.filter === 'archived') return 'library/archived'
+    if (state.filter === 'recent') return 'library/recent'
+    return 'library'
   }
   if (state.navigator === 'settings') {
     if (state.subpage === null) return 'settings'
@@ -1444,6 +1508,22 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
       }
     }
     return { navigator: 'projects', details: null }
+  }
+
+  // Handle library (资源库)
+  if (key === 'library') return { navigator: 'library', filter: 'all', details: null }
+  if (key === 'library/recent') return { navigator: 'library', filter: 'recent', details: null }
+  if (key === 'library/archived') return { navigator: 'library', filter: 'archived', details: null }
+  if (key.startsWith('library/document/')) {
+    const documentId = key.slice(17)
+    if (documentId) {
+      return {
+        navigator: 'library',
+        filter: 'all',
+        details: { type: 'document', documentId },
+      }
+    }
+    return { navigator: 'library', filter: 'all', details: null }
   }
 
   // Handle settings

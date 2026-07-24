@@ -44,6 +44,7 @@ function baseObservation(
     confidence: clamp01(partial.confidence),
     importance: clamp01(partial.importance),
     sourceEventIds: [event.id],
+    sourceKinds: [event.source],
     evidenceRefs: partial.evidenceRefs ?? evidenceFromEvent(event),
     evidenceFingerprint: buildEvidenceFingerprint({
       sessionId: event.sessionId,

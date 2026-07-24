@@ -113,7 +113,10 @@ function toReflectionDto(r: CognitionReflection): import('@craft-agent/shared/pr
   }
 }
 
-function toGuidanceDto(g: CognitionGuidance): import('@craft-agent/shared/protocol').CognitionGuidanceDto {
+function toGuidanceDto(
+  g: CognitionGuidance,
+  opts?: { policyHidden?: boolean },
+): import('@craft-agent/shared/protocol').CognitionGuidanceDto {
   return {
     id: g.id,
     type: g.type,
@@ -128,6 +131,9 @@ function toGuidanceDto(g: CognitionGuidance): import('@craft-agent/shared/protoc
     sourceReflectionId: g.sourceReflectionId,
     sourceObservationIds: g.sourceObservationIds,
     sourceLoopIds: g.sourceLoopIds,
+    sourceKinds: g.sourceKinds,
+    sourceEventIds: g.sourceEventIds,
+    policyHidden: opts?.policyHidden,
     projectId: g.projectId,
     createdAt: g.createdAt,
     dismissedAt: g.dismissedAt,
@@ -244,6 +250,22 @@ export function registerCognitionHandlers(server: RpcServer, deps: HandlerDeps):
     async (_ctx, request: import('@craft-agent/shared/protocol').CognitionListGuidanceRequest) => {
       const { service } = resolveService(request.workspaceId)
       await service.processUnprocessedEvents().catch(() => {})
+      if (request.forDebug) {
+        const items = await service.listGuidance({
+          sessionId: request.sessionId,
+          projectId: request.projectId,
+          types: request.types as CognitionGuidanceType[] | undefined,
+          includeDismissed: request.includeDismissed,
+          limit: request.limit,
+          offset: request.offset,
+          forDebug: true,
+        })
+        return items.map((g) =>
+          toGuidanceDto(g, {
+            policyHidden: !service.isGuidanceReadableForProduct(g),
+          }),
+        )
+      }
       const items = await service.listGuidance({
         sessionId: request.sessionId,
         projectId: request.projectId,
@@ -251,8 +273,9 @@ export function registerCognitionHandlers(server: RpcServer, deps: HandlerDeps):
         includeDismissed: request.includeDismissed,
         limit: request.limit,
         offset: request.offset,
+        forToday: request.forToday !== false,
       })
-      return items.map(toGuidanceDto)
+      return items.map((g) => toGuidanceDto(g))
     },
   )
 

@@ -8,7 +8,7 @@
  *   Do NOT invent a generic `taskId` field that aliases sessionId.
  */
 
-export const COGNITION_SCHEMA_VERSION = 1
+export const COGNITION_SCHEMA_VERSION = 2
 
 export type CognitionEventSource =
   | 'session'

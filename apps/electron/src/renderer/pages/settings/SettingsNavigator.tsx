@@ -166,7 +166,8 @@ export default function SettingsNavigator({
     {
       id: 'system',
       label: t('settings.group.system'),
-      pages: ['permissions', 'server'],
+      // privacy / cognition are first-class settings pages (v0.16+)
+      pages: ['privacy', 'permissions', 'cognition', 'server'],
     },
   ], [t])
 

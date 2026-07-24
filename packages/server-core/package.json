@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/server-core",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "license": "Apache-2.0",
   "description": "Reusable headless server infrastructure for Craft Agent",
   "type": "module",
@@ -20,7 +20,8 @@
     "./sessions": "./src/sessions/index.ts",
     "./tasks": "./src/tasks/index.ts",
     "./webui": "./src/webui/index.ts",
-    "./cognition": "./src/cognition/index.ts"
+    "./cognition": "./src/cognition/index.ts",
+    "./privacy": "./src/privacy/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

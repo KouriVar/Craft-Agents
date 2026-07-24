@@ -3,6 +3,8 @@
  * Guidance ≠ Task / Todo. Rebuildable; never mutates tasks or Loop core status.
  */
 
+import type { CognitionEventSource } from '../types.ts'
+
 export type CognitionGuidanceType =
   | 'continue'
   | 'resolve_blocker'
@@ -24,6 +26,8 @@ export interface CognitionGuidance {
   sourceReflectionId?: string
   sourceObservationIds: string[]
   sourceLoopIds: string[]
+  sourceEventIds?: string[]
+  sourceKinds?: Array<CognitionEventSource | 'unknown'>
   workspaceId?: string
   projectId?: string
   createdAt: number

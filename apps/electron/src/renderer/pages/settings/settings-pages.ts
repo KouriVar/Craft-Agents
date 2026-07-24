@@ -19,6 +19,7 @@ import AiSettingsPage from './AiSettingsPage'
 import AccountsSettingsPage from './AccountsSettingsPage'
 import AppearanceSettingsPage from './AppearanceSettingsPage'
 import ExploreSettingsPage from './ExploreSettingsPage'
+import PrivacySettingsPage from './PrivacySettingsPage'
 import CognitionDebugPage from './CognitionDebugPage'
 import InputSettingsPage from './InputSettingsPage'
 import WorkspaceSettingsPage from './WorkspaceSettingsPage'
@@ -39,6 +40,7 @@ export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = 
   accounts: AccountsSettingsPage,
   appearance: AppearanceSettingsPage,
   explore: ExploreSettingsPage,
+  privacy: PrivacySettingsPage,
   cognition: CognitionDebugPage,
   input: InputSettingsPage,
   workspace: WorkspaceSettingsPage,

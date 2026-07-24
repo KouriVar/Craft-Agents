@@ -34,6 +34,7 @@ import {
   isBrowserNavigation,
   isAutomationsNavigation,
   isProjectsNavigation,
+  isLibraryNavigation,
 } from '@/contexts/NavigationContext'
 import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectionCount } from '@/hooks/useSession'
 import { sourceSelection, skillSelection, automationSelection } from '@/hooks/useEntitySelection'
@@ -44,6 +45,7 @@ import SkillInfoPage from '@/pages/SkillInfoPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
+import { LibraryDocumentPage } from '../library/LibraryDocumentPage'
 import { PluginInfoPage } from '../plugins/PluginInfoPage'
 import { BrowserWorkspacePage } from '../browser/BrowserWorkspacePage'
 import { ExploreHome } from '../explore/ExploreHome'
@@ -448,6 +450,24 @@ export function MainContentPanel({
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">
           <p className="text-sm">{t("projectsList.noProjectSelected")}</p>
+        </div>
+      </Panel>
+    )
+  }
+
+  if (isLibraryNavigation(navState)) {
+    const documentId = navState.details?.documentId
+    if (documentId) {
+      return wrapWithStoplight(
+        <Panel variant="grow" className={className}>
+          <LibraryDocumentPage workspaceId={activeWorkspaceId || ''} documentId={documentId} />
+        </Panel>
+      )
+    }
+    return wrapWithStoplight(
+      <Panel variant="grow" className={className}>
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          <p className="text-sm">{t('library.noDocumentSelected')}</p>
         </div>
       </Panel>
     )

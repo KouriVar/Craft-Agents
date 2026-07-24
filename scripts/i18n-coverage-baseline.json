@@ -9,6 +9,8 @@
   "chat.workflowAgentsDone",
   "datatable.rowCount",
   "kanban.projectsSelected",
+  "library.messageCount",
+  "library.sessionCount",
   "multiSelect.selected.session",
   "sendToWorkspace.description",
   "sendToWorkspace.failedToSend",

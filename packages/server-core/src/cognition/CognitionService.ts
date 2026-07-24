@@ -31,6 +31,7 @@ import {
   mapProcessingReasonToStopReason,
   newCognitionTurnId,
   newCorrelationId,
+  backfillSourceKindsLimited,
   type AppendCognitionEventResult,
   type CognitionEvent,
   type CognitionEventInput,
@@ -48,6 +49,9 @@ import {
   type SessionStopReason,
 } from '@craft-agent/shared/cognition'
 import { createLogger } from '@craft-agent/shared/utils'
+import type { PrivacyPolicyGate } from '@craft-agent/shared/privacy'
+import { isEntityReadableByPolicy, type ResolvedPrivacyPolicy } from '@craft-agent/shared/privacy'
+import { getPrivacyService } from '../privacy/PrivacyService.ts'
 
 const log = createLogger('cognition-service')
 
@@ -57,6 +61,10 @@ export interface CognitionServiceOptions {
   workspaceId?: string
   /** Reserved for title polish; rule generation works without it. */
   modelRunner?: CognitionModelRunner
+  /** Injected privacy gate — store must not read preferences. */
+  policyGate?: PrivacyPolicyGate
+  /** Optional resolved-policy provider for read filtering. */
+  getResolvedPolicy?: () => ResolvedPrivacyPolicy | null
 }
 
 export interface CognitionProcessResult {
@@ -77,6 +85,8 @@ export interface CognitionRefreshResult {
 export class CognitionService {
   readonly workspaceDataRoot: string
   readonly workspaceId?: string
+  /** True when a PrivacyService-backed policyGate was injected. */
+  readonly privacyWired: boolean
   private readonly store: CognitionEventStore
   private readonly observations: ObservationStore
   private readonly loops: LoopStore
@@ -86,16 +96,70 @@ export class CognitionService {
   private processChain: Promise<void> = Promise.resolve()
   private disposed = false
   readonly modelRunner?: CognitionModelRunner
+  private readonly getResolvedPolicy?: () => ResolvedPrivacyPolicy | null
+  private provenanceBackfillStarted = false
 
   constructor(options: CognitionServiceOptions) {
     this.workspaceDataRoot = options.workspaceDataRoot
     this.workspaceId = options.workspaceId
     this.modelRunner = options.modelRunner
-    this.store = new CognitionEventStore({ workspaceDataRoot: options.workspaceDataRoot })
+    this.getResolvedPolicy = options.getResolvedPolicy
+    this.privacyWired = Boolean(options.policyGate)
+    this.store = new CognitionEventStore({
+      workspaceDataRoot: options.workspaceDataRoot,
+      policyGate: options.policyGate,
+    })
     this.observations = new ObservationStore(options.workspaceDataRoot)
     this.loops = new LoopStore(options.workspaceDataRoot)
     this.reflections = new ReflectionStore(options.workspaceDataRoot)
     this.guidance = new GuidanceStore(options.workspaceDataRoot)
+    this.scheduleSourceKindsBackfill()
+  }
+
+  private productPolicy(): ResolvedPrivacyPolicy | null {
+    try {
+      return this.getResolvedPolicy?.() ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private filterByPolicy<T extends { sourceKinds?: string[] }>(
+    items: T[],
+    options: { forToday?: boolean } = {},
+  ): T[] {
+    const policy = this.productPolicy()
+    if (!policy) return items
+    return items.filter((item) => isEntityReadableByPolicy(item, policy, options))
+  }
+
+  /** Product-path readability check for Debug markers. */
+  isGuidanceReadableForProduct(entity: { sourceKinds?: string[] }): boolean {
+    const policy = this.productPolicy()
+    if (!policy) return true
+    return isEntityReadableByPolicy(entity, policy, { forToday: false })
+  }
+
+  /**
+   * Lazy v1→v2 provenance backfill. Non-blocking; failures never abort startup.
+   * Rate-limited to avoid stalling the main process on large histories.
+   */
+  private scheduleSourceKindsBackfill(): void {
+    if (this.provenanceBackfillStarted) return
+    this.provenanceBackfillStarted = true
+    const run = async () => {
+      try {
+        await backfillSourceKindsLimited(this.workspaceDataRoot, { maxEntities: 200 })
+      } catch (error) {
+        log.warn('sourceKinds backfill skipped/failed (non-fatal)', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    // Defer so constructor / first RPC returns immediately
+    setTimeout(() => {
+      void this.track(run())
+    }, 250)
   }
 
   private track<T>(promise: Promise<T>): Promise<T> {
@@ -125,6 +189,19 @@ export class CognitionService {
   }
 
   private async runProcess(): Promise<CognitionProcessResult> {
+    const policy = this.productPolicy()
+    if (policy && (!policy.contextAwarenessEnabled || policy.effectivePrivacyModeActive)) {
+      const afterSequence = loadManifest(this.workspaceDataRoot)?.lastProcessedSequence ?? 0
+      return {
+        processedEvents: 0,
+        observationsCreated: 0,
+        loopsUpserted: 0,
+        reflectionsCreated: 0,
+        guidanceRebuilt: 0,
+        lastProcessedSequence: afterSequence,
+      }
+    }
+
     const manifest = loadManifest(this.workspaceDataRoot)
     const afterSequence = manifest?.lastProcessedSequence ?? 0
     const events = await this.store.listEvents({
@@ -274,6 +351,10 @@ export class CognitionService {
         const result = await this.store.appendEvent(input)
         if (result.status === 'appended') this.enqueueProcess()
       } catch (err) {
+        if (err instanceof Error && err.name === 'CognitionPrivacyDeniedError') {
+          // Denied writes are expected; access log already records the decision.
+          return
+        }
         log.warn('Cognition append failed (non-fatal)', {
           type: input.type,
           sessionId: input.sessionId,
@@ -451,20 +532,31 @@ export class CognitionService {
     return this.store.listEvents(query)
   }
 
-  listObservations(query?: CognitionObservationQuery): Promise<CognitionObservation[]> {
-    return this.observations.listObservations(query)
+  async listObservations(query?: CognitionObservationQuery): Promise<CognitionObservation[]> {
+    const items = await this.observations.listObservations(query)
+    return this.filterByPolicy(items)
   }
 
-  listLoops(query?: CognitionLoopQuery): Promise<CognitionLoop[]> {
-    return this.loops.listLoops(query)
+  async listLoops(query?: CognitionLoopQuery): Promise<CognitionLoop[]> {
+    const items = await this.loops.listLoops(query)
+    return this.filterByPolicy(items)
   }
 
-  listReflections(query?: CognitionReflectionQuery): Promise<CognitionReflection[]> {
-    return this.reflections.listReflections(query)
+  async listReflections(query?: CognitionReflectionQuery): Promise<CognitionReflection[]> {
+    const items = await this.reflections.listReflections(query)
+    return this.filterByPolicy(items)
   }
 
-  listGuidance(query?: CognitionGuidanceQuery): Promise<CognitionGuidance[]> {
-    return this.guidance.listGuidance(query)
+  /**
+   * Product path (Today): applies today.useContext + sourceKinds filter.
+   * Pass `{ forDebug: true }` to skip product filtering (Debug page still should mark unknown).
+   */
+  async listGuidance(
+    query?: CognitionGuidanceQuery & { forDebug?: boolean; forToday?: boolean },
+  ): Promise<CognitionGuidance[]> {
+    const items = await this.guidance.listGuidance(query)
+    if (query?.forDebug) return items
+    return this.filterByPolicy(items, { forToday: query?.forToday !== false })
   }
 
   async resolveLoop(loopId: string): Promise<CognitionLoop | null> {
@@ -532,8 +624,32 @@ export function getCognitionService(
   workspaceId?: string,
 ): CognitionService {
   let svc = services.get(workspaceDataRoot)
+  if (svc && workspaceId && !svc.privacyWired) {
+    // Upgrade legacy/test instance created without privacy wiring
+    services.delete(workspaceDataRoot)
+    svc = undefined
+  }
   if (!svc) {
-    svc = new CognitionService({ workspaceDataRoot, workspaceId })
+    const wsId = workspaceId ?? 'unknown'
+    let policyGate: PrivacyPolicyGate | undefined
+    let getResolvedPolicy: (() => ResolvedPrivacyPolicy | null) | undefined
+    try {
+      if (workspaceId) {
+        const privacy = getPrivacyService(workspaceDataRoot, workspaceId)
+        policyGate = privacy.createPolicyGate()
+        getResolvedPolicy = () => privacy.getResolvedPolicy()
+      }
+    } catch (error) {
+      log.warn('PrivacyService unavailable; cognition store allow-all (tests/legacy)', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    svc = new CognitionService({
+      workspaceDataRoot,
+      workspaceId: wsId === 'unknown' ? workspaceId : wsId,
+      policyGate,
+      getResolvedPolicy,
+    })
     services.set(workspaceDataRoot, svc)
   }
   return svc

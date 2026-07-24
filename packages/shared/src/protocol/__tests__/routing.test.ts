@@ -68,4 +68,13 @@ describe('channel routing behavior', () => {
       }
     }
   })
+
+  test('library destructive channels are LOCAL_ONLY', () => {
+    expect(LOCAL_ONLY_CHANNELS.has('library:delete')).toBe(true)
+    expect(LOCAL_ONLY_CHANNELS.has('library:repair')).toBe(true)
+    expect(LOCAL_ONLY_CHANNELS.has('library:restoreVersion')).toBe(true)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has('library:list')).toBe(true)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has('library:createFromSession')).toBe(true)
+    expect(REMOTE_ELIGIBLE_CHANNELS.has('library:delete')).toBe(false)
+  })
 })

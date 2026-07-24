@@ -29,6 +29,9 @@ export interface ExplorePreferences {
   aiCount?: 3 | 5;
 }
 
+/** User-level privacy policy fragment (full shape in @craft-agent/shared/privacy). */
+export type PrivacyPreferences = Record<string, unknown>;
+
 export interface UserPreferences {
   name?: string;
   timezone?: string;
@@ -39,6 +42,10 @@ export interface UserPreferences {
   diffViewer?: DiffViewerPreferences;
   // Explore landing-page preferences
   explore?: ExplorePreferences;
+  /** Context-awareness / privacy policy (v0.16+). */
+  privacy?: PrivacyPreferences;
+  /** One-time privacy migrations already applied (e.g. d1-session-body-ask). */
+  privacyMigrationsApplied?: string[];
   // Whether to include Co-Authored-By trailer on git commits (default: true)
   includeCoAuthoredBy?: boolean;
   /**

@@ -26,6 +26,8 @@ export interface SettingsSegmentedControlProps<T extends string = string> {
   options: SettingsSegmentedOption<T>[]
   /** Size variant */
   size?: 'sm' | 'md'
+  /** Disable all options */
+  disabled?: boolean
   /** Additional className */
   className?: string
 }
@@ -49,12 +51,14 @@ export function SettingsSegmentedControl<T extends string = string>({
   onValueChange,
   options,
   size = 'md',
+  disabled,
   className,
 }: SettingsSegmentedControlProps<T>) {
   return (
     <div
       role="radiogroup"
-      className={cn('inline-flex gap-1', className)}
+      aria-disabled={disabled || undefined}
+      className={cn('inline-flex gap-1', disabled && 'opacity-50 pointer-events-none', className)}
     >
       {options.map((option) => {
         const isSelected = option.value === value
@@ -65,6 +69,7 @@ export function SettingsSegmentedControl<T extends string = string>({
             type="button"
             role="radio"
             aria-checked={isSelected}
+            disabled={disabled}
             onClick={() => onValueChange(option.value)}
             className={cn(
               'flex items-center gap-1.5 rounded-lg transition-all',

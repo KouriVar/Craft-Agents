@@ -2,7 +2,7 @@
  * Loop types — open work items that still occupy attention (≠ Task).
  */
 
-import type { CognitionEvidenceRef } from '../types.ts'
+import type { CognitionEvidenceRef, CognitionEventSource } from '../types.ts'
 
 export type CognitionLoopStatus =
   | 'open'
@@ -26,6 +26,8 @@ export interface CognitionLoop {
   importance: number
   confidence: number
   observationIds: string[]
+  sourceEventIds?: string[]
+  sourceKinds?: Array<CognitionEventSource | 'unknown'>
   evidenceRefs: CognitionEvidenceRef[]
   /** Stable rebuild key shared with source Observations when available. */
   evidenceFingerprint?: string

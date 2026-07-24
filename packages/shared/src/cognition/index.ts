@@ -11,6 +11,7 @@ export {
   maskSecretsInText,
   truncateText,
   CognitionSanitizeError,
+  CognitionPrivacyDeniedError,
 } from './events/event-sanitizer.ts'
 export {
   CognitionEventStore,
@@ -69,6 +70,8 @@ export {
   rebuildManifestFromEvents,
 } from './storage/cognition-storage.ts'
 export { ensureCognitionMigrations } from './storage/migrations.ts'
+export { backfillSourceKindsLimited } from './provenance-backfill.ts'
+export type { BackfillSourceKindsOptions } from './provenance-backfill.ts'
 
 export * from './observations/index.ts'
 export * from './loops/index.ts'

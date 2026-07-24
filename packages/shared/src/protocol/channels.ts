@@ -27,6 +27,7 @@ export const RPC_CHANNELS = {
     GET_MESSAGES: 'sessions:getMessages',
     SEND_MESSAGE: 'sessions:sendMessage',
     GENERATE_EXPLORE_BRIEF: 'sessions:generateExploreBrief',
+    COMPLETE_AND_ARCHIVE: 'sessions:completeAndArchive',
     CANCEL: 'sessions:cancel',
     KILL_SHELL: 'sessions:killShell',
     RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
@@ -405,6 +406,15 @@ export const RPC_CHANNELS = {
     CLEAR: 'cognition:clear',
     REPAIR: 'cognition:repair',
   },
+  privacy: {
+    GET_POLICY: 'privacy:getPolicy',
+    SET_POLICY: 'privacy:setPolicy',
+    GET_PRIVACY_MODE: 'privacy:getPrivacyMode',
+    SET_PRIVACY_MODE: 'privacy:setPrivacyMode',
+    LIST_ACCESS_LOG: 'privacy:listAccessLog',
+    CLEAR_DATA: 'privacy:clearData',
+    GET_STORAGE_USAGE: 'privacy:getStorageUsage',
+  },
   gitbash: {
     CHECK: 'gitbash:check',
     BROWSE: 'gitbash:browse',
@@ -527,6 +537,29 @@ export const RPC_CHANNELS = {
     DISMISS_PENDING_SENDER: 'messaging:access:dismissPending',
     ALLOW_PENDING_SENDER: 'messaging:access:allowPending',
     SET_BINDING_ACCESS: 'messaging:access:setBindingAccess',
+  },
+  /** Explore Today product state (snooze) — independent of reminders / guidance dismiss. */
+  today: {
+    GET_STATE: 'today:getState',
+    SNOOZE: 'today:snooze',
+    CLEAR_SNOOZE: 'today:clearSnooze',
+  },
+  /** Workspace document library (资源库) — v0.16 Phase D. Not ResourceBundle. */
+  library: {
+    LIST: 'library:list',
+    GET: 'library:get',
+    CREATE: 'library:create',
+    CREATE_FROM_SESSION: 'library:createFromSession',
+    UPDATE: 'library:update',
+    ARCHIVE: 'library:archive',
+    UNARCHIVE: 'library:unarchive',
+    DELETE: 'library:delete',
+    LIST_VERSIONS: 'library:listVersions',
+    GET_VERSION: 'library:getVersion',
+    RESTORE_VERSION: 'library:restoreVersion',
+    EXPORT: 'library:export',
+    REPAIR: 'library:repair',
+    UNLINK_SESSION: 'library:unlinkSession',
   },
 } as const
 

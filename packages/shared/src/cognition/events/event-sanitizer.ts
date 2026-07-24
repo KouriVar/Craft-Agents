@@ -47,6 +47,15 @@ export class CognitionSanitizeError extends Error {
   }
 }
 
+export class CognitionPrivacyDeniedError extends Error {
+  readonly code: string
+  constructor(code: string, message?: string) {
+    super(message ?? `Privacy policy denied event: ${code}`)
+    this.name = 'CognitionPrivacyDeniedError'
+    this.code = code
+  }
+}
+
 export function truncateText(value: string, max: number = COGNITION_LIMITS.maxItemLength): string {
   const trimmed = value.replace(/\s+/g, ' ').trim()
   if (trimmed.length <= max) return trimmed

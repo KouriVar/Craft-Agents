@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useSession } from '@/context/AppShellContext'
+import { useSession, useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { SessionFilesSection } from '../right-sidebar/SessionFilesSection'
 import { ContinueFromHereSection, UsageSection } from './SessionResourcesPopover'
 import { TaskContinuitySection } from './TaskContinuitySection'
+import { useLibraryGenerateFromSession } from '@/hooks/useLibraryGenerateFromSession'
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -102,10 +103,14 @@ export function SessionInfoPopover({
 
 export function SessionInfoContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
   const session = useSession(sessionId)
+  const { t } = useTranslation()
+  const { activeWorkspaceId } = useAppShellContext()
+  const libraryGenerate = useLibraryGenerateFromSession(activeWorkspaceId)
 
   return (
     <ScrollArea className="h-full min-h-0 [&_[data-slot=scroll-bar]]:w-1.5">
       <div className="min-h-full">
+        {libraryGenerate.dialog}
         <div className="border-b border-border/50">
           <SessionFilesSection
             sessionId={sessionId}
@@ -118,6 +123,15 @@ export function SessionInfoContent({ sessionId, sessionFolderPath }: { sessionId
           <div className="px-3 pb-3 pt-3">
             <TaskContinuitySection session={session} />
             <ContinueFromHereSection session={session} />
+            {activeWorkspaceId && (
+              <button
+                type="button"
+                className="mt-3 w-full rounded-control border border-border/50 px-3 py-2 text-left text-xs font-medium hover:bg-foreground/[0.04]"
+                onClick={() => { void libraryGenerate.start(sessionId) }}
+              >
+                {t('library.createFromSession')}
+              </button>
+            )}
             <div className="my-3 h-px bg-border/50" />
             <UsageSection session={session} />
           </div>

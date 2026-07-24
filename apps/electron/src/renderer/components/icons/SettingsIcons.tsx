@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Palette,
   Server,
+  Shield,
   ShieldCheck,
   Sparkles,
   Tag,
@@ -30,6 +31,7 @@ export const AiSettingsIcon = ({ className }: IconProps) => <Sparkles className=
 export const AccountsSettingsIcon = ({ className }: IconProps) => <KeyRound className={className} />
 export const AppearanceIcon = ({ className }: IconProps) => <Palette className={className} />
 export const ExploreSettingsIcon = ({ className }: IconProps) => <Compass className={className} />
+export const PrivacySettingsIcon = ({ className }: IconProps) => <Shield className={className} />
 export const CognitionSettingsIcon = ({ className }: IconProps) => <BrainCircuit className={className} />
 export const InputIcon = ({ className }: IconProps) => <Keyboard className={className} />
 export const WorkspaceIcon = ({ className }: IconProps) => <Building2 className={className} />
@@ -50,6 +52,7 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   accounts: AccountsSettingsIcon,
   appearance: AppearanceIcon,
   explore: ExploreSettingsIcon,
+  privacy: PrivacySettingsIcon,
   cognition: CognitionSettingsIcon,
   input: InputIcon,
   workspace: WorkspaceIcon,

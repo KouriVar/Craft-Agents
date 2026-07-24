@@ -2,7 +2,7 @@
  * Observation types — stable work facts derived from Events (rule-driven in Phase 3).
  */
 
-import type { CognitionEvidenceRef } from '../types.ts'
+import type { CognitionEvidenceRef, CognitionEventSource } from '../types.ts'
 
 export type CognitionObservationCategory =
   | 'progress'
@@ -23,6 +23,8 @@ export interface CognitionObservation {
   confidence: number
   importance: number
   sourceEventIds: string[]
+  /** Provenance kinds from source events (v2). Missing on v0.15 data until backfill. */
+  sourceKinds?: Array<CognitionEventSource | 'unknown'>
   evidenceRefs: CognitionEvidenceRef[]
   /**
    * Stable rebuild key (session + events + topic + category).
