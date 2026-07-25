@@ -64,22 +64,56 @@ async function main() {
   await cdp.ready()
   await cdp.call('Runtime.enable')
 
-  // Settings UI
-  const ui = await cdp.evalBlock<{ href: string; text: string; hasPrivacy: boolean; hasNever: boolean; hasUnavailable: boolean }>(`
+  // Settings UI structure assertions (display only — hard-fail; do not change behavior tests)
+  const ui = await cdp.evalBlock<{
+    href: string
+    text: string
+    hasPrivacy: boolean
+    hasAutoContext: boolean
+    hasInteractive: boolean
+    hasSensitive: boolean
+    hasTransparency: boolean
+    hasRecentAccess: boolean
+    hasUnavailable: boolean
+    hasLegacyNeverRows: boolean
+  }>(`
     window.dispatchEvent(new CustomEvent('craft-agent-navigate', { detail: { route: 'settings/privacy' }, bubbles: true }))
     await new Promise(r => setTimeout(r, 1200))
     const text = document.body?.innerText || ''
     return {
       href: location.href,
       text: text.slice(0, 1200),
-      hasPrivacy: /隐私|Privacy/.test(text) && /上下文感知|Context awareness/.test(text),
-      hasNever: /Cookie|Token|密码|Never collected|永不采集/.test(text),
+      hasPrivacy: /隐私|Privacy/.test(text) && /后台上下文感知|Background context awareness/.test(text),
+      hasAutoContext: /自动形成上下文|Automatic context/.test(text),
+      hasInteractive: /主动使用内容|Active content use/.test(text),
+      hasSensitive: /敏感信息保护|Sensitive information protection/.test(text),
+      hasTransparency: /透明度|Transparency/.test(text),
+      hasRecentAccess: /最近上下文访问|Recent context access/.test(text),
       hasUnavailable: /尚未接入|暂不支持|Not connected|Not supported|不可用/.test(text),
+      hasLegacyNeverRows: /永不采集|Never collected/.test(text),
     }
   `)
   console.log('UI href', ui.href)
-  console.log('UI hasPrivacy', ui.hasPrivacy, 'hasNever', ui.hasNever, 'hasUnavailable', ui.hasUnavailable)
+  console.log(
+    'UI hasPrivacy', ui.hasPrivacy,
+    'hasAutoContext', ui.hasAutoContext,
+    'hasInteractive', ui.hasInteractive,
+    'hasSensitive', ui.hasSensitive,
+    'hasTransparency', ui.hasTransparency,
+    'hasRecentAccess', ui.hasRecentAccess,
+    'hasUnavailable', ui.hasUnavailable,
+    'hasLegacyNeverRows', ui.hasLegacyNeverRows,
+  )
   console.log('UI text snippet:\\n', ui.text.slice(0, 600))
+  if (!ui.hasPrivacy || !ui.hasAutoContext || !ui.hasInteractive || !ui.hasSensitive) {
+    throw new Error('Privacy UI structure assertions failed (context / sources / sensitive)')
+  }
+  if (!ui.hasTransparency || !ui.hasRecentAccess) {
+    throw new Error('Privacy UI transparency assertions failed')
+  }
+  if (ui.hasUnavailable || ui.hasLegacyNeverRows) {
+    throw new Error('Privacy UI must not show unavailable sources or legacy never-collect rows')
+  }
 
   // Toggle via UI if possible: use IPC which settings page also uses — verify page can re-read
   await cdp.evalBlock(`

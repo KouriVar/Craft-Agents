@@ -128,7 +128,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     setMessagesRetrying(false)
 
     if (shouldForceInitialMessagesReload && autoForcedReloadSessionRef.current === sessionId) {
-      setMessagesLoadError('Session messages are not available')
+      setMessagesLoadError(t('chat.sessionMessagesUnavailable'))
       return () => {
         cancelled = true
       }
@@ -146,7 +146,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     loadPromise
       .then((loadedSession) => {
         if (!cancelled && !loadedSession) {
-          setMessagesLoadError('Session messages are not available')
+          setMessagesLoadError(t('chat.sessionMessagesUnavailable'))
         }
       })
       .catch((error: unknown) => {
@@ -158,7 +158,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return () => {
       cancelled = true
     }
-  }, [sessionId, ensureMessagesLoaded, forceMessagesReload, shouldForceInitialMessagesReload])
+  }, [sessionId, ensureMessagesLoaded, forceMessagesReload, shouldForceInitialMessagesReload, t])
 
   const handleRetryMessagesLoad = React.useCallback(async () => {
     setMessagesLoadError(null)
@@ -167,14 +167,14 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     try {
       const loadedSession = await forceMessagesReload(sessionId)
       if (!loadedSession) {
-        setMessagesLoadError('Session messages are not available')
+        setMessagesLoadError(t('chat.sessionMessagesUnavailable'))
       }
     } catch (error) {
       setMessagesLoadError(formatSessionLoadFailure(error))
     } finally {
       setMessagesRetrying(false)
     }
-  }, [forceMessagesReload, sessionId])
+  }, [forceMessagesReload, sessionId, t])
 
   const messageLoadState = React.useMemo(() => deriveSessionMessagesLoadState({
     session,

@@ -55,6 +55,10 @@ export const KEYS = {
   // Last selected session (workspace-scoped via suffix)
   lastSelectedSessionId: 'last-selected-session-id',
 
+  // Last active project (workspace-scoped via suffix = workspaceId)
+  // Used by Explore/Today "Continue project" — never drives launch routing.
+  lastActiveProjectId: 'last-active-project-id',
+
   // Settings navigation
   lastSettingsSubpage: 'last-settings-subpage',
 

@@ -332,7 +332,7 @@ function ColumnHeader({
               onRemove()
               setOpen(false)
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t('kanban.column.remove')}

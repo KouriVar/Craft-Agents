@@ -9,13 +9,58 @@
  * like Homebrew (gh, brew), nvm, pyenv, etc. are available to the agent.
  */
 
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
+import { existsSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { mainLog } from './logger'
 
 // Environment variables that should NOT be imported from the shell
 // VITE_* vars from dev mode would make packaged app try to load from localhost
 const shouldSkipEnvVar = (key: string): boolean => {
   return key.startsWith('VITE_')
+}
+
+/**
+ * Resolve a safe login shell to execute.
+ *
+ * Only accepts an absolute path to an existing file. `process.env.SHELL` is
+ * attacker-influenceable, so it is validated (never string-concatenated into a
+ * command) and we fall back to well-known shells when it is missing/invalid.
+ * Returns null when no usable shell exists.
+ */
+export function resolveLoginShell(exists: (path: string) => boolean = existsSync): string | null {
+  const candidates = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh']
+  for (const candidate of candidates) {
+    if (candidate && isAbsolute(candidate) && exists(candidate)) {
+      return candidate
+    }
+  }
+  return null
+}
+
+/**
+ * Fallback: add common tool paths to PATH when shell env loading is unavailable.
+ * Never throws; keeps app startup resilient.
+ */
+export function applyFallbackPaths(): void {
+  mainLog.warn('[shell-env] Adding common paths as fallback')
+
+  const fallbackPaths = [
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    `${process.env.HOME}/.local/bin`,
+    `${process.env.HOME}/.bun/bin`,
+    `${process.env.HOME}/.cargo/bin`,
+  ]
+
+  const currentPath = process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin'
+  const newPath = [...fallbackPaths, ...currentPath.split(':')]
+    .filter((p, i, arr) => arr.indexOf(p) === i) // dedupe
+    .join(':')
+
+  process.env.PATH = newPath
 }
 
 /**
@@ -37,15 +82,22 @@ export function loadShellEnv(): void {
     return
   }
 
-  const shell = process.env.SHELL || '/bin/zsh'
+  const shell = resolveLoginShell()
+  if (!shell) {
+    mainLog.warn('[shell-env] No valid absolute login shell found; applying fallback paths')
+    applyFallbackPaths()
+    return
+  }
   mainLog.info(`[shell-env] Loading environment from ${shell}`)
 
   try {
     // Run login shell to get full environment
     // -l = login shell (sources profile files like .zprofile)
     // -i = interactive shell (sources rc files like .zshrc)
-    // We use a marker to separate shell startup output from env output
-    const output = execSync(`${shell} -l -i -c 'echo __ENV_START__ && env'`, {
+    // We use a marker to separate shell startup output from env output.
+    // execFileSync passes args as an array (no shell string interpolation), so
+    // the resolved shell path cannot inject additional commands.
+    const output = execFileSync(shell, ['-l', '-i', '-c', 'echo __ENV_START__ && env'], {
       encoding: 'utf-8',
       timeout: 5000,
       env: {
@@ -86,24 +138,6 @@ export function loadShellEnv(): void {
   } catch (error) {
     // Don't fail app startup if shell env loading fails
     mainLog.warn(`[shell-env] Failed to load shell environment: ${error}`)
-    mainLog.warn('[shell-env] Adding common paths as fallback')
-
-    // Fallback: add common paths that are likely to be needed
-    const fallbackPaths = [
-      '/opt/homebrew/bin',
-      '/opt/homebrew/sbin',
-      '/usr/local/bin',
-      '/usr/local/sbin',
-      `${process.env.HOME}/.local/bin`,
-      `${process.env.HOME}/.bun/bin`,
-      `${process.env.HOME}/.cargo/bin`,
-    ]
-
-    const currentPath = process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin'
-    const newPath = [...fallbackPaths, ...currentPath.split(':')]
-      .filter((p, i, arr) => arr.indexOf(p) === i) // dedupe
-      .join(':')
-
-    process.env.PATH = newPath
+    applyFallbackPaths()
   }
 }

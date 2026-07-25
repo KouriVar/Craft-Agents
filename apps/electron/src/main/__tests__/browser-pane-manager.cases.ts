@@ -316,6 +316,20 @@ mock.module('../browser-cdp', () => ({
   },
 }))
 
+// Capture cognition emit payloads so v0.16.2 projectId pass-through can be
+// asserted without standing up a real CognitionService / workspace root.
+const mockEmitBrowserPageOpened = mock((_input: unknown) => {})
+const mockEmitBrowserTabAttached = mock((_input: unknown) => {})
+const mockEmitBrowserBookmarkCreated = mock((_input: unknown) => {})
+const mockEmitBrowserPageClosed = mock((_input: unknown) => {})
+
+mock.module('@craft-agent/server-core/cognition', () => ({
+  emitBrowserPageOpened: mockEmitBrowserPageOpened,
+  emitBrowserTabAttached: mockEmitBrowserTabAttached,
+  emitBrowserBookmarkCreated: mockEmitBrowserBookmarkCreated,
+  emitBrowserPageClosed: mockEmitBrowserPageClosed,
+}))
+
 const { BrowserPaneManager } = await import('../browser-pane-manager')
 
 describe('BrowserPaneManager', () => {
@@ -329,6 +343,10 @@ describe('BrowserPaneManager', () => {
     mockIpcMainHandle.mockClear()
     mockMenuBuild.mockClear()
     mockMenuPopup.mockClear()
+    mockEmitBrowserPageOpened.mockClear()
+    mockEmitBrowserTabAttached.mockClear()
+    mockEmitBrowserBookmarkCreated.mockClear()
+    mockEmitBrowserPageClosed.mockClear()
     manager = new BrowserPaneManager()
   })
 
@@ -826,6 +844,88 @@ describe('BrowserPaneManager', () => {
       const dto = manager.listInstances().find((i) => i.ownerSessionId === 'sess-dto')
       expect(dto).toBeDefined()
       expect(dto).toHaveProperty('workspaceId', 'ws-epsilon')
+    })
+
+    describe('projectId stamping (v0.16.2 Browser Context Prepare)', () => {
+      it('createInstance with projectId stamps the field on the instance', () => {
+        manager.createInstance('proj-stamp', { workspaceId: 'ws-1', projectId: 'proj_a' })
+        const instance = (manager as any).instances.get('proj-stamp')
+        expect(instance?.projectId).toBe('proj_a')
+      })
+
+      it('createInstance without projectId defaults to null (back-compat)', () => {
+        manager.createInstance('proj-default')
+        const instance = (manager as any).instances.get('proj-default')
+        expect(instance?.projectId).toBeNull()
+      })
+
+      it('page_opened emit carries projectId when stamped', () => {
+        manager.createInstance('proj-open', {
+          workspaceId: 'ws-1',
+          projectId: 'proj_a',
+          ownerType: 'session',
+          ownerSessionId: 'sess-1',
+        })
+        const instance = (manager as any).instances.get('proj-open')
+        instance.currentUrl = 'https://platform.openai.com/docs/agents'
+        instance.title = 'Agents'
+        instance.pageView.webContents._emit('did-stop-loading')
+        expect(mockEmitBrowserPageOpened).toHaveBeenCalled()
+        const lastCall = mockEmitBrowserPageOpened.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBe('proj_a')
+      })
+
+      it('page_opened emit keeps projectId undefined when unset (back-compat)', () => {
+        manager.createInstance('proj-open-none', {
+          workspaceId: 'ws-1',
+          ownerType: 'session',
+          ownerSessionId: 'sess-1',
+        })
+        const instance = (manager as any).instances.get('proj-open-none')
+        instance.currentUrl = 'https://platform.openai.com/docs/agents'
+        instance.pageView.webContents._emit('did-stop-loading')
+        const lastCall = mockEmitBrowserPageOpened.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBeUndefined()
+      })
+
+      it('tab_attached emit carries projectId when stamped', () => {
+        manager.createInstance('proj-attach', { workspaceId: 'ws-1', projectId: 'proj_b' })
+        manager.bindSession('proj-attach', 'sess-bound')
+        expect(mockEmitBrowserTabAttached).toHaveBeenCalled()
+        const lastCall = mockEmitBrowserTabAttached.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBe('proj_b')
+      })
+
+      it('tab_attached emit keeps projectId undefined when unset (back-compat)', () => {
+        manager.createInstance('proj-attach-none', { workspaceId: 'ws-1' })
+        manager.bindSession('proj-attach-none', 'sess-bound')
+        const lastCall = mockEmitBrowserTabAttached.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBeUndefined()
+      })
+
+      it('page_closed emit carries projectId when stamped', () => {
+        manager.createInstance('proj-close', {
+          workspaceId: 'ws-1',
+          projectId: 'proj_c',
+          ownerType: 'session',
+          ownerSessionId: 'sess-close',
+        })
+        manager.destroyInstance('proj-close')
+        expect(mockEmitBrowserPageClosed).toHaveBeenCalled()
+        const lastCall = mockEmitBrowserPageClosed.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBe('proj_c')
+      })
+
+      it('page_closed emit keeps projectId undefined when unset (back-compat)', () => {
+        manager.createInstance('proj-close-none', {
+          workspaceId: 'ws-1',
+          ownerType: 'session',
+          ownerSessionId: 'sess-close-none',
+        })
+        manager.destroyInstance('proj-close-none')
+        const lastCall = mockEmitBrowserPageClosed.mock.calls.at(-1)?.[0] as { projectId?: string }
+        expect(lastCall?.projectId).toBeUndefined()
+      })
     })
 
     describe('cross-workspace reuse', () => {
@@ -1666,6 +1766,67 @@ describe('BrowserPaneManager', () => {
         crashed: false,
         crashReason: null,
       })
+    })
+  })
+
+  describe('dangerous-protocol navigation blocking', () => {
+    it('blocks will-navigate to file: without opening externally', () => {
+      manager.createInstance('block-file')
+      const instance = (manager as any).instances.get('block-file')
+      const handler = instance.pageView.webContents._listeners['will-navigate']?.[0]
+      expect(typeof handler).toBe('function')
+
+      const event = { preventDefault: mock(() => {}) }
+      handler(event, 'file:///etc/passwd')
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      // Blocked protocols must never reach the external-open flow.
+      expect(mockShellOpenExternal).not.toHaveBeenCalled()
+    })
+
+    it('blocks will-navigate to javascript: without opening externally', () => {
+      manager.createInstance('block-js')
+      const instance = (manager as any).instances.get('block-js')
+      const handler = instance.pageView.webContents._listeners['will-navigate']?.[0]
+
+      const event = { preventDefault: mock(() => {}) }
+      handler(event, 'javascript:alert(1)')
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(mockShellOpenExternal).not.toHaveBeenCalled()
+    })
+
+    it('allows will-navigate to http: (internal protocol, no preventDefault)', () => {
+      manager.createInstance('allow-http')
+      const instance = (manager as any).instances.get('allow-http')
+      const handler = instance.pageView.webContents._listeners['will-navigate']?.[0]
+
+      const event = { preventDefault: mock(() => {}) }
+      handler(event, 'https://example.com/page')
+
+      expect(event.preventDefault).not.toHaveBeenCalled()
+    })
+
+    it('denies window-open to file: without opening externally', () => {
+      manager.createInstance('block-file-open')
+      const instance = (manager as any).instances.get('block-file-open')
+      const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
+
+      const result = openHandler({ url: 'file:///etc/passwd', disposition: 'new-popup', frameName: '' })
+
+      expect(result).toEqual({ action: 'deny' })
+      expect(mockShellOpenExternal).not.toHaveBeenCalled()
+    })
+
+    it('denies window-open to javascript: without opening externally', () => {
+      manager.createInstance('block-js-open')
+      const instance = (manager as any).instances.get('block-js-open')
+      const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
+
+      const result = openHandler({ url: 'javascript:alert(1)', disposition: 'new-popup', frameName: '' })
+
+      expect(result).toEqual({ action: 'deny' })
+      expect(mockShellOpenExternal).not.toHaveBeenCalled()
     })
   })
 })

@@ -262,6 +262,12 @@ export class LibraryService {
     } else {
       items = items.filter((item) => item.status === 'active')
     }
+    // Exact project filter — narrows the pool before recent/search so that
+    // `filter:'recent'` returns the most recent docs *for this project*.
+    // Empty/undefined projectId leaves the set unchanged (back-compat).
+    if (query.projectId) {
+      items = items.filter((item) => item.projectId === query.projectId)
+    }
     if (filter === 'recent') {
       items = items.slice().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, query.limit ?? 30)
     }

@@ -277,7 +277,7 @@ export function buildPendingQueue(input: BuildPendingQueueInput): PendingItem[] 
         statusLabelKey: STATUS_LABEL_KEY[primaryReason(reasons)],
         priority,
         sources: ['loop'],
-        sourceKinds: (loop as { sourceKinds?: string[] }).sourceKinds,
+        sourceKinds: loop.sourceKinds,
         evidenceRef: { loopId: loop.id },
         score: scoreItem(reasons, priority, undefined, now) + Math.round((loop.importance ?? 0) * 20),
         lastActivityAt: loop.lastUpdatedAt,

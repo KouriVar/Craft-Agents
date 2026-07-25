@@ -19,6 +19,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 import type { KanbanModelProviderGroup, TaskEditorTarget } from './types'
 import { uid, buildSpec, specToSubtasks, canDependOn, quickAddNodeId, quickAddChildToSubtask, DEFAULT_REPAIR_ATTEMPTS, MAX_REPAIR_ATTEMPTS_CAP, type EditorSubtask, type TaskPermissionMode } from './task-spec-form'
 import { resolveNodeStatePill } from './node-state-pill'
@@ -71,35 +72,6 @@ export type { TaskEditorTarget } from './types'
 
 /** Storage-backed run results (shape inferred from the electronAPI so no shared import is needed). */
 type TaskResults = Awaited<ReturnType<typeof window.electronAPI.getTaskResults>>
-
-// ---------------------------------------------------------------------------
-// Small inline controls (presentational)
-// ---------------------------------------------------------------------------
-type BtnVariant = 'primary' | 'secondary' | 'ghost'
-const BTN_VARIANT: Record<BtnVariant, string> = {
-  primary: 'bg-indigo-500 text-white hover:bg-indigo-600',
-  secondary: 'border border-border bg-card text-foreground hover:bg-foreground/[0.03]',
-  ghost: 'text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground',
-}
-
-function Btn({
-  variant = 'secondary',
-  className,
-  ...rest
-}: { variant?: BtnVariant } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-semibold transition-colors',
-        'disabled:pointer-events-none disabled:opacity-60',
-        BTN_VARIANT[variant],
-        className,
-      )}
-      {...rest}
-    />
-  )
-}
 
 // MUST forward the ref: Radix's <DropdownMenuTrigger asChild> attaches a ref to
 // this element to anchor the menu. A function component without forwardRef drops
@@ -389,7 +361,7 @@ function SubtaskCard({
   return (
     <div className="group rounded-[10px] border border-border/70 bg-foreground/[0.015] p-3">
       <div className="flex items-start gap-2">
-        <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-indigo-500/10 text-[12px] font-bold text-indigo-500 dark:text-indigo-300">
+        <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-foreground/[0.06] text-[12px] font-bold text-foreground/70">
           {index + 1}
         </div>
         <div className="min-w-0 flex-1">
@@ -424,7 +396,7 @@ function SubtaskCard({
                   type="button"
                   onClick={() => removeDep(depUid)}
                   aria-label={t('tasks.removeDependency')}
-                  className="grid h-4 w-4 shrink-0 place-items-center rounded text-foreground/40 hover:bg-foreground/10 hover:text-red-500"
+                  className="grid h-4 w-4 shrink-0 place-items-center rounded text-foreground/40 hover:bg-foreground/10 hover:text-destructive"
                 >
                   <X className="h-3 w-3" strokeWidth={2.5} />
                 </button>
@@ -455,7 +427,7 @@ function SubtaskCard({
           type="button"
           onClick={onRemove}
           aria-label={t('tasks.removeSubtask')}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded text-foreground/40 opacity-0 transition-all hover:bg-foreground/10 hover:text-red-500 group-hover:opacity-100"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-foreground/40 opacity-0 transition-all hover:bg-foreground/10 hover:text-destructive group-hover:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
@@ -908,9 +880,9 @@ export function TaskEditor({
     <div className="flex h-full flex-col gap-3 bg-background p-3 text-foreground">
       {/* Header */}
       <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 shadow-minimal">
-        <Btn variant="ghost" className="px-2" onClick={onClose}>
+        <Button variant="ghost" size="sm" className="px-2" onClick={onClose}>
           <ChevronLeft className="h-4 w-4" strokeWidth={2} /> {t('kanban.board')}
-        </Btn>
+        </Button>
         <span className="text-foreground/25">/</span>
         <span className="text-sm font-semibold">{isEdit ? t('tasks.editTask') : t('kanban.newTask')}</span>
 
@@ -934,28 +906,28 @@ export function TaskEditor({
 
         <div className="ml-auto flex items-center gap-2">
           {isEdit && onOpenSession && (
-            <Btn variant="secondary" onClick={onOpenSession} disabled={busy}>
+            <Button variant="outline" size="sm" onClick={onOpenSession} disabled={busy}>
               <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} /> {t('tasks.openSession')}
-            </Btn>
+            </Button>
           )}
           {tab === 'definition' && (
             <>
-              <Btn variant="secondary" onClick={onClose} disabled={busy}>
+              <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
                 {t('common.cancel')}
-              </Btn>
-              <Btn variant="secondary" onClick={() => submit(false)} disabled={busy}>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => submit(false)} disabled={busy}>
                 {isEdit ? t('common.save') : t('common.create')}
-              </Btn>
-              <Btn variant="primary" onClick={() => submit(true)} disabled={busy}>
+              </Button>
+              <Button size="sm" onClick={() => submit(true)} disabled={busy}>
                 {busy ? <Spinner /> : <Sparkles className="h-3.5 w-3.5" strokeWidth={2.5} />}
                 {busy ? t('tasks.starting') : isEdit ? t('tasks.saveAndRun') : t('tasks.createAndRun')}
-              </Btn>
+              </Button>
             </>
           )}
           {tab === 'results' && (
-            <Btn variant="secondary" onClick={loadResults} disabled={resultsLoading}>
+            <Button variant="outline" size="sm" onClick={loadResults} disabled={resultsLoading}>
               {resultsLoading ? <Spinner /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />} {t('common.refresh')}
-            </Btn>
+            </Button>
           )}
         </div>
       </div>
@@ -1138,9 +1110,9 @@ export function TaskEditor({
                 <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-foreground/[0.06] px-1.5 text-[11px] font-bold text-foreground/55">
                   {subtasks.length}
                 </span>
-                <Btn variant="secondary" className="ml-auto h-7 px-2.5 text-[12px]" onClick={addSubtask}>
+                <Button variant="secondary" size="sm" className="ml-auto h-7 px-2.5 text-[12px]" onClick={addSubtask}>
                   <Plus className="h-3.5 w-3.5" strokeWidth={2.5} /> {t('kanban.addSubtask')}
-                </Btn>
+                </Button>
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-4">
@@ -1196,14 +1168,14 @@ export function TaskEditor({
             </div>
           ) : (
             <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 py-8 text-center">
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-indigo-500/10 text-indigo-500 dark:text-indigo-300">
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-foreground/[0.06] text-foreground/70">
                 <Sparkles className="h-6 w-6" strokeWidth={2} />
               </div>
               <div className="text-[14px] font-bold">{t('tasks.generatePlan')}</div>
               <p className="max-w-[360px] text-[12.5px] leading-relaxed text-foreground/55">{t('tasks.generateBody')}</p>
-              <Btn variant="primary" onClick={generatePlan} disabled={busy}>
+              <Button size="sm" onClick={generatePlan} disabled={busy}>
                 <Sparkles className="h-3.5 w-3.5" strokeWidth={2.5} /> {t('tasks.generatePlan')}
-              </Btn>
+              </Button>
               <span className="text-[11px] text-foreground/40">{t('tasks.generateHint')}</span>
             </div>
           )}
@@ -1264,14 +1236,14 @@ function ResultsPanel({
             verdict.result === 'pass'
               ? 'border-emerald-500/30 bg-emerald-500/[0.06]'
               : verdict.result === 'fail'
-                ? 'border-red-500/30 bg-red-500/[0.06]'
+                ? 'border-destructive/30 bg-destructive/[0.06]'
                 : 'border-border bg-foreground/[0.03]',
           )}
         >
           {verdict.result === 'pass' ? (
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" strokeWidth={2.5} />
           ) : verdict.result === 'fail' ? (
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" strokeWidth={2.5} />
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" strokeWidth={2.5} />
           ) : (
             <CircleSlash className="mt-0.5 h-4 w-4 shrink-0 text-foreground/40" strokeWidth={2.5} />
           )}
@@ -1303,7 +1275,7 @@ function ResultsPanel({
                 {v.result === 'pass' ? (
                   <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" strokeWidth={2.5} />
                 ) : v.result === 'fail' ? (
-                  <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" strokeWidth={2.5} />
+                  <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" strokeWidth={2.5} />
                 ) : (
                   <CircleSlash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/40" strokeWidth={2.5} />
                 )}
@@ -1329,7 +1301,7 @@ function ResultsPanel({
               <button
                 type="button"
                 onClick={() => onOpenChildSession(node.sessionId!)}
-                className="inline-flex shrink-0 items-center gap-1 rounded text-[11.5px] font-semibold text-indigo-500 hover:underline dark:text-indigo-300"
+                className="inline-flex shrink-0 items-center gap-1 rounded text-[11.5px] font-semibold text-foreground/70 hover:text-foreground hover:underline"
               >
                 <ExternalLink className="h-3 w-3" strokeWidth={2.5} /> {t('tasks.openSession')}
               </button>

@@ -144,12 +144,29 @@ async function main() {
   await Bun.sleep(1500)
   const pageText = await cdp.eval<string>(`document.body?.innerText?.slice(0, 2500) || ''`)
   const hasPrivacyTitle = /隐私|Privacy/.test(pageText)
-  const hasNever = /Cookie|Token|密码|password|永不|Never/i.test(pageText)
-  const hasUnavailable = /暂不支持|Not connected|尚未接入|不可用|Not supported/i.test(pageText)
+  const hasBackgroundAwareness = /后台上下文感知|Background context awareness/.test(pageText)
+  const hasAutoContext = /自动形成上下文|Automatic context/.test(pageText)
+  const hasInteractive = /主动使用内容|Active content use/.test(pageText)
+  const hasSensitive = /敏感信息保护|Sensitive information protection/.test(pageText)
+  const hasTransparency = /透明度|Transparency/.test(pageText)
+  const hasRecentAccess = /最近上下文访问|Recent context access/.test(pageText)
+  const hasUnavailable = /尚未接入|暂不支持|Not connected|Not supported|不可用/.test(pageText)
+  const hasLegacyNeverRows = /永不采集|Never collected/.test(pageText)
   log(`settings page opened title-ish=${hasPrivacyTitle}`)
-  log(`never-collect visible=${hasNever}`)
-  log(`unavailable sources visible=${hasUnavailable}`)
+  log(`ui structure awareness=${hasBackgroundAwareness} autoContext=${hasAutoContext} interactive=${hasInteractive} sensitive=${hasSensitive} transparency=${hasTransparency} recentAccess=${hasRecentAccess}`)
+  log(`unavailable sources visible=${hasUnavailable} (expect false)`)
+  log(`legacy never-collect rows visible=${hasLegacyNeverRows} (expect false)`)
   log(`page snippet:\\n${pageText.slice(0, 800)}`)
+  // Hard-fail privacy UI structure assertions (display only — does not change behavior tests).
+  if (!hasPrivacyTitle || !hasBackgroundAwareness || !hasAutoContext || !hasInteractive || !hasSensitive) {
+    throw new Error('Privacy UI structure assertions failed (context / sources / sensitive)')
+  }
+  if (!hasTransparency || !hasRecentAccess) {
+    throw new Error('Privacy UI transparency assertions failed')
+  }
+  if (hasUnavailable || hasLegacyNeverRows) {
+    throw new Error('Privacy UI must not show unavailable sources or legacy never-collect rows')
+  }
 
   // ---- Policy read/write via IPC (real Electron main handlers) ----
   const beforePolicy = await cdp.eval(`await window.electronAPI.getPrivacyPolicy({ workspaceId: '${WS_ID}' })`)

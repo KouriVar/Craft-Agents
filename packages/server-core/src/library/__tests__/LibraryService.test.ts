@@ -195,6 +195,34 @@ describe('LibraryService', () => {
     }
   })
 
+  it('filters documents by exact projectId and stays back-compatible when omitted', () => {
+    const root = makeRoot()
+    try {
+      const svc = new LibraryService(root, 'ws_a')
+      const docA = svc.createBlank({ workspaceId: 'ws_a', title: 'A', projectId: 'proj_a' })
+      const docB = svc.createBlank({ workspaceId: 'ws_a', title: 'B', projectId: 'proj_b' })
+      const docC = svc.createBlank({ workspaceId: 'ws_a', title: 'C' }) // no project binding
+
+      // Exact projectId filter returns only matching docs.
+      expect(svc.list({ workspaceId: 'ws_a', projectId: 'proj_a' }).map((i) => i.id)).toEqual([docA.meta.id])
+      expect(svc.list({ workspaceId: 'ws_a', projectId: 'proj_b' }).map((i) => i.id)).toEqual([docB.meta.id])
+
+      // Omitted projectId → no project filtering (back-compat): all active docs.
+      const all = svc.list({ workspaceId: 'ws_a' }).map((i) => i.id)
+      expect(all).toHaveLength(3)
+
+      // Composes with recent filter — returns most recent for the project.
+      const recentA = svc.list({ workspaceId: 'ws_a', projectId: 'proj_a', filter: 'recent', limit: 5 })
+      expect(recentA.map((i) => i.id)).toEqual([docA.meta.id])
+
+      // Composes with search — projectId narrows before search.
+      expect(svc.list({ workspaceId: 'ws_a', projectId: 'proj_a', search: 'a' })).toHaveLength(1)
+      expect(svc.list({ workspaceId: 'ws_a', projectId: 'proj_b', search: 'a' })).toHaveLength(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('marks source refs orphaned when section anchors are removed', () => {
     const root = makeRoot()
     try {

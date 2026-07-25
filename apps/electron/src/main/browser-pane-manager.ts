@@ -101,7 +101,11 @@ const DANGEROUS_DOWNLOAD_EXTENSIONS = new Set([
   '.scr',
   '.sh',
 ])
-const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'file:', 'http:', 'https:', 'javascript:'])
+const INTERNAL_BROWSER_PROTOCOLS = new Set(['about:', 'blob:', 'data:', 'http:', 'https:'])
+// Protocols that must never be navigated to inside the in-app browser and must
+// never be handed to the external-open flow. `file:` can exfiltrate local files
+// from the page context; `javascript:` executes arbitrary script in the page.
+const BLOCKED_BROWSER_PROTOCOLS = new Set(['file:', 'javascript:'])
 const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/
 const MAX_EXTENSION_PACKAGE_BYTES = 100 * 1024 * 1024
 const INSTALL_STORE_EXTENSION_CHANNEL = 'browser-extension:install-from-store-page'
@@ -251,6 +255,14 @@ interface BrowserInstance {
    * subsequent rebinds may overwrite it with the new binder's workspace.
    */
   workspaceId: string | null
+  /**
+   * Optional project context stamped at create-time from
+   * `CreateBrowserInstanceOptions.projectId`. Not persisted in the browser
+   * profile / workspace snapshot. Project Activity "related tabs" instead
+   * attributes via `ownerSessionId` → Session.projectId (read-time).
+   * When unset (`null`), cognition emits omit `projectId` (unchanged).
+   */
+  projectId: string | null
   isVisible: boolean
   isHiding: boolean
   keepAliveOnWindowClose: boolean
@@ -295,6 +307,8 @@ interface CreateBrowserInstanceOptions {
   ownerType?: 'session' | 'manual'
   ownerSessionId?: string
   workspaceId?: string | null
+  /** Optional in-memory project stamp for cognition emits; not profile-persisted. */
+  projectId?: string | null
   embeddedHostWebContentsId?: number
   initialUrl?: string
 }
@@ -528,6 +542,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
     const workspaceId = options?.workspaceId ?? null
+    const projectId = options?.projectId ?? null
     const embeddedHostWebContentsId = options?.embeddedHostWebContentsId ?? null
     const embeddedHostWindow =
       embeddedHostWebContentsId !== null ? (this.windowManager?.getWindowByWebContentsId(embeddedHostWebContentsId) ?? null) : null
@@ -633,6 +648,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType,
       ownerSessionId,
       workspaceId,
+      projectId,
       isVisible: false,
       isHiding: false,
       keepAliveOnWindowClose: true,
@@ -2820,6 +2836,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.emitStateChange(instance)
       emitBrowserTabAttached({
         workspaceId: instance.workspaceId,
+        projectId: instance.projectId ?? undefined,
         tabId: instance.id,
         boundSessionId: sessionId,
         ownerType: 'session',
@@ -3322,6 +3339,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (!this.tabLifecycle.finalizeClose(instance.id, instance)) return
     emitBrowserPageClosed({
       workspaceId: instance.workspaceId,
+      projectId: instance.projectId ?? undefined,
       tabId: instance.id,
       url: instance.currentUrl,
       title: instance.title,
@@ -3421,7 +3439,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const { handleDeepLink } = await import('./deep-link')
       const sink = this.windowManager.getRpcEventSink() ?? undefined
       const resolver = (wcId: number) => this.windowManager?.getClientIdForWindow(wcId)
-      const result = await handleDeepLink(url, this.windowManager, sink, resolver)
+      // Deep links originating from in-app browser web content are untrusted:
+      // sensitive actions (delete-session, set-mode, auto-send) require explicit
+      // user confirmation before executing.
+      const result = await handleDeepLink(url, this.windowManager, sink, resolver, undefined, {
+        source: 'untrusted',
+      })
       if (!result.success) {
         mainLog.warn(`[browser-pane] deep-link handling failed: ${result.error ?? 'unknown error'} url=${url}`)
       }
@@ -4743,6 +4766,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     } catch {
       return
     }
+    // Defense-in-depth: never offer to open file:/javascript: externally.
+    if (BLOCKED_BROWSER_PROTOCOLS.has(parsed.protocol)) return
     if (INTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol) || parsed.protocol === new URL(CRAFT_DEEPLINK_SCHEME_PREFIX).protocol) return
     const host = instance.embeddedHostWindow ?? instance.window
     const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
@@ -5089,6 +5114,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.recordHistory(instance)
       emitBrowserPageOpened({
         workspaceId: instance.workspaceId,
+        projectId: instance.projectId ?? undefined,
         tabId: instance.id,
         url: instance.currentUrl,
         title: instance.title,
@@ -5399,6 +5425,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
       try {
         const parsed = new URL(url)
+        if (BLOCKED_BROWSER_PROTOCOLS.has(parsed.protocol)) {
+          // Never navigate to file:/javascript: and never hand them to the
+          // external-open flow.
+          event.preventDefault()
+          mainLog.warn(
+            `[browser-pane] blocked navigation id=${instance.id} protocol=${parsed.protocol} url=${url}`,
+          )
+          return
+        }
         if (!INTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol)) {
           event.preventDefault()
           this.promptExternalProtocol(instance, url)
@@ -5428,6 +5463,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         parsed = new URL(details.url)
       } catch {
         mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=invalid_url url=${details.url}`)
+        return { action: 'deny' }
+      }
+
+      if (BLOCKED_BROWSER_PROTOCOLS.has(parsed.protocol)) {
+        // file:/javascript: are denied and never handed to the external-open flow.
+        mainLog.warn(
+          `[browser-pane] window-open blocked id=${instance.id} protocol=${parsed.protocol} url=${details.url}`,
+        )
         return { action: 'deny' }
       }
 

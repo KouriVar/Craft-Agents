@@ -160,6 +160,8 @@ export interface LibraryListQuery {
   workspaceId: string
   filter?: 'all' | 'recent' | 'archived'
   search?: string
+  /** Exact project-id filter. Omit/empty → no project filtering (back-compat). */
+  projectId?: string
   limit?: number
   offset?: number
 }

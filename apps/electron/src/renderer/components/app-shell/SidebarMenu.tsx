@@ -144,7 +144,7 @@ export function SidebarMenu({
         {labelId && onDeleteLabel && (
           <>
             <Separator />
-            <MenuItem onClick={() => onDeleteLabel(labelId)}>
+            <MenuItem onClick={() => onDeleteLabel(labelId)} variant="destructive">
               <Trash2 className="h-3.5 w-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteLabel")}</span>
             </MenuItem>
@@ -167,7 +167,7 @@ export function SidebarMenu({
         {viewId && onDeleteView && (
           <>
             <Separator />
-            <MenuItem onClick={() => onDeleteView(viewId)}>
+            <MenuItem onClick={() => onDeleteView(viewId)} variant="destructive">
               <Trash2 className="h-3.5 w-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteView")}</span>
             </MenuItem>

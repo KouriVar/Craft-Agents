@@ -24,9 +24,14 @@ export interface DiffViewerPreferences {
 }
 
 export interface ExplorePreferences {
-  aiStatusEnabled?: boolean;
-  aiFrequency?: 'startup' | '6h' | '12h' | '24h';
-  aiCount?: 3 | 5;
+  showTodaySection?: boolean;
+  showSessionComposer?: boolean;
+  remindersEnabled?: boolean;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  cognitionGuidanceAutoRefresh?: boolean;
+  /** @deprecated Phase C migration only — not a product toggle. */
+  cognitionGuidanceEnabled?: boolean;
 }
 
 /** User-level privacy policy fragment (full shape in @craft-agent/shared/privacy). */

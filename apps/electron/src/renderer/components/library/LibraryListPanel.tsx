@@ -4,10 +4,22 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAtomValue } from 'jotai'
 import { Archive, FileText, Plus, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import type { LibraryIndexEntry } from '@craft-agent/shared/protocol'
+import { projectsAtom } from '@/atoms/projects'
+import { resolveLibraryProjectLabel } from '@/lib/library-project-label'
 import { cn } from '@/lib/utils'
 import { navigate, routes } from '@/lib/navigate'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  StyledContextMenuContent,
+  StyledContextMenuItem,
+  StyledContextMenuSeparator,
+} from '@/components/ui/styled-context-menu'
+import { LibraryDeleteConfirmDialog } from './LibraryDeleteConfirmDialog'
 
 export function LibraryListPanel({
   workspaceId,
@@ -19,10 +31,11 @@ export function LibraryListPanel({
   selectedDocumentId?: string | null
 }) {
   const { t, i18n } = useTranslation()
+  const projects = useAtomValue(projectsAtom)
   const [items, setItems] = useState<LibraryIndexEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<LibraryIndexEntry | null>(null)
 
   const reload = useCallback(async () => {
     if (!workspaceId) return
@@ -56,7 +69,6 @@ export function LibraryListPanel({
     item: LibraryIndexEntry,
     action: 'rename' | 'archive' | 'unarchive' | 'delete' | 'export',
   ) => {
-    setMenuFor(null)
     if (action === 'rename') {
       const next = window.prompt(t('library.rename'), item.title)
       if (!next?.trim() || next.trim() === item.title) return
@@ -79,30 +91,45 @@ export function LibraryListPanel({
       return
     }
     if (action === 'delete') {
-      if (!window.confirm(t('library.deleteConfirm'))) return
-      await window.electronAPI.deleteLibraryDocument({ workspaceId, documentId: item.id })
-      if (selectedDocumentId === item.id) navigate(routes.view.library())
-      await reload()
+      setPendingDelete(item)
       return
     }
     if (action === 'export') {
-      const result = await window.electronAPI.exportLibraryDocument({
-        workspaceId,
-        documentId: item.id,
-        keepSourceMarkers: false,
-      })
-      const blob = new Blob([result.markdown || ''], { type: 'text/markdown;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${(item.title || 'document').replace(/[<>:"/\\|?*]/g, '_')}.md`
-      a.click()
-      URL.revokeObjectURL(url)
+      try {
+        const result = await window.electronAPI.exportLibraryDocument({
+          workspaceId,
+          documentId: item.id,
+          keepSourceMarkers: false,
+        })
+        // User canceled the save dialog — no file, no error surfaced.
+        if (result.canceled) return
+        if (result.error) {
+          toast.error(t('library.exportFailed', { detail: result.error }))
+          return
+        }
+        // Never treat empty content as a successful export.
+        const markdown = result.markdown
+        if (!markdown) {
+          toast.error(t('library.exportFailed', { detail: 'empty' }))
+          return
+        }
+        const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${(item.title || 'document').replace(/[<>:"/\\|?*]/g, '_')}.md`
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(t('library.exportDone'))
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        toast.error(t('library.exportFailed', { detail }))
+      }
     }
   }
 
   return (
-    <div className="flex h-full flex-col" onClick={() => setMenuFor(null)}>
+    <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5">
         <div>
           <p className="text-sm font-medium text-foreground">{t('library.title')}</p>
@@ -165,61 +192,74 @@ export function LibraryListPanel({
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="relative">
-              <button
-                type="button"
-                onClick={() => navigate(routes.view.library(item.id))}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setMenuFor(item.id)
-                }}
-                className={cn(
-                  'mb-0.5 flex w-full items-start gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition-colors',
-                  selectedDocumentId === item.id ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
-                )}
-              >
-                {item.status === 'archived'
-                  ? <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  : <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-foreground">{item.title}</span>
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                    {t('library.documentKind')}
-                    {' · '}
-                    {new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
-                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                    }).format(item.updatedAt)}
-                    {item.sessionLinkCount > 0 && ` · ${t('library.sessionCount', { count: item.sessionLinkCount })}`}
-                    {item.projectId ? ` · ${item.projectId}` : ''}
-                  </span>
-                </span>
-              </button>
-              {menuFor === item.id && (
-                <div
-                  className="absolute right-1 top-8 z-20 min-w-[140px] rounded-[8px] border border-border/60 bg-background py-1 shadow-modal-small"
-                  onClick={(e) => e.stopPropagation()}
+            <ContextMenu key={item.id} modal={true}>
+              <ContextMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => navigate(routes.view.library(item.id))}
+                  className={cn(
+                    'mb-0.5 flex w-full items-start gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition-colors',
+                    selectedDocumentId === item.id ? 'bg-foreground/[0.07]' : 'hover:bg-foreground/[0.04]',
+                  )}
                 >
-                  {([
-                    ['rename', t('library.rename')] as const,
-                    (item.status === 'archived'
-                      ? ['unarchive', t('library.unarchive')] as const
-                      : ['archive', t('library.archive')] as const),
-                    ['export', t('library.export')] as const,
-                    ['delete', t('library.delete')] as const,
-                  ]).map(([action, label]) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className="block w-full px-3 py-1.5 text-left text-xs hover:bg-foreground/[0.05]"
-                      onClick={() => { void runItemAction(item, action) }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                  {item.status === 'archived'
+                    ? <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    : <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-foreground">{item.title}</span>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                      {t('library.documentKind')}
+                      {' · '}
+                      {new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      }).format(item.updatedAt)}
+                      {item.sessionLinkCount > 0 && ` · ${t('library.sessionCount', { count: item.sessionLinkCount })}`}
+                      {(() => {
+                        const projectLabel = resolveLibraryProjectLabel(item.projectId, projects)
+                        if (!projectLabel) return null
+                        if (projectLabel.missing) {
+                          return ` · ${t('library.projectUnbound', { defaultValue: 'Project no longer exists' })}`
+                        }
+                        return (
+                          <>
+                            {' · '}
+                            {projectLabel.color && (
+                              <span
+                                className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
+                                style={{ backgroundColor: projectLabel.color }}
+                              />
+                            )}
+                            {projectLabel.name}
+                          </>
+                        )
+                      })()}
+                    </span>
+                  </span>
+                </button>
+              </ContextMenuTrigger>
+              <StyledContextMenuContent>
+                <StyledContextMenuItem onSelect={() => { void runItemAction(item, 'rename') }}>
+                  {t('library.rename')}
+                </StyledContextMenuItem>
+                <StyledContextMenuItem
+                  onSelect={() => {
+                    void runItemAction(item, item.status === 'archived' ? 'unarchive' : 'archive')
+                  }}
+                >
+                  {item.status === 'archived' ? t('library.unarchive') : t('library.archive')}
+                </StyledContextMenuItem>
+                <StyledContextMenuItem onSelect={() => { void runItemAction(item, 'export') }}>
+                  {t('library.export')}
+                </StyledContextMenuItem>
+                <StyledContextMenuSeparator />
+                <StyledContextMenuItem
+                  variant="destructive"
+                  onSelect={() => { void runItemAction(item, 'delete') }}
+                >
+                  {t('library.delete')}
+                </StyledContextMenuItem>
+              </StyledContextMenuContent>
+            </ContextMenu>
           ))
         )}
       </div>
@@ -227,6 +267,23 @@ export function LibraryListPanel({
       <p className="border-t border-border/40 px-3 py-2 text-[10px] text-muted-foreground">
         {t('library.pendingComingSoon')}
       </p>
+
+      <LibraryDeleteConfirmDialog
+        open={pendingDelete != null}
+        documentTitle={pendingDelete?.title ?? ''}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+        onConfirm={async () => {
+          if (!pendingDelete) return
+          await window.electronAPI.deleteLibraryDocument({
+            workspaceId,
+            documentId: pendingDelete.id,
+          })
+          if (selectedDocumentId === pendingDelete.id) navigate(routes.view.library())
+          await reload()
+        }}
+      />
     </div>
   )
 }

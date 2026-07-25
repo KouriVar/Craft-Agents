@@ -47,6 +47,46 @@ describe('browser event builders + observation', () => {
     expect(event!.evidenceRefs?.[0]?.type).toBe('browser_tab')
   })
 
+  it('carries projectId through to the emitted event (v0.16.2 link reservation)', () => {
+    // The browser event → cognition → Activity link must be able to carry
+    // projectId so v0.16.3 project-scoped Activity can filter browser links.
+    const withProject = buildBrowserPageOpenedEvent({
+      workspaceId: 'ws',
+      projectId: 'proj_a',
+      sessionId: 'sess-1',
+      tabId: 'tab-1',
+      url: 'https://platform.openai.com/docs/agents',
+      title: 'Agents SDK',
+      ownerType: 'session',
+      boundSessionId: 'sess-1',
+    })
+    expect(withProject).toBeTruthy()
+    expect(withProject!.projectId).toBe('proj_a')
+
+    const bookmarkWithProject = buildBrowserBookmarkCreatedEvent({
+      workspaceId: 'ws',
+      projectId: 'proj_a',
+      bookmarkId: 'b1',
+      url: 'https://docs.example.com/agents',
+      title: 'Agents SDK',
+    })
+    expect(bookmarkWithProject).toBeTruthy()
+    expect(bookmarkWithProject!.projectId).toBe('proj_a')
+
+    // Omitted projectId → undefined (back-compat: behavior unchanged).
+    const withoutProject = buildBrowserPageOpenedEvent({
+      workspaceId: 'ws',
+      sessionId: 'sess-1',
+      tabId: 'tab-2',
+      url: 'https://platform.openai.com/docs/agents',
+      title: 'Agents SDK',
+      ownerType: 'session',
+      boundSessionId: 'sess-1',
+    })
+    expect(withoutProject).toBeTruthy()
+    expect(withoutProject!.projectId).toBeUndefined()
+  })
+
   it('maps page_opened and bookmark to context observations', () => {
     const opened = {
       ...buildBrowserPageOpenedEvent({

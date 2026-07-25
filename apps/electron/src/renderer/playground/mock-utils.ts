@@ -291,7 +291,16 @@ export const mockElectronAPI = {
   // ChatDisplay required mocks
   readPreferences: async () => {
     return {
-      content: JSON.stringify({ explore: { aiStatusEnabled: true, aiFrequency: 'startup', aiCount: 3 } }),
+      content: JSON.stringify({
+        explore: {
+          showTodaySection: true,
+          showSessionComposer: true,
+          remindersEnabled: true,
+          quietHoursStart: '22:00',
+          quietHoursEnd: '08:00',
+          cognitionGuidanceAutoRefresh: true,
+        },
+      }),
       diffViewerSettings: { showFilePath: true, expandedSections: {} },
     }
   },

@@ -1,37 +1,21 @@
 /**
- * Explore settings — Explore home display + legacy AI resume prefs.
+ * Explore settings — Explore home display prefs.
  *
- * Phase C canonical display switches:
+ * Canonical switches:
  * - showTodaySection (C)
  * - showSessionComposer (D)
  *
- * Legacy keys remain readable for one-shot migration / diagnostics but no longer
- * drive the Explore home recommendation surfaces.
+ * Brief-era keys (aiStatusEnabled / aiFrequency / aiCount / proactiveSuggestionsEnabled)
+ * are read only for one-shot Phase C migration and are never written back (v0.16.8).
  */
 
 export type ExploreAiFrequency = 'startup' | '6h' | '12h' | '24h'
-
-export type CognitionGuidanceScope = 'workspace' | 'activeSessions'
 
 export interface ExploreSettings {
   /** Switch C: show PendingQueue + RecentRail on Explore. */
   showTodaySection: boolean
   /** Switch D: show session-mode composer on Explore home. */
   showSessionComposer: boolean
-  /**
-   * @deprecated Phase C — no longer drives Explore home Brief.
-   * Kept for prefs compatibility / diagnostics.
-   */
-  aiStatusEnabled: boolean
-  /** @deprecated Phase C — Brief frequency unused on home. */
-  aiFrequency: ExploreAiFrequency
-  /** @deprecated Phase C — Brief count unused on home. */
-  aiCount: 3 | 5
-  /**
-   * @deprecated Migrated once into showTodaySection.
-   * Do not use to drive UI after Phase C migration.
-   */
-  proactiveSuggestionsEnabled: boolean
   /** Native task reminders. */
   remindersEnabled: boolean
   /** Local quiet-hours boundaries in HH:mm. Equal values disable quiet hours. */
@@ -39,35 +23,34 @@ export interface ExploreSettings {
   quietHoursEnd: string
   /**
    * @deprecated Phase C — cognition on Today is gated by privacy.today.useContext (B).
-   * One-shot migration may map false → privacy today.useContext=false.
+   * Kept in-memory for one-shot privacy mapping; not a product toggle.
    */
   cognitionGuidanceEnabled: boolean
   /** Optional auto-refresh when loading PendingQueue cognition inputs. */
   cognitionGuidanceAutoRefresh: boolean
-  /** Filter guidance to workspace-wide or only sessions in the current task list. */
-  cognitionGuidanceScope: CognitionGuidanceScope
   /** Internal: Phase C one-shot migration applied. */
   _phaseCMigrated?: boolean
+}
+
+/** Legacy keys still accepted on read for migration only. */
+type LegacyExploreRaw = Partial<ExploreSettings> & {
+  aiStatusEnabled?: boolean
+  aiFrequency?: ExploreAiFrequency
+  aiCount?: 3 | 5
+  proactiveSuggestionsEnabled?: boolean
+  cognitionGuidanceScope?: 'workspace' | 'activeSessions'
 }
 
 export const DEFAULT_EXPLORE_SETTINGS: ExploreSettings = {
   showTodaySection: true,
   showSessionComposer: true,
-  aiStatusEnabled: true,
-  aiFrequency: 'startup',
-  aiCount: 3,
-  proactiveSuggestionsEnabled: true,
   remindersEnabled: true,
   quietHoursStart: '22:00',
   quietHoursEnd: '08:00',
   cognitionGuidanceEnabled: true,
   cognitionGuidanceAutoRefresh: true,
-  cognitionGuidanceScope: 'workspace',
   _phaseCMigrated: true,
 }
-
-const AI_FREQUENCIES: ExploreAiFrequency[] = ['startup', '6h', '12h', '24h']
-const GUIDANCE_SCOPES: CognitionGuidanceScope[] = ['workspace', 'activeSessions']
 
 export interface ExploreSettingsMigrationResult {
   settings: ExploreSettings
@@ -77,7 +60,7 @@ export interface ExploreSettingsMigrationResult {
   notes: string[]
 }
 
-function normalizeExploreSettings(value: Partial<ExploreSettings> | null | undefined): ExploreSettings {
+function normalizeExploreSettings(value: LegacyExploreRaw | null | undefined): ExploreSettings {
   if (!value || typeof value !== 'object') return { ...DEFAULT_EXPLORE_SETTINGS }
   return {
     showTodaySection: typeof value.showTodaySection === 'boolean'
@@ -86,12 +69,6 @@ function normalizeExploreSettings(value: Partial<ExploreSettings> | null | undef
     showSessionComposer: typeof value.showSessionComposer === 'boolean'
       ? value.showSessionComposer
       : DEFAULT_EXPLORE_SETTINGS.showSessionComposer,
-    aiStatusEnabled: typeof value.aiStatusEnabled === 'boolean' ? value.aiStatusEnabled : DEFAULT_EXPLORE_SETTINGS.aiStatusEnabled,
-    aiFrequency: value.aiFrequency && AI_FREQUENCIES.includes(value.aiFrequency) ? value.aiFrequency : DEFAULT_EXPLORE_SETTINGS.aiFrequency,
-    aiCount: value.aiCount === 3 || value.aiCount === 5 ? value.aiCount : DEFAULT_EXPLORE_SETTINGS.aiCount,
-    proactiveSuggestionsEnabled: typeof value.proactiveSuggestionsEnabled === 'boolean'
-      ? value.proactiveSuggestionsEnabled
-      : DEFAULT_EXPLORE_SETTINGS.proactiveSuggestionsEnabled,
     remindersEnabled: typeof value.remindersEnabled === 'boolean'
       ? value.remindersEnabled
       : DEFAULT_EXPLORE_SETTINGS.remindersEnabled,
@@ -107,11 +84,27 @@ function normalizeExploreSettings(value: Partial<ExploreSettings> | null | undef
     cognitionGuidanceAutoRefresh: typeof value.cognitionGuidanceAutoRefresh === 'boolean'
       ? value.cognitionGuidanceAutoRefresh
       : DEFAULT_EXPLORE_SETTINGS.cognitionGuidanceAutoRefresh,
-    cognitionGuidanceScope:
-      value.cognitionGuidanceScope && GUIDANCE_SCOPES.includes(value.cognitionGuidanceScope)
-        ? value.cognitionGuidanceScope
-        : DEFAULT_EXPLORE_SETTINGS.cognitionGuidanceScope,
     _phaseCMigrated: value._phaseCMigrated === true,
+  }
+}
+
+/**
+ * Persistable explore slice — never includes Brief-era or unused scope keys.
+ */
+export function toPersistedExploreSettings(
+  settings: ExploreSettings,
+  extras?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    showTodaySection: settings.showTodaySection,
+    showSessionComposer: settings.showSessionComposer,
+    remindersEnabled: settings.remindersEnabled,
+    quietHoursStart: settings.quietHoursStart,
+    quietHoursEnd: settings.quietHoursEnd,
+    cognitionGuidanceEnabled: settings.cognitionGuidanceEnabled,
+    cognitionGuidanceAutoRefresh: settings.cognitionGuidanceAutoRefresh,
+    _phaseCMigrated: settings._phaseCMigrated === true,
+    ...extras,
   }
 }
 
@@ -120,10 +113,9 @@ function normalizeExploreSettings(value: Partial<ExploreSettings> | null | undef
  * - proactiveSuggestionsEnabled=false → showTodaySection=false
  * - missing C/D keys → default true (unless proactive was off)
  * - cognitionGuidanceEnabled=false is recorded; privacy B mapping is applied by caller via privacy RPC
- * - aiStatusEnabled / aiCount / aiFrequency retained but no longer drive home
  */
 export function migrateExploreSettingsPhaseC(
-  raw: Partial<ExploreSettings> | null | undefined,
+  raw: LegacyExploreRaw | null | undefined,
 ): ExploreSettingsMigrationResult {
   const notes: string[] = []
   const base = normalizeExploreSettings(raw)
@@ -152,17 +144,17 @@ export function migrateExploreSettingsPhaseC(
     notes.push('cognitionGuidanceEnabled=false → map privacy.today.useContext=false (caller)')
   }
 
-  notes.push('aiStatusEnabled/aiCount/aiFrequency retained; no longer drive Explore home Brief')
-  notes.push('proactiveSuggestionsEnabled/cognitionGuidanceEnabled no longer drive deleted home sections')
+  notes.push('Brief-era explore keys are not rewritten (v0.16.8)')
+  notes.push('cognitionGuidanceScope removed — unused')
 
   return { settings: next, migrated: true, notes }
 }
 
 export async function getExploreSettings(): Promise<ExploreSettings> {
-  let value: Partial<ExploreSettings> | null = null
+  let value: LegacyExploreRaw | null = null
   try {
     const { content } = await window.electronAPI.readPreferences()
-    const preferences = JSON.parse(content || '{}') as { explore?: Partial<ExploreSettings> }
+    const preferences = JSON.parse(content || '{}') as { explore?: LegacyExploreRaw }
     value = preferences.explore ?? null
   } catch {
     value = null
@@ -192,7 +184,7 @@ export async function applyExplorePrivacyMigration(
   try {
     const { content } = await window.electronAPI.readPreferences()
     const preferences = JSON.parse(content || '{}') as Record<string, unknown> & {
-      explore?: Partial<ExploreSettings> & { _phaseCPrivacyMapped?: boolean }
+      explore?: Record<string, unknown> & { _phaseCPrivacyMapped?: boolean }
     }
     if (preferences.explore?._phaseCPrivacyMapped) return
     await window.electronAPI.setPrivacyPolicy({
@@ -201,7 +193,7 @@ export async function applyExplorePrivacyMigration(
     })
     await window.electronAPI.writePreferences(JSON.stringify({
       ...preferences,
-      explore: { ...preferences.explore, ...settings, _phaseCPrivacyMapped: true },
+      explore: toPersistedExploreSettings(settings, { _phaseCPrivacyMapped: true }),
       updatedAt: Date.now(),
     }, null, 2))
   } catch {
@@ -214,7 +206,7 @@ export async function saveExploreSettings(settings: ExploreSettings): Promise<vo
   const preferences = JSON.parse(content || '{}') as Record<string, unknown>
   await window.electronAPI.writePreferences(JSON.stringify({
     ...preferences,
-    explore: settings,
+    explore: toPersistedExploreSettings(settings),
     updatedAt: Date.now(),
   }, null, 2))
   window.dispatchEvent(new CustomEvent('craft:explore-settings-changed', { detail: settings }))

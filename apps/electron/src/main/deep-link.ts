@@ -61,6 +61,126 @@ export interface DeepLinkResult {
 }
 
 /**
+ * Trust level of the deep link source.
+ * - 'trusted': system/OS deep link (open-url, second-instance, startup) or the
+ *   app's own trusted renderer UI (shell.OPEN_URL, internal navigation).
+ * - 'untrusted': deep link triggered from web content loaded inside the in-app
+ *   browser. Sensitive actions from this source require explicit confirmation.
+ */
+export type DeepLinkSource = 'trusted' | 'untrusted'
+
+/**
+ * Confirmation callback for sensitive deep link actions. Injectable for tests.
+ * Returns true if the user approves the action.
+ */
+export type DeepLinkConfirmFn = (
+  target: DeepLinkTarget,
+  parentWindow: BrowserWindow | null,
+) => Promise<boolean>
+
+/**
+ * Actions that mutate state or exercise privilege and must not be triggered
+ * silently by untrusted web content.
+ */
+const SENSITIVE_DEEP_LINK_ACTIONS = new Set(['delete-session', 'delete-source', 'set-mode'])
+
+/**
+ * Whether the target represents a sensitive action (state mutation / privilege
+ * change / silent agent message send). Pure, unit-testable.
+ */
+export function isSensitiveDeepLinkAction(target: DeepLinkTarget): boolean {
+  const action = target.action
+  if (!action) return false
+  if (SENSITIVE_DEEP_LINK_ACTIONS.has(action)) return true
+  // new-session / new-chat with auto-send silently dispatches an agent message.
+  if (
+    (action === 'new-session' || action === 'new-chat') &&
+    target.actionParams?.send === 'true'
+  ) {
+    return true
+  }
+  return false
+}
+
+/**
+ * Whether this deep link requires explicit user confirmation before executing.
+ * Only untrusted sources performing sensitive actions are gated; navigation
+ * (view) deep links and trusted sources are never gated.
+ */
+export function deepLinkNeedsConfirmation(
+  target: DeepLinkTarget,
+  source: DeepLinkSource,
+): boolean {
+  return source === 'untrusted' && isSensitiveDeepLinkAction(target)
+}
+
+/**
+ * Whitelisted permission-mode labels for the confirm dialog. Only known mode
+ * values are rendered; any other (attacker-controlled) value is shown as
+ * "未知" so the dialog text can never be used to social-engineer the user.
+ * Keep in sync with parsePermissionMode (@craft-agent/shared/agent/mode-types).
+ */
+const PERMISSION_MODE_LABELS: Record<string, string> = {
+  safe: 'Explore（只读）',
+  ask: 'Ask to Edit（询问）',
+  'allow-all': 'Execute（全自动）',
+  explore: 'Explore（只读）',
+  execute: 'Execute（全自动）',
+  'ask-to-edit': 'Ask to Edit（询问）',
+}
+
+/**
+ * Human-readable description of the sensitive action, used in the confirm
+ * dialog. External parameters are mapped through a whitelist — never echoed
+ * raw — so untrusted web content cannot inject misleading dialog text.
+ */
+export function describeSensitiveDeepLinkAction(target: DeepLinkTarget): string {
+  switch (target.action) {
+    case 'delete-session':
+      return '删除一个会话'
+    case 'delete-source':
+      return '删除一个数据来源'
+    case 'set-mode': {
+      const mode = target.actionParams?.mode
+      const label = mode ? PERMISSION_MODE_LABELS[mode.toLowerCase()] : undefined
+      return label ? `切换权限模式（${label}）` : '切换权限模式（未知）'
+    }
+    case 'new-session':
+    case 'new-chat':
+      return '新建会话并自动发送一条消息给 Agent'
+    default:
+      return target.action ?? '未知操作'
+  }
+}
+
+/**
+ * Default confirmation: native main-process modal attached to the target window.
+ * Cannot be bypassed by the requesting web page. Defaults to "cancel".
+ */
+async function defaultConfirmSensitiveDeepLink(
+  target: DeepLinkTarget,
+  parentWindow: BrowserWindow | null,
+): Promise<boolean> {
+  // Lazy import keeps the module top-level free of electron value imports so it
+  // stays importable from unit tests without a full electron mock.
+  const { dialog } = await import('electron')
+  const options = {
+    type: 'warning' as const,
+    buttons: ['取消', '允许'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: '确认操作',
+    message: '网页请求执行敏感操作',
+    detail: `一个网页正在请求：${describeSensitiveDeepLinkAction(target)}。\n\n只有在你信任该来源时才允许。`,
+  }
+  const result = parentWindow
+    ? await dialog.showMessageBox(parentWindow, options)
+    : await dialog.showMessageBox(options)
+  return result.response === 1
+}
+
+/**
  * Navigation payload sent to renderer via IPC
  */
 export interface DeepLinkNavigation {
@@ -230,6 +350,15 @@ function buildDeepLinkWithoutWindowParam(url: string): string {
 }
 
 /**
+ * Re-entrancy guard: only one sensitive-action confirmation may be in flight
+ * at a time. Prevents a malicious web page from stacking native confirm
+ * dialogs by rapidly triggering craftagents:// sensitive deep links. A
+ * concurrent request arriving while a confirm is already open is rejected
+ * (treated as declined) instead of opening a second dialog.
+ */
+let sensitiveConfirmInFlight = false
+
+/**
  * Handle a deep link by navigating to the target
  */
 export async function handleDeepLink(
@@ -238,6 +367,7 @@ export async function handleDeepLink(
   sink?: EventSink,
   resolveClientId?: (webContentsId: number) => string | undefined,
   preferredClientId?: string,
+  options?: { source?: DeepLinkSource; confirm?: DeepLinkConfirmFn },
 ): Promise<DeepLinkResult> {
   const target = parseDeepLink(url)
 
@@ -250,6 +380,32 @@ export async function handleDeepLink(
   }
 
   mainLog.info('[DeepLink] Handling:', target)
+
+  // Gate sensitive actions from untrusted sources (in-app browser web content).
+  // Navigation-only deep links and trusted sources are never gated.
+  const source: DeepLinkSource = options?.source ?? 'trusted'
+  if (deepLinkNeedsConfirmation(target, source)) {
+    if (sensitiveConfirmInFlight) {
+      mainLog.warn(
+        '[DeepLink] Sensitive action confirm already in progress; rejecting concurrent request:',
+        target.action,
+      )
+      return { success: false, error: 'Sensitive deep link action was declined' }
+    }
+    sensitiveConfirmInFlight = true
+    try {
+      const parentWindow =
+        windowManager.getFocusedWindow() ?? windowManager.getLastActiveWindow() ?? null
+      const confirm = options?.confirm ?? defaultConfirmSensitiveDeepLink
+      const approved = await confirm(target, parentWindow)
+      if (!approved) {
+        mainLog.warn('[DeepLink] Sensitive action declined by user:', target.action)
+        return { success: false, error: 'Sensitive deep link action was declined' }
+      }
+    } finally {
+      sensitiveConfirmInFlight = false
+    }
+  }
 
   // If windowMode is set, create a new window instead of navigating in existing
   if (target.windowMode) {

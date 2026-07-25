@@ -2061,10 +2061,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   )}
                   {!compactMode && hasUnrenderedLoadedMessages && (
                     <div className="flex h-64 items-center justify-center px-4 text-center">
-                      <div className="max-w-sm rounded-[8px] border border-border/50 bg-foreground/[0.03] px-4 py-3">
-                        <CircleAlert className="mx-auto mb-2 h-4 w-4 text-foreground/50" />
-                        <div className="text-sm font-medium text-foreground/70">Conversation loaded, but no renderable messages were found.</div>
-                        <p className="mt-1 text-xs text-foreground/50">Try reloading the session. If this persists, the message history may contain an unsupported format.</p>
+                      <div className="max-w-sm rounded-[8px] border border-border/50 bg-muted/40 px-4 py-3">
+                        <CircleAlert className="mx-auto mb-2 h-4 w-4 text-muted-foreground" />
+                        <div className="text-sm font-medium text-foreground/70">{t('chat.unrenderedMessagesTitle')}</div>
+                        <p className="mt-1 text-xs text-muted-foreground">{t('chat.unrenderedMessagesDesc')}</p>
                       </div>
                     </div>
                   )}
@@ -2406,6 +2406,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             onPermissionModeChange={onPermissionModeChange}
             tasks={backgroundTasks}
             sessionId={session.id}
+            workspaceId={workspaceId}
             sessionFolderPath={sessionFolderPath}
             onKillTask={(taskId) => killTask(taskId, backgroundTasks.find(t => t.id === taskId)?.type === 'shell' ? 'shell' : 'agent')}
             onInsertMessage={onInputChange}

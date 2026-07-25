@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import {
   LIBRARY_TEMPLATE_IDS,
   type LibraryDocumentTemplateId,
@@ -137,38 +138,39 @@ export function LibraryGenerateConsentDialog({
         )}
 
         <DialogFooter className="gap-2 sm:justify-end">
-          <button
+          <Button
             type="button"
-            className="rounded-control px-3 py-1.5 text-xs hover:bg-foreground/[0.05]"
+            variant="outline"
+            size="sm"
             onClick={() => {
               onDecision({ action: 'cancel' })
               onOpenChange(false)
             }}
           >
             {t('library.consentCancel')}
-          </button>
+          </Button>
           {mode === 'deny' ? (
-            <button
+            <Button
               type="button"
-              className="rounded-control bg-foreground px-3 py-1.5 text-xs text-background"
+              size="sm"
               onClick={() => {
                 onDecision({ action: 'denied_settings' })
                 onOpenChange(false)
               }}
             >
               {t('library.consentOpenPrivacy')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               type="button"
-              className="rounded-control bg-foreground px-3 py-1.5 text-xs text-background"
+              size="sm"
               onClick={() => {
                 onDecision({ action: 'allow', templateId, generateMode })
                 onOpenChange(false)
               }}
             >
               {t('library.consentAllowOnce')}
-            </button>
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>

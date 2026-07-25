@@ -1663,6 +1663,8 @@ export interface CognitionLoopDto {
   importance: number
   confidence: number
   observationIds: string[]
+  /** Originating source kinds propagated from merged guidance items, if any. */
+  sourceKinds?: string[]
   firstSeenAt: number
   lastUpdatedAt: number
   resolvedAt?: number

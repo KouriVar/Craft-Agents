@@ -80,6 +80,11 @@ export interface ActiveOptionBadgesProps {
   onSessionStatusChange?: (stateId: string) => void
   /** Optional control rendered immediately before the info button */
   rightAccessory?: React.ReactNode
+  /**
+   * Optional control after session-status badge (same row as mode / status).
+   * Used by ContextSuggestionBadge (v0.16.5).
+   */
+  suggestionSlot?: React.ReactNode
   /** Additional CSS classes */
   className?: string
 }
@@ -110,6 +115,7 @@ export function ActiveOptionBadges({
   currentSessionStatus,
   onSessionStatusChange,
   rightAccessory,
+  suggestionSlot,
   className,
 }: ActiveOptionBadgesProps) {
   // Resolve session label entries to their config objects + parsed values.
@@ -146,8 +152,8 @@ export function ActiveOptionBadges({
   // shows the same visible strip when stacked. No React re-renders needed.
   const stackRef = useDynamicStack({ gap: 8, minVisible: 20, reservedStart: 0 })
 
-  // Only render if badges or tasks are active
-  if (!permissionMode && tasks.length === 0 && !hasState && !hasStackContent) {
+  // Only render if badges, tasks, or suggestion slot are active
+  if (!permissionMode && tasks.length === 0 && !hasState && !hasStackContent && !suggestionSlot) {
     return null
   }
 
@@ -193,6 +199,13 @@ export function ActiveOptionBadges({
             />
           </div>
         )}
+
+        {/* Context Suggestion (v0.16.5) — same row as mode / session status */}
+        {suggestionSlot ? (
+          <div className="shrink-0 min-w-0">
+            {suggestionSlot}
+          </div>
+        ) : null}
 
         {/* Stacking container for label badges (left side).
          * useDynamicStack sets per-child marginLeft directly via ResizeObserver.

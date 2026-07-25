@@ -6,6 +6,7 @@ import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import type { SessionStatus } from '@/config/session-status-config'
 import type { BackgroundTask } from '../ActiveTasksBar'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
+import { ContextSuggestionBadge } from './ContextSuggestionBadge'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
 
@@ -16,6 +17,7 @@ interface ChatInputZoneProps {
   onPermissionModeChange?: (mode: PermissionMode) => void
   tasks?: BackgroundTask[]
   sessionId: string
+  workspaceId?: string
   sessionFolderPath?: string
   onKillTask?: (taskId: string) => void
   onInsertMessage?: (text: string) => void
@@ -38,6 +40,7 @@ export function ChatInputZone({
   onPermissionModeChange,
   tasks = [],
   sessionId,
+  workspaceId,
   sessionFolderPath,
   onKillTask,
   onInsertMessage,
@@ -55,6 +58,13 @@ export function ChatInputZone({
   const [autoOpenLabelId, setAutoOpenLabelId] = React.useState<string | null>(null)
   const shouldShowOptionBadges = showOptionBadges ?? !compactMode
   const inputResetKey = `${sessionId}::${inputProps.structuredInput?.type ?? 'freeform'}`
+  const suggestionBadge = (
+    <ContextSuggestionBadge
+      workspaceId={workspaceId ?? inputProps.workspaceId}
+      sessionId={sessionId}
+      disabled={inputProps.disabled}
+    />
+  )
 
   const handleClearDraft = React.useCallback(() => {
     inputProps.onInputChange?.('')
@@ -84,7 +94,7 @@ export function ChatInputZone({
         className,
       )}
     >
-      {shouldShowOptionBadges && (
+      {shouldShowOptionBadges ? (
         <ActiveOptionBadges
           permissionMode={permissionMode}
           onPermissionModeChange={onPermissionModeChange}
@@ -106,7 +116,12 @@ export function ChatInputZone({
           currentSessionStatus={currentSessionStatus}
           onSessionStatusChange={onSessionStatusChange}
           rightAccessory={rightAccessory}
+          suggestionSlot={suggestionBadge}
         />
+      ) : (
+        <div className="flex items-center gap-2 mb-2 px-px pt-px pb-0.5 empty:hidden">
+          {suggestionBadge}
+        </div>
       )}
 
       <InputErrorBoundary

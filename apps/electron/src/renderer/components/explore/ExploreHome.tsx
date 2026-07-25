@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowUp, Check, Globe2, Search, Settings2, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAtomValue } from 'jotai'
 import type {
   CognitionGuidanceDto,
   CognitionLoopDto,
@@ -17,8 +18,13 @@ import {
   type ExploreSettings,
 } from '@/lib/explore-settings'
 import { navigate, routes } from '@/lib/navigate'
+import { buildContinueTaskPrompt, findProjectResumeSession } from '@/lib/project-resume'
+import { resolveLastActiveProject, setLastActiveProjectId } from '@/lib/last-active-project'
 import type { SessionMeta } from '@/atoms/sessions'
+import { projectsAtom } from '@/atoms/projects'
 import type { BrowserWorkspaceTab } from '@/atoms/browser-workspace'
+import { useAppShellContext } from '@/context/AppShellContext'
+import { ContinueProjectCard } from './ContinueProjectCard'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -103,6 +109,8 @@ export function ExploreHome({
   onNewSession,
 }: ExploreHomeProps) {
   const { t } = useTranslation()
+  const { onSendMessage } = useAppShellContext()
+  const projects = useAtomValue(projectsAtom)
   const [input, setInput] = useState('')
   const [intentOverride, setIntentOverride] = useState<BrowserNewTabIntent | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -226,6 +234,32 @@ export function ExploreHome({
     () => (settings.showTodaySection ? buildRecentRailTabs(recentTabs, { limit: 8 }) : []),
     [recentTabs, settings.showTodaySection],
   )
+
+  // Last-active project pointer → light Continue entry (no auto-navigation).
+  const lastActiveProject = useMemo(
+    () => (settings.showTodaySection ? resolveLastActiveProject(workspaceId, projects) : null),
+    [projects, settings.showTodaySection, workspaceId, tick],
+  )
+  const lastActiveResumeSession = useMemo(
+    () => (lastActiveProject
+      ? findProjectResumeSession(taskSessions, lastActiveProject.config.id)
+      : null),
+    [lastActiveProject, taskSessions],
+  )
+
+  const handleOpenLastProject = useCallback(() => {
+    if (!lastActiveProject) return
+    setLastActiveProjectId(workspaceId, lastActiveProject.config.id)
+    navigate(routes.view.projects(lastActiveProject.config.slug))
+  }, [lastActiveProject, workspaceId])
+
+  const handleContinueLastProject = useCallback(() => {
+    if (!lastActiveProject || !lastActiveResumeSession) return
+    setLastActiveProjectId(workspaceId, lastActiveProject.config.id)
+    const prompt = buildContinueTaskPrompt(lastActiveResumeSession, t)
+    navigate(routes.view.allSessions(lastActiveResumeSession.id))
+    onSendMessage(lastActiveResumeSession.id, prompt)
+  }, [lastActiveProject, lastActiveResumeSession, onSendMessage, t, workspaceId])
 
   const decision = useMemo(() => classifyBrowserNewTabIntent(input), [input])
   const selectedIntent = intentOverride ?? decision.intent
@@ -412,6 +446,15 @@ export function ExploreHome({
 
         {showToday && (
           <div className="flex flex-col gap-8">
+            {lastActiveProject && (
+              <ContinueProjectCard
+                project={lastActiveProject}
+                resumeSession={lastActiveResumeSession}
+                onOpenProject={handleOpenLastProject}
+                onContinue={lastActiveResumeSession ? handleContinueLastProject : undefined}
+                continueDisabled={Boolean(lastActiveResumeSession?.isProcessing)}
+              />
+            )}
             <PendingQueueSection
               items={pendingItems}
               busyId={busyId}

@@ -532,6 +532,11 @@ export function NavigationProvider({
         const meta = store.get(sessionMetaMapAtom).get(navigationState.details.sessionId)
         if (meta && meta.workspaceId === workspaceId) {
           storage.set(storage.KEYS.lastSelectedSessionId, navigationState.details.sessionId, workspaceId)
+          // Opening a project-bound session updates the last-active project pointer
+          // (Explore/Today entry only — never drives launch routing).
+          if (meta.projectId) {
+            storage.set(storage.KEYS.lastActiveProjectId, meta.projectId, workspaceId)
+          }
         }
       }
     }

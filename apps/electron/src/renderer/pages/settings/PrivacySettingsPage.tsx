@@ -1,8 +1,8 @@
 /**
- * PrivacySettingsPage — Settings → Privacy (v0.16 Phase B).
+ * PrivacySettingsPage — Settings → Privacy (UI-1 information architecture).
  *
- * Controls context awareness, Today useContext, privacy mode, per-source
- * permissions, access log, and whitelist-based cognition cleanup.
+ * Display-layer only: maps existing policy keys into user-facing groups.
+ * Does not change schema, defaults, decide, sanitizer, or consent.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -27,100 +27,134 @@ import type {
   PrivacyPolicyDto,
   PrivacyStorageUsageDto,
 } from '../../../shared/types'
-import { PRIVACY_NEVER_COLLECT_DTO } from '@craft-agent/shared/protocol'
+import { resolveAccessLogDisplay } from './access-log-display'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
   slug: 'privacy',
 }
 
-type SourceToggleKey =
-  | 'session.meta'
-  | 'session.body'
-  | 'session.attachments'
-  | 'session.archived'
-  | 'browser.urlTitle'
-  | 'browser.pageContent'
-  | 'browser.history'
-  | 'git.statusMeta'
-  | 'git.diffContent'
-  | 'files.metadata'
-  | 'files.content'
-  | 'messaging.wechat'
-  | 'messaging.lark'
-  | 'automation'
-  | 'mcpPlugins'
-  | 'projectMemory'
+/** Background cognition sources — UI is allow/off only (ask displays as off, never auto-written). */
+type BackgroundSourceKey = 'session.meta' | 'browser.urlTitle' | 'git.statusMeta'
 
-const SOURCE_ROWS: Array<{
-  key: SourceToggleKey
+/** Interactive / user-triggered sources — keep allow/ask/deny. */
+type InteractiveSourceKey = 'session.body' | 'session.archived' | 'library.generateWithModel'
+
+type BackgroundUiValue = 'allow' | 'deny'
+
+const BACKGROUND_ROWS: Array<{
+  key: BackgroundSourceKey
   labelKey: string
   descKey: string
-  /** Not wired into Cognition yet — show as unavailable. */
-  unavailable?: boolean
 }> = [
-  { key: 'session.meta', labelKey: 'settings.privacy.source.sessionMeta', descKey: 'settings.privacy.source.sessionMetaDesc' },
-  { key: 'session.body', labelKey: 'settings.privacy.source.sessionBody', descKey: 'settings.privacy.source.sessionBodyDesc' },
-  { key: 'session.attachments', labelKey: 'settings.privacy.source.sessionAttachments', descKey: 'settings.privacy.source.sessionAttachmentsDesc' },
-  { key: 'session.archived', labelKey: 'settings.privacy.source.sessionArchived', descKey: 'settings.privacy.source.sessionArchivedDesc' },
-  { key: 'browser.urlTitle', labelKey: 'settings.privacy.source.browserUrlTitle', descKey: 'settings.privacy.source.browserUrlTitleDesc' },
-  { key: 'browser.pageContent', labelKey: 'settings.privacy.source.browserPageContent', descKey: 'settings.privacy.source.browserPageContentDesc' },
-  { key: 'browser.history', labelKey: 'settings.privacy.source.browserHistory', descKey: 'settings.privacy.source.browserHistoryDesc' },
-  { key: 'git.statusMeta', labelKey: 'settings.privacy.source.gitStatus', descKey: 'settings.privacy.source.gitStatusDesc' },
-  { key: 'git.diffContent', labelKey: 'settings.privacy.source.gitDiff', descKey: 'settings.privacy.source.gitDiffDesc' },
-  { key: 'files.metadata', labelKey: 'settings.privacy.source.fileMeta', descKey: 'settings.privacy.source.fileMetaDesc', unavailable: true },
-  { key: 'files.content', labelKey: 'settings.privacy.source.fileContent', descKey: 'settings.privacy.source.fileContentDesc', unavailable: true },
-  { key: 'messaging.wechat', labelKey: 'settings.privacy.source.wechat', descKey: 'settings.privacy.source.wechatDesc', unavailable: true },
-  { key: 'messaging.lark', labelKey: 'settings.privacy.source.lark', descKey: 'settings.privacy.source.larkDesc', unavailable: true },
-  { key: 'automation', labelKey: 'settings.privacy.source.automation', descKey: 'settings.privacy.source.automationDesc', unavailable: true },
-  { key: 'mcpPlugins', labelKey: 'settings.privacy.source.mcp', descKey: 'settings.privacy.source.mcpDesc', unavailable: true },
-  { key: 'projectMemory', labelKey: 'settings.privacy.source.projectMemory', descKey: 'settings.privacy.source.projectMemoryDesc', unavailable: true },
+  {
+    key: 'session.meta',
+    labelKey: 'settings.privacy.sessionActivity',
+    descKey: 'settings.privacy.sessionActivityDesc',
+  },
+  {
+    key: 'browser.urlTitle',
+    labelKey: 'settings.privacy.browserActivity',
+    descKey: 'settings.privacy.browserActivityDesc',
+  },
+  {
+    key: 'git.statusMeta',
+    labelKey: 'settings.privacy.projectActivity',
+    descKey: 'settings.privacy.projectActivityDesc',
+  },
 ]
 
-function getPermission(policy: PrivacyPolicyDto, key: SourceToggleKey): PrivacyPermission3Dto {
+const INTERACTIVE_ROWS: Array<{
+  key: InteractiveSourceKey
+  labelKey: string
+  descKey: string
+}> = [
+  {
+    key: 'session.body',
+    labelKey: 'settings.privacy.sessionContent',
+    descKey: 'settings.privacy.sessionContentDesc',
+  },
+  {
+    key: 'session.archived',
+    labelKey: 'settings.privacy.archivedSessions',
+    descKey: 'settings.privacy.archivedSessionsDesc',
+  },
+  {
+    key: 'library.generateWithModel',
+    labelKey: 'settings.privacy.libraryGenerate',
+    descKey: 'settings.privacy.libraryGenerateDesc',
+  },
+]
+
+function getBackgroundPermission(
+  policy: PrivacyPolicyDto,
+  key: BackgroundSourceKey,
+): PrivacyPermission3Dto {
   switch (key) {
-    case 'session.meta': return policy.sources.session.meta
-    case 'session.body': return policy.sources.session.body
-    case 'session.attachments': return policy.sources.session.attachments
-    case 'session.archived': return policy.sources.session.archived
-    case 'browser.urlTitle': return policy.sources.browser.urlTitle
-    case 'browser.pageContent': return policy.sources.browser.pageContent
-    case 'browser.history': return policy.sources.browser.history
-    case 'git.statusMeta': return policy.sources.git.statusMeta
-    case 'git.diffContent': return policy.sources.git.diffContent
-    case 'files.metadata': return policy.sources.files.metadata
-    case 'files.content': return policy.sources.files.content
-    case 'messaging.wechat': return policy.sources.messaging.wechat
-    case 'messaging.lark': return policy.sources.messaging.lark
-    case 'automation': return policy.sources.automation
-    case 'mcpPlugins': return policy.sources.mcpPlugins
-    case 'projectMemory': return policy.sources.projectMemory
+    case 'session.meta':
+      return policy.sources.session.meta
+    case 'browser.urlTitle':
+      return policy.sources.browser.urlTitle
+    case 'git.statusMeta':
+      return policy.sources.git.statusMeta
   }
 }
 
-function patchPermission(
+function getInteractivePermission(
   policy: PrivacyPolicyDto,
-  key: SourceToggleKey,
+  key: InteractiveSourceKey,
+): PrivacyPermission3Dto {
+  switch (key) {
+    case 'session.body':
+      return policy.sources.session.body
+    case 'session.archived':
+      return policy.sources.session.archived
+    case 'library.generateWithModel':
+      return policy.sources.library.generateWithModel
+  }
+}
+
+/** Map stored ask → UI off without writing deny until the user acts. */
+function toBackgroundUiValue(stored: PrivacyPermission3Dto): BackgroundUiValue {
+  return stored === 'allow' ? 'allow' : 'deny'
+}
+
+function patchBackgroundPermission(
+  policy: PrivacyPolicyDto,
+  key: BackgroundSourceKey,
+  value: BackgroundUiValue,
+): Partial<PrivacyPolicyDto> {
+  const sources = structuredClone(policy.sources)
+  switch (key) {
+    case 'session.meta':
+      sources.session.meta = value
+      break
+    case 'browser.urlTitle':
+      sources.browser.urlTitle = value
+      break
+    case 'git.statusMeta':
+      sources.git.statusMeta = value
+      break
+  }
+  return { sources }
+}
+
+function patchInteractivePermission(
+  policy: PrivacyPolicyDto,
+  key: InteractiveSourceKey,
   value: PrivacyPermission3Dto,
 ): Partial<PrivacyPolicyDto> {
   const sources = structuredClone(policy.sources)
   switch (key) {
-    case 'session.meta': sources.session.meta = value; break
-    case 'session.body': sources.session.body = value; break
-    case 'session.attachments': sources.session.attachments = value; break
-    case 'session.archived': sources.session.archived = value; break
-    case 'browser.urlTitle': sources.browser.urlTitle = value; break
-    case 'browser.pageContent': sources.browser.pageContent = value; break
-    case 'browser.history': sources.browser.history = value; break
-    case 'git.statusMeta': sources.git.statusMeta = value; break
-    case 'git.diffContent': sources.git.diffContent = value; break
-    case 'files.metadata': sources.files.metadata = value; break
-    case 'files.content': sources.files.content = value; break
-    case 'messaging.wechat': sources.messaging.wechat = value; break
-    case 'messaging.lark': sources.messaging.lark = value; break
-    case 'automation': sources.automation = value; break
-    case 'mcpPlugins': sources.mcpPlugins = value; break
-    case 'projectMemory': sources.projectMemory = value; break
+    case 'session.body':
+      sources.session.body = value
+      break
+    case 'session.archived':
+      sources.session.archived = value
+      break
+    case 'library.generateWithModel':
+      sources.library.generateWithModel = value
+      break
   }
   return { sources }
 }
@@ -130,6 +164,8 @@ function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
+
+const ACCESS_LOG_VISIBLE = 10
 
 export default function PrivacySettingsPage() {
   const { t } = useTranslation()
@@ -206,34 +242,22 @@ export default function PrivacySettingsPage() {
   const clearTarget = async (target: {
     cognition?: boolean
     accessLog?: boolean
-    exploreBriefCache?: boolean
   }) => {
     if (!activeWorkspaceId) return
     const confirmKey = target.cognition
       ? 'settings.privacy.clearCognitionConfirm'
-      : target.accessLog
-        ? 'settings.privacy.clearLogConfirm'
-        : 'settings.privacy.clearBriefConfirm'
+      : 'settings.privacy.clearLogConfirm'
     if (!window.confirm(t(confirmKey))) return
     setBusy(true)
     setClearNote(null)
     try {
-      if (target.exploreBriefCache) {
-        try {
-          localStorage.removeItem('craft-agent:explore-brief-cache')
-          localStorage.removeItem('explore-brief-cache')
-        } catch { /* ignore */ }
-      }
       const result = await window.electronAPI.clearPrivacyData({
         workspaceId: activeWorkspaceId,
         target,
       })
-      const cleared = result.cleared.length
-        ? result.cleared.join(', ')
-        : (target.exploreBriefCache ? t('settings.privacy.clearBriefLocalOnly') : '—')
+      const cleared = result.cleared.length ? result.cleared.join(', ') : '—'
       const skipped = result.skipped.length ? result.skipped.join(', ') : '—'
-      // Never claim success for targets that were only skipped
-      if (!result.cleared.length && !target.exploreBriefCache) {
+      if (!result.cleared.length) {
         setClearNote(t('settings.privacy.clearSkippedOnly', { skipped }))
       } else {
         setClearNote(
@@ -249,6 +273,7 @@ export default function PrivacySettingsPage() {
   }
 
   const privacyActive = Boolean(policy?.effectivePrivacyModeActive ?? policy?.privacyMode.active)
+  const sourcesDisabled = !policy || busy || privacyActive
 
   return (
     <div className="h-full flex flex-col">
@@ -298,34 +323,66 @@ export default function PrivacySettingsPage() {
               </SettingsSection>
 
               <SettingsSection
-                title={t('settings.privacy.sourcesTitle')}
-                description={t('settings.privacy.sourcesDesc')}
+                title={t('settings.privacy.autoContextTitle')}
+                description={t('settings.privacy.autoContextDesc')}
               >
                 <SettingsCard>
-                  {SOURCE_ROWS.map((row) => {
-                    const value = policy ? getPermission(policy, row.key) : 'deny'
-                    const disabled = !policy || busy || row.unavailable || privacyActive
+                  {BACKGROUND_ROWS.map((row) => {
+                    const stored = policy ? getBackgroundPermission(policy, row.key) : 'deny'
+                    const uiValue = toBackgroundUiValue(stored)
                     return (
                       <SettingsRow
                         key={row.key}
                         label={t(row.labelKey)}
-                        description={
-                          row.unavailable
-                            ? t('settings.privacy.sourceUnavailable')
-                            : t(row.descKey)
-                        }
+                        description={t(row.descKey)}
                       >
-                        <SettingsSegmentedControl<PrivacyPermission3Dto>
+                        <SettingsSegmentedControl<BackgroundUiValue>
                           size="sm"
-                          value={row.unavailable ? 'deny' : value}
-                          disabled={disabled}
+                          value={uiValue}
+                          disabled={sourcesDisabled}
                           onValueChange={(next) => {
-                            if (!policy || row.unavailable) return
-                            void savePatch(patchPermission(policy, row.key, next))
+                            if (!policy) return
+                            // ask is shown as off; do not write deny unless the user
+                            // changes the control away from its current UI value.
+                            if (next === uiValue) return
+                            void savePatch(patchBackgroundPermission(policy, row.key, next))
                           }}
                           options={[
                             { value: 'allow', label: t('settings.privacy.permAllow') },
-                            { value: 'ask', label: t('settings.privacy.permAsk') },
+                            { value: 'deny', label: t('settings.privacy.permOff') },
+                          ]}
+                        />
+                      </SettingsRow>
+                    )
+                  })}
+                </SettingsCard>
+              </SettingsSection>
+
+              <SettingsSection
+                title={t('settings.privacy.interactiveTitle')}
+                description={t('settings.privacy.interactiveDesc')}
+              >
+                <SettingsCard>
+                  {INTERACTIVE_ROWS.map((row) => {
+                    const value = policy ? getInteractivePermission(policy, row.key) : 'deny'
+                    return (
+                      <SettingsRow
+                        key={row.key}
+                        label={t(row.labelKey)}
+                        description={t(row.descKey)}
+                      >
+                        <SettingsSegmentedControl<PrivacyPermission3Dto>
+                          size="sm"
+                          value={value}
+                          disabled={sourcesDisabled}
+                          onValueChange={(next) => {
+                            if (!policy) return
+                            if (next === value) return
+                            void savePatch(patchInteractivePermission(policy, row.key, next))
+                          }}
+                          options={[
+                            { value: 'allow', label: t('settings.privacy.permAllow') },
+                            { value: 'ask', label: t('settings.privacy.permAskEachTime') },
                             { value: 'deny', label: t('settings.privacy.permDeny') },
                           ]}
                         />
@@ -336,21 +393,13 @@ export default function PrivacySettingsPage() {
               </SettingsSection>
 
               <SettingsSection
-                title={t('settings.privacy.neverTitle')}
-                description={t('settings.privacy.neverDesc')}
+                title={t('settings.privacy.sensitiveTitle')}
+                description={t('settings.privacy.sensitiveDesc')}
               >
                 <SettingsCard>
-                  {PRIVACY_NEVER_COLLECT_DTO.map((kind) => (
-                    <SettingsRow
-                      key={kind}
-                      label={t(`settings.privacy.never.${kind}`)}
-                      description={t('settings.privacy.neverLocked')}
-                    >
-                      <span className="text-xs text-muted-foreground">
-                        {t('settings.privacy.permDeny')}
-                      </span>
-                    </SettingsRow>
-                  ))}
+                  <p className="px-4 py-3 text-sm text-muted-foreground">
+                    {t('settings.privacy.sensitiveBody')}
+                  </p>
                 </SettingsCard>
               </SettingsSection>
 
@@ -375,7 +424,10 @@ export default function PrivacySettingsPage() {
                       {t('settings.privacy.reload')}
                     </Button>
                   </SettingsRow>
-                  <SettingsRow label={t('settings.privacy.clearCognition')} description={t('settings.privacy.clearCognitionDesc')}>
+                  <SettingsRow
+                    label={t('settings.privacy.clearCognition')}
+                    description={t('settings.privacy.clearCognitionDesc')}
+                  >
                     <Button
                       variant="outline"
                       size="sm"
@@ -385,7 +437,10 @@ export default function PrivacySettingsPage() {
                       {t('settings.privacy.clear')}
                     </Button>
                   </SettingsRow>
-                  <SettingsRow label={t('settings.privacy.clearLog')} description={t('settings.privacy.clearLogDesc')}>
+                  <SettingsRow
+                    label={t('settings.privacy.clearLog')}
+                    description={t('settings.privacy.clearLogDesc')}
+                  >
                     <Button
                       variant="outline"
                       size="sm"
@@ -395,24 +450,6 @@ export default function PrivacySettingsPage() {
                       {t('settings.privacy.clear')}
                     </Button>
                   </SettingsRow>
-                  <SettingsRow label={t('settings.privacy.clearBrief')} description={t('settings.privacy.clearBriefDesc')}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || !activeWorkspaceId}
-                      onClick={() => void clearTarget({ exploreBriefCache: true })}
-                    >
-                      {t('settings.privacy.clear')}
-                    </Button>
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t('settings.privacy.clearBrowserNote')}
-                    description={t('settings.privacy.clearBrowserNoteDesc')}
-                  >
-                    <span className="text-xs text-muted-foreground max-w-[14rem] text-right">
-                      {t('settings.privacy.clearBrowserUnsupported')}
-                    </span>
-                  </SettingsRow>
                   {clearNote && (
                     <p className="px-4 pb-3 text-xs text-muted-foreground">{clearNote}</p>
                   )}
@@ -420,30 +457,41 @@ export default function PrivacySettingsPage() {
               </SettingsSection>
 
               <SettingsSection
-                title={t('settings.privacy.accessLogTitle')}
-                description={t('settings.privacy.accessLogDesc')}
+                title={t('settings.privacy.transparencyTitle')}
+                description={t('settings.privacy.transparencyDesc')}
               >
                 <SettingsCard>
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-sm font-medium">{t('settings.privacy.accessLogTitle')}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t('settings.privacy.accessLogDesc')}
+                    </p>
+                  </div>
                   {log.length === 0 ? (
                     <p className="px-4 py-3 text-sm text-muted-foreground">
                       {t('settings.privacy.accessLogEmpty')}
                     </p>
                   ) : (
                     <ul className="divide-y divide-border">
-                      {log.slice(0, 20).map((entry) => (
-                        <li key={entry.id} className="px-4 py-3 text-sm">
-                          <div className="flex justify-between gap-3">
-                            <span className="font-medium">{entry.decision}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(entry.at).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {entry.feature} · {entry.sources.join(',') || '—'} · {entry.code}
-                            {entry.purpose ? ` · ${entry.purpose}` : ''}
-                          </p>
-                        </li>
-                      ))}
+                      {log.slice(0, ACCESS_LOG_VISIBLE).map((entry) => {
+                        const display = resolveAccessLogDisplay(entry)
+                        return (
+                          <li key={entry.id} className="px-4 py-3 text-sm">
+                            <div className="flex justify-between gap-3 items-start">
+                              <span className="font-medium">{t(display.sourceKey)}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {new Date(entry.at).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1.5">
+                              {t('settings.privacy.logPurposeLabel')}: {t(display.purposeKey)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {t('settings.privacy.logDecisionLabel')}: {t(display.decisionKey)}
+                            </p>
+                          </li>
+                        )
+                      })}
                     </ul>
                   )}
                 </SettingsCard>

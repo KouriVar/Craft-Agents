@@ -6,6 +6,7 @@
  * - Fixed input fields for known preferences (name, timezone, location, language)
  * - Free-form textarea for notes
  * - Auto-saves on change with debouncing
+ * - Always read → merge → write so explore / privacy / uiLanguage / etc. survive
  */
 
 import * as React from 'react'
@@ -15,6 +16,11 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { routes } from '@/lib/navigate'
+import {
+  mergePreferencesFormIntoExisting,
+  serializePreferencesForm,
+  type PreferencesFormPatch,
+} from '@/lib/preferences-merge'
 import { Spinner } from '@craft-agent/ui'
 import {
   SettingsSection,
@@ -30,13 +36,7 @@ export const meta: DetailsPageMeta = {
   slug: 'preferences',
 }
 
-interface PreferencesFormState {
-  name: string
-  timezone: string
-  city: string
-  country: string
-  notes: string
-}
+type PreferencesFormState = PreferencesFormPatch
 
 const emptyFormState: PreferencesFormState = {
   name: '',
@@ -46,7 +46,6 @@ const emptyFormState: PreferencesFormState = {
   notes: '',
 }
 
-// Parse JSON to form state
 function parsePreferences(json: string): PreferencesFormState {
   try {
     const prefs = JSON.parse(json)
@@ -62,24 +61,10 @@ function parsePreferences(json: string): PreferencesFormState {
   }
 }
 
-// Serialize form state to JSON
-function serializePreferences(state: PreferencesFormState): string {
-  const prefs: Record<string, unknown> = {}
-
-  if (state.name) prefs.name = state.name
-  if (state.timezone) prefs.timezone = state.timezone
-
-  if (state.city || state.country) {
-    const location: Record<string, string> = {}
-    if (state.city) location.city = state.city
-    if (state.country) location.country = state.country
-    prefs.location = location
-  }
-
-  if (state.notes) prefs.notes = state.notes
-  prefs.updatedAt = Date.now()
-
-  return JSON.stringify(prefs, null, 2)
+async function writeMergedPreferences(form: PreferencesFormState): Promise<{ success: boolean; error?: string }> {
+  const result = await window.electronAPI.readPreferences()
+  const merged = mergePreferencesFormIntoExisting(result.content, form)
+  return window.electronAPI.writePreferences(merged)
 }
 
 export default function PreferencesPage() {
@@ -92,12 +77,10 @@ export default function PreferencesPage() {
   const formStateRef = useRef(formState)
   const lastSavedRef = useRef<string | null>(null)
 
-  // Keep formStateRef in sync for use in cleanup
   useEffect(() => {
     formStateRef.current = formState
   }, [formState])
 
-  // Load stored user preferences on mount
   useEffect(() => {
     const load = async () => {
       try {
@@ -105,38 +88,32 @@ export default function PreferencesPage() {
         const parsed = parsePreferences(result.content)
         setFormState(parsed)
         setPreferencesPath(result.path)
-        lastSavedRef.current = serializePreferences(parsed)
+        lastSavedRef.current = serializePreferencesForm(parsed)
       } catch (err) {
         console.error('Failed to load stored user preferences:', err)
         setFormState(emptyFormState)
       } finally {
         setIsLoading(false)
-        // Mark initial load as complete after a short delay
         setTimeout(() => {
           isInitialLoadRef.current = false
         }, 100)
       }
     }
-    load()
+    void load()
   }, [])
 
-  // Auto-save with debouncing
   useEffect(() => {
-    // Skip auto-save during initial load
     if (isInitialLoadRef.current || isLoading) return
 
-    // Clear any pending save
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
 
-    // Debounce save by 500ms
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        const json = serializePreferences(formState)
-        const result = await window.electronAPI.writePreferences(json)
+        const result = await writeMergedPreferences(formState)
         if (result.success) {
-          lastSavedRef.current = json
+          lastSavedRef.current = serializePreferencesForm(formState)
         } else {
           console.error('Failed to save preferences:', result.error)
         }
@@ -152,19 +129,15 @@ export default function PreferencesPage() {
     }
   }, [formState, isLoading])
 
-  // Force save on unmount if there are unsaved changes
   useEffect(() => {
     return () => {
-      // Clear any pending debounced save
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
 
-      // Check if there are unsaved changes and save immediately
-      const currentJson = serializePreferences(formStateRef.current)
+      const currentJson = serializePreferencesForm(formStateRef.current)
       if (lastSavedRef.current !== currentJson && !isInitialLoadRef.current) {
-        // Fire and forget - we can't await in cleanup
-        window.electronAPI.writePreferences(currentJson).catch((err) => {
+        void writeMergedPreferences(formStateRef.current).catch((err) => {
           console.error('Failed to save preferences on unmount:', err)
         })
       }
@@ -173,7 +146,7 @@ export default function PreferencesPage() {
 
   const updateField = useCallback(<K extends keyof PreferencesFormState>(
     field: K,
-    value: PreferencesFormState[K]
+    value: PreferencesFormState[K],
   ) => {
     setFormState(prev => ({ ...prev, [field]: value }))
   }, [])
@@ -192,7 +165,6 @@ export default function PreferencesPage() {
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
           <div className="px-5 py-7 max-w-3xl mx-auto space-y-8">
-          {/* Basic Info */}
           <SettingsSection
             title={t("settings.preferences.basicInfo")}
             description={t("settings.preferences.basicInfoDesc")}
@@ -217,7 +189,6 @@ export default function PreferencesPage() {
             </SettingsCard>
           </SettingsSection>
 
-          {/* Location */}
           <SettingsSection
             title={t("settings.preferences.location")}
             description={t("settings.preferences.locationDesc")}
@@ -242,12 +213,10 @@ export default function PreferencesPage() {
             </SettingsCard>
           </SettingsSection>
 
-          {/* Notes */}
           <SettingsSection
             title={t("settings.preferences.notes")}
             description={t("settings.preferences.notesDesc")}
             action={
-              // EditPopover for AI-assisted notes editing with "Edit File" as secondary action
               preferencesPath ? (
                 <EditPopover
                   trigger={<EditButton />}

@@ -4,12 +4,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAtomValue } from 'jotai'
 import {
   Archive,
   ChevronDown,
   Copy,
   Download,
   Eye,
+  FolderKanban,
   History,
   Link2,
   Pencil,
@@ -32,6 +34,14 @@ import {
 import { cn } from '@/lib/utils'
 import { navigate, routes } from '@/lib/navigate'
 import { toast } from 'sonner'
+import { projectsAtom } from '@/atoms/projects'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+} from '@/components/ui/styled-dropdown'
+import { LibraryDeleteConfirmDialog } from './LibraryDeleteConfirmDialog'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -56,7 +66,7 @@ export function LibraryDocumentPage({
   const [showVersions, setShowVersions] = useState(false)
   const [versionPreview, setVersionPreview] = useState<{ id: string; body: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [exportOpen, setExportOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadedRef = useRef(false)
@@ -67,6 +77,14 @@ export function LibraryDocumentPage({
     sectionsRef.current = detached.sections
     return detached.content
   }, [body, editorKey])
+
+  // Resolve the project this document belongs to (read-only display of the
+  // existing projectId — no new association logic).
+  const projects = useAtomValue(projectsAtom)
+  const boundProject = useMemo(() => {
+    const pid = doc?.meta.projectId
+    return pid ? projects.find((p) => p.config.id === pid) : undefined
+  }, [doc?.meta.projectId, projects])
 
   const load = useCallback(async () => {
     const next = await window.electronAPI.getLibraryDocument({ workspaceId, documentId })
@@ -155,7 +173,6 @@ export function LibraryDocumentPage({
   }
 
   const exportDoc = async (format: LibraryExportFormat) => {
-    setExportOpen(false)
     const toastId = toast.loading(
       format === 'pdf' ? t('library.exportingPdf')
         : format === 'html' ? t('library.exportingHtml')
@@ -266,29 +283,28 @@ export function LibraryDocumentPage({
         <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => { void copyMarkdown() }}>
           <Copy className="mr-1 inline h-3 w-3" />{t('library.copyMarkdown')}
         </button>
-        <div className="relative">
-          <button
-            type="button"
-            className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]"
-            onClick={() => setExportOpen((v) => !v)}
-          >
-            <Download className="mr-1 inline h-3 w-3" />{t('library.export')}
-            <ChevronDown className="ml-0.5 inline h-3 w-3" />
-          </button>
-          {exportOpen && (
-            <div className="absolute right-0 z-20 mt-1 min-w-[140px] rounded-control border border-border/60 bg-background py-1 shadow-md">
-              <button type="button" className="block w-full px-3 py-1.5 text-left text-xs hover:bg-foreground/[0.05]" onClick={() => { void exportDoc('markdown') }}>
-                Markdown
-              </button>
-              <button type="button" className="block w-full px-3 py-1.5 text-left text-xs hover:bg-foreground/[0.05]" onClick={() => { void exportDoc('html') }}>
-                HTML
-              </button>
-              <button type="button" className="block w-full px-3 py-1.5 text-left text-xs hover:bg-foreground/[0.05]" onClick={() => { void exportDoc('pdf') }}>
-                PDF
-              </button>
-            </div>
-          )}
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05]"
+            >
+              <Download className="mr-1 inline h-3 w-3" />{t('library.export')}
+              <ChevronDown className="ml-0.5 inline h-3 w-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <StyledDropdownMenuContent align="end">
+            <StyledDropdownMenuItem onClick={() => { void exportDoc('markdown') }}>
+              Markdown
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem onClick={() => { void exportDoc('html') }}>
+              HTML
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem onClick={() => { void exportDoc('pdf') }}>
+              PDF
+            </StyledDropdownMenuItem>
+          </StyledDropdownMenuContent>
+        </DropdownMenu>
         <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => { void archiveToggle() }}>
           <Archive className="mr-1 inline h-3 w-3" />
           {doc.meta.status === 'archived' ? t('library.unarchive') : t('library.archive')}
@@ -296,16 +312,21 @@ export function LibraryDocumentPage({
         <button
           type="button"
           className="rounded-control px-2 py-1 text-xs text-destructive hover:bg-foreground/[0.05]"
-          onClick={() => {
-            if (!window.confirm(t('library.deleteConfirm'))) return
-            void window.electronAPI.deleteLibraryDocument({ workspaceId, documentId }).then((result) => {
-              if (result?.ok) navigate(routes.view.library())
-            })
-          }}
+          onClick={() => setDeleteOpen(true)}
         >
           {t('library.delete')}
         </button>
       </div>
+
+      <LibraryDeleteConfirmDialog
+        open={deleteOpen}
+        documentTitle={title}
+        onOpenChange={setDeleteOpen}
+        onConfirm={async () => {
+          const result = await window.electronAPI.deleteLibraryDocument({ workspaceId, documentId })
+          if (result?.ok) navigate(routes.view.library())
+        }}
+      />
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
@@ -336,6 +357,38 @@ export function LibraryDocumentPage({
         </div>
 
         <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/50 p-3">
+          {doc?.meta.projectId && (
+            <>
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <FolderKanban className="h-3.5 w-3.5" />
+                {t('library.projectLabel')}
+              </h3>
+              <button
+                type="button"
+                disabled={!boundProject}
+                onClick={() => boundProject && navigate(routes.view.projects(boundProject.config.slug))}
+                className="mb-3 block w-full rounded-control border border-border/40 px-2 py-1.5 text-left text-xs hover:bg-foreground/[0.04] disabled:cursor-default disabled:opacity-60"
+              >
+                <span className="flex items-center gap-1.5">
+                  {boundProject?.config.color && (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: boundProject.config.color }}
+                    />
+                  )}
+                  <span className="truncate font-medium">
+                    {boundProject?.config.name ?? doc.meta.projectId}
+                  </span>
+                </span>
+                {!boundProject && (
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                    {t('library.projectUnbound', { defaultValue: 'Project no longer exists' })}
+                  </span>
+                )}
+              </button>
+            </>
+          )}
+
           {gen && (
             <>
               <h3 className="mb-2 text-xs font-medium text-foreground">{t('library.generationInfo')}</h3>
