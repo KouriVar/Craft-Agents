@@ -56,6 +56,8 @@ export class PromptHandler implements AutomationHandler {
     const matcherPrompts: Array<{
       matcherId: string | undefined;
       automationName: string;
+      projectId?: string;
+      retryLimit?: number;
       prompts: Array<{ prompt: PromptAction; labels?: string[]; permissionMode?: PermissionMode }>;
     }> = [];
 
@@ -72,6 +74,8 @@ export class PromptHandler implements AutomationHandler {
         matcherPrompts.push({
           matcherId: matcher.id,
           automationName: deriveAutomationName(event, matcher),
+          projectId: matcher.projectId,
+          retryLimit: matcher.retryLimit,
           prompts,
         });
       }
@@ -88,7 +92,7 @@ export class PromptHandler implements AutomationHandler {
     // Process prompts per matcher
     const pendingPrompts: PendingPrompt[] = [];
 
-    for (const { matcherId, automationName, prompts } of matcherPrompts) {
+    for (const { matcherId, automationName, projectId, retryLimit, prompts } of matcherPrompts) {
       for (const { prompt, labels, permissionMode } of prompts) {
         // Expand environment variables in the prompt
         const expandedPrompt = expandEnvVars(prompt.prompt, env);
@@ -107,6 +111,8 @@ export class PromptHandler implements AutomationHandler {
           mentions: references.mentions,
           labels: expandedLabels,
           permissionMode,
+          projectId,
+          retryLimit,
           llmConnection: prompt.llmConnection,
           model: prompt.model,
           thinkingLevel: prompt.thinkingLevel,

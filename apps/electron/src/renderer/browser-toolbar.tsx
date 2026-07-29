@@ -11,7 +11,7 @@ import ReactDOM from 'react-dom/client'
 import { useTranslation, initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { setupI18n } from '@craft-agent/shared/i18n'
-import { EyeOff, KeyRound, Pin, Puzzle, ShieldCheck, Star, X, XCircle } from 'lucide-react'
+import { EyeOff, Pin, Puzzle, ShieldCheck, Star, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import { getEmbeddedToolbarModeTransition, type EmbeddedToolbarMode } from '@/lib/embedded-toolbar-state'
@@ -58,7 +58,7 @@ declare global {
       stop: () => Promise<void>
       setRevealed: (revealed: boolean) => Promise<void>
       pinEmbedded: () => Promise<boolean>
-      showEmbeddedMenu: (kind: 'extensions' | 'permissions' | 'passwords') => Promise<void>
+      showEmbeddedMenu: (kind: 'extensions' | 'permissions') => Promise<void>
       toggleBookmark: () => Promise<void>
       setMenuGeometry: (open: boolean, height?: number) => Promise<void>
       hideWindow: () => Promise<void>
@@ -295,12 +295,6 @@ function BrowserToolbarApp() {
               icon={<ShieldCheck className="h-4 w-4" />}
               aria-label={t('browser.sitePermissions', { defaultValue: 'Site permissions' })}
               onClick={() => { void api?.showEmbeddedMenu('permissions') }}
-              className="rounded-[6px] hover:bg-foreground/5"
-            />
-            <HeaderIconButton
-              icon={<KeyRound className="h-4 w-4" />}
-              aria-label={t('browser.passwords', { defaultValue: 'Passwords' })}
-              onClick={() => { void api?.showEmbeddedMenu('passwords') }}
               className="rounded-[6px] hover:bg-foreground/5"
             />
             <HeaderIconButton

@@ -641,7 +641,7 @@ function Row({
       type="button"
       onClick={onTap}
       className={cn(
-        'flex items-center gap-3 w-full px-3 py-3 rounded-[10px] text-left transition-colors',
+        'flex items-center gap-3 w-full px-3 py-3 rounded-touch text-left transition-colors',
         'hover:bg-foreground/5 active:bg-foreground/10',
         destructive && 'text-destructive hover:bg-destructive/10 active:bg-destructive/15',
       )}

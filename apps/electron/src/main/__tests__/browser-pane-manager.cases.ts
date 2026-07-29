@@ -446,6 +446,58 @@ describe('BrowserPaneManager', () => {
     expect(mockMenuPopup).toHaveBeenCalledWith({ window: hostWindow })
   })
 
+  it('shows tab context menus natively without hiding, reloading, or resizing embedded pages', async () => {
+    const cases = [
+      { id: 'embedded-tab-menu-normal', url: 'https://example.com/docs', isLoading: false, hasWebUrl: true },
+      { id: 'embedded-tab-menu-new', url: 'about:blank', isLoading: false, hasWebUrl: false },
+      { id: 'embedded-tab-menu-loading', url: 'https://example.com/loading', isLoading: true, hasWebUrl: true },
+    ]
+
+    for (const testCase of cases) {
+      mockMenuBuild.mockClear()
+      mockMenuPopup.mockClear()
+      const hostWindow = createMockWindow({ width: 1400, height: 900 })
+      ;(hostWindow as any).getContentBounds = mock(() => ({ x: 0, y: 0, width: 1400, height: 900 }))
+      manager.setWindowManager({
+        getWindowByWebContentsId: mock((id: number) => id === 42 ? hostWindow : null),
+      } as any)
+      ;(manager as any).createInstance(testCase.id, { embeddedHostWebContentsId: 42 })
+      manager.setEmbeddedBounds(testCase.id, 42, { x: 300, y: 120, width: 900, height: 600 })
+      manager.setEmbeddedVisible(testCase.id, 42, true)
+      const instance = (manager as any).instances.get(testCase.id)
+      instance.currentUrl = testCase.url
+      instance.isLoading = testCase.isLoading
+      const webContentsId = instance.pageView.webContents.id
+      const currentUrl = instance.currentUrl
+      const setVisibleCallCount = instance.pageView.setVisible.mock.calls.length
+      const setBoundsCallCount = instance.pageView.setBounds.mock.calls.length
+
+      const menuResult = manager.showTabMenu(42, {
+        tabId: testCase.id,
+        pinned: false,
+        hasWebUrl: testCase.hasWebUrl,
+        isBookmarked: false,
+        hasClosableOtherTabs: true,
+        hasClosableTabsBelow: true,
+        rightSidebarOpen: false,
+        extensions: [],
+      })
+
+      expect(mockMenuBuild).toHaveBeenCalledTimes(1)
+      const popupCalls = mockMenuPopup.mock.calls as unknown as Array<[{ window: unknown; callback: () => void }]>
+      const popupOptions = popupCalls.at(-1)?.[0]
+      expect(popupOptions?.window).toBe(hostWindow)
+      expect(instance.pageView.setVisible.mock.calls).toHaveLength(setVisibleCallCount)
+      expect(instance.pageView.setBounds.mock.calls).toHaveLength(setBoundsCallCount)
+      expect(instance.pageView.getBounds()).toEqual({ x: 300, y: 120, width: 900, height: 600 })
+      expect(instance.pageView.webContents.id).toBe(webContentsId)
+      expect(instance.currentUrl).toBe(currentUrl)
+
+      popupOptions?.callback()
+      expect(await menuResult).toBe(null)
+    }
+  })
+
   it('reveals the native floating toolbar without moving the embedded page', () => {
     const hostWindow = createMockWindow({ width: 1400, height: 900 })
     ;(hostWindow as any).getContentBounds = mock(() => ({ x: 0, y: 0, width: 1400, height: 900 }))
@@ -1363,7 +1415,7 @@ describe('BrowserPaneManager', () => {
   it('coalesces synchronous browser profile changes into one semantic event', async () => {
     const changed: string[] = []
     manager.onProfileChanged((kind) => changed.push(kind))
-    const bookmark = manager.addBookmark(null, {
+    const bookmark = await manager.addBookmark(null, {
       url: `https://profile-event-${Date.now()}.example.com`,
       title: 'Profile event',
     })

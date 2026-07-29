@@ -42,6 +42,8 @@ describe('PromptHandler', () => {
       const configProvider = createMockConfigProvider({
         LabelAdd: [{
           matcher: 'bug',
+          projectId: 'project-alpha',
+          retryLimit: 3,
           actions: [{ type: 'prompt', prompt: 'A bug label was added' }],
         }],
       });
@@ -60,6 +62,8 @@ describe('PromptHandler', () => {
       expect(prompts).toHaveLength(1);
       expect(prompts[0]!.prompt).toBe('A bug label was added');
       expect(prompts[0]!.sessionId).toBe('test-session');
+      expect(prompts[0]!.projectId).toBe('project-alpha');
+      expect(prompts[0]!.retryLimit).toBe(3);
 
       handler.dispose();
     });

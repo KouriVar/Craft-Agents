@@ -14,14 +14,14 @@ import {
   SettingsSection,
 } from '@/components/settings'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
   slug: 'accounts',
 }
 
-export default function AccountsSettingsPage() {
+export default function AccountsSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const [clientId, setClientId] = React.useState('')
   const [clientSecret, setClientSecret] = React.useState('')
@@ -85,18 +85,16 @@ export default function AccountsSettingsPage() {
     }
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      <PanelHeader
-        title={t('settings.accounts.title')}
-        actions={<HeaderMenu route={routes.view.settings('accounts')} />}
-      />
-      <div className="min-h-0 flex-1 mask-fade-y">
-        <ScrollArea className="h-full">
-          <div className="mx-auto max-w-3xl px-5 py-7">
+  const body = (
             <SettingsSection
-              title={t('settings.accounts.googleTitle')}
-              description={t('settings.accounts.googleDescription')}
+              title={t('settings.integrations.credentialsTitle')}
+              description={
+                <>
+                  {t('settings.integrations.credentialsDescription')}
+                  {' '}
+                  {t('settings.integrations.credentialsLocalNote')}
+                </>
+              }
             >
               <SettingsCard>
                 <div className="flex items-start gap-3 px-4 py-3.5">
@@ -162,6 +160,20 @@ export default function AccountsSettingsPage() {
                 </SettingsCardFooter>
               </SettingsCard>
             </SettingsSection>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className="flex h-full flex-col">
+      <PanelHeader
+        title={t('settings.integrations.credentialsTitle')}
+        actions={<HeaderMenu route={routes.view.settings('accounts')} />}
+      />
+      <div className="min-h-0 flex-1 mask-fade-y">
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-3xl px-5 py-7">
+            {body}
           </div>
         </ScrollArea>
       </div>

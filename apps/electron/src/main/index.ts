@@ -3,7 +3,7 @@
 import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, screen, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, nativeTheme, screen, shell, systemPreferences } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
 import { spawn, type ChildProcess } from 'child_process'
@@ -293,7 +293,17 @@ import { loadWindowState, saveWindowState } from './window-state'
 import { fitWindowBoundsToWorkAreas, windowBoundsEqual } from './window-restore'
 import { activateExistingOrCreateWindow as activateOrCreateWindow, extractDeepLink } from './app-activation'
 import { collectResourceDiagnostic, getStartupDiagnostic, recordStartupMilestone } from './resource-diagnostics'
-import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import {
+  getWorkspaces,
+  getWorkspaceByNameOrId,
+  loadStoredConfig,
+  addWorkspace,
+  saveConfig,
+  getDoubleCommandScreenshotEnabled,
+  setDoubleCommandScreenshotEnabled,
+  getDoubleCommandScreenshotHideApp,
+  setDoubleCommandScreenshotHideApp,
+} from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
@@ -304,17 +314,17 @@ import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
 import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
+import { DoubleCommandShortcut } from './double-command-shortcut'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog, autoUpdateLog } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
 import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
-import { initNotificationService, initBadgeIcon, initInstanceBadge, updateBadgeCount } from './notifications'
+import { initBadgeIcon, initInstanceBadge, setNotificationEventSink, updateBadgeCount } from './notifications'
 import { checkForUpdatesOnLaunch, setAutoUpdateEventSink, isUpdating, setBeforeUpdateQuitHook } from './auto-update'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import { validateGitBashPath, checkVCRedistInstalled } from '@craft-agent/server-core/services'
-
 // Initialize electron-log for renderer process support
 log.initialize()
 recordStartupMilestone('main-module-loaded')
@@ -406,6 +416,9 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 let browserPaneManager: BrowserPaneManager | null = null
+let doubleCommandShortcut: DoubleCommandShortcut | null = null
+let screenCaptureInFlight = false
+let lastScreenCaptureStartedAt = 0
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
 let moduleClientResolver: ((webContentsId: number) => string | undefined) | null = null
@@ -438,6 +451,46 @@ function activateExistingOrCreateWindow(): boolean {
         : workspaces[0].id
       manager.createWindow({ workspaceId })
     },
+  })
+}
+
+async function requestDoubleCommandScreenCapture(): Promise<void> {
+  const focusedWindow = BrowserWindow.getFocusedWindow()
+  if (focusedWindow && !focusedWindow.isDestroyed()) {
+    focusedWindow.webContents.send(RPC_CHANNELS.screenCapture.REQUESTED)
+    return
+  }
+
+  const workspaces = getWorkspaces()
+  const activeWorkspaceId = loadStoredConfig()?.activeWorkspaceId
+  const savedWorkspaceId = loadWindowState()?.lastFocusedWorkspaceId
+  const workspaceId =
+    (activeWorkspaceId && workspaces.some(workspace => workspace.id === activeWorkspaceId) ? activeWorkspaceId : null)
+    ?? (savedWorkspaceId && workspaces.some(workspace => workspace.id === savedWorkspaceId) ? savedWorkspaceId : null)
+    ?? workspaces[0]?.id
+
+  if (!windowManager || !workspaceId) {
+    BrowserWindow.getAllWindows()[0]?.webContents.send(RPC_CHANNELS.screenCapture.REQUESTED)
+    return
+  }
+
+  let initialDeepLink: string | undefined
+  if (sessionManager) {
+    const session = await sessionManager.createSession(workspaceId)
+    initialDeepLink = `craftagents://workspace/${workspaceId}/allSessions/session/${session.id}`
+  }
+
+  const target = windowManager.createWindow({
+    workspaceId,
+    focused: true,
+    initialDeepLink,
+  })
+  target.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (!target.isDestroyed()) {
+        target.webContents.send(RPC_CHANNELS.screenCapture.REQUESTED)
+      }
+    }, 450)
   })
 }
 
@@ -709,6 +762,21 @@ app.whenReady().then(async () => {
     windowManager = new WindowManager()
     recordStartupMilestone('window-manager-ready')
 
+    doubleCommandShortcut = new DoubleCommandShortcut(
+      () => {
+        void requestDoubleCommandScreenCapture().catch((error) => {
+          mainLog.error('[screen-capture] failed to route double-command capture', error)
+        })
+      },
+      (status) => {
+        mainLog.info('[screen-capture] double-command shortcut status', { status })
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send(RPC_CHANNELS.screenCapture.SHORTCUT_STATUS, status)
+        }
+      },
+    )
+    if (getDoubleCommandScreenshotEnabled()) doubleCommandShortcut.start()
+
     // Create the application menu (needs windowManager for New Window action)
     createApplicationMenu(windowManager)
 
@@ -723,7 +791,6 @@ app.whenReady().then(async () => {
     }
 
     // Initialize notification service (always — triggered by server push events)
-    initNotificationService(windowManager)
 
     // Initialize browser pane manager (always — even in headless, for deps wiring)
     browserPaneManager = new BrowserPaneManager()
@@ -1242,9 +1309,102 @@ app.whenReady().then(async () => {
       ipcMain.on('__get-ws-port', (e) => {
         e.returnValue = instance.port
       })
-      ipcMain.on('__get-ws-token', (e) => {
+    ipcMain.on('__get-ws-token', (e) => {
         e.returnValue = instance.token
-      })
+    })
+
+    // This capture deliberately returns an in-memory composer attachment.  It
+    // never creates a session and does not persist or send anything by itself.
+    ipcMain.handle(RPC_CHANNELS.screenCapture.CURRENT, async (event) => {
+      const now = Date.now()
+      if (screenCaptureInFlight || now - lastScreenCaptureStartedAt < 900) {
+        return { ok: false as const, error: 'duplicate-capture-suppressed' }
+      }
+      screenCaptureInFlight = true
+      lastScreenCaptureStartedAt = now
+      const hideApp = getDoubleCommandScreenshotHideApp()
+      const focusedWindow = BrowserWindow.getFocusedWindow()
+      const hiddenWindows = hideApp
+        ? BrowserWindow.getAllWindows().filter(window => window.isVisible())
+        : []
+      try {
+        if (hiddenWindows.length > 0) {
+          for (const window of hiddenWindows) window.hide()
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+        const cursor = screen.getCursorScreenPoint()
+        const display = screen.getDisplayNearestPoint(cursor)
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: display.size,
+        })
+        const source = sources.find((item) => item.display_id === String(display.id)) ?? sources[0]
+        const image = source?.thumbnail
+        if (!image || image.isEmpty()) throw new Error('屏幕捕获未返回图像')
+        const png = image.toPNG()
+        if (png.length === 0) throw new Error('屏幕捕获返回空图像')
+        const result = {
+          ok: true as const,
+          attachment: {
+            type: 'image' as const,
+            path: `screenshot-${Date.now()}.png`,
+            name: 'screenshot.png',
+            mimeType: 'image/png',
+            base64: png.toString('base64'),
+            size: png.length,
+          },
+        }
+        event.sender.send(RPC_CHANNELS.screenCapture.RESULT, result)
+        return result
+      } catch (error) {
+        const result = { ok: false as const, error: error instanceof Error ? error.message : '截图失败' }
+        event.sender.send(RPC_CHANNELS.screenCapture.RESULT, result)
+        return result
+      } finally {
+        screenCaptureInFlight = false
+        for (const window of hiddenWindows) {
+          if (window.isDestroyed()) continue
+          if (window === focusedWindow) window.show()
+          else window.showInactive()
+        }
+      }
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.GET_SHORTCUT_ENABLED, () => {
+      return getDoubleCommandScreenshotEnabled()
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.GET_SHORTCUT_STATUS, () => {
+      return getDoubleCommandScreenshotEnabled()
+        ? (doubleCommandShortcut?.getStatus() ?? 'unavailable')
+        : 'disabled'
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.SET_SHORTCUT_ENABLED, (_event, enabled: boolean) => {
+      setDoubleCommandScreenshotEnabled(Boolean(enabled))
+      if (enabled) doubleCommandShortcut?.start()
+      else doubleCommandShortcut?.stop()
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.GET_HIDE_APP, () => {
+      return getDoubleCommandScreenshotHideApp()
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.SET_HIDE_APP, (_event, enabled: boolean) => {
+      setDoubleCommandScreenshotHideApp(Boolean(enabled))
+    })
+    ipcMain.handle(RPC_CHANNELS.screenCapture.GET_PERMISSION_STATUS, () => {
+      if (process.platform !== 'darwin') {
+        return { accessibility: 'not-required', screenRecording: 'not-required' }
+      }
+      return {
+        accessibility: systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied',
+        screenRecording: systemPreferences.getMediaAccessStatus('screen'),
+      }
+    })
+    ipcMain.handle(
+      RPC_CHANNELS.screenCapture.OPEN_PERMISSION_SETTINGS,
+      async (_event, permission: 'accessibility' | 'screen-recording') => {
+        if (process.platform !== 'darwin') return
+        const pane = permission === 'accessibility' ? 'Privacy_Accessibility' : 'Privacy_ScreenCapture'
+        await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`)
+      },
+    )
       ipcMain.on('__get-workspace-remote-config', (e) => {
         const wsId = windowManager?.getWorkspaceForWindow(e.sender.id)
         if (!wsId) { e.returnValue = null; return }
@@ -1342,10 +1502,9 @@ app.whenReady().then(async () => {
       // Wire EventSink to Electron-specific services
       // Must happen BEFORE createInitialWindows() so event handlers use WS from the start
       windowManager.setRpcEventSink(moduleSink!, resolveClientId)
+      setNotificationEventSink(moduleSink!)
       const { setMenuEventSink } = await import('./menu')
       setMenuEventSink(moduleSink!, resolveClientId)
-      const { setNotificationEventSink } = await import('./notifications')
-      setNotificationEventSink(moduleSink!, resolveClientId)
 
       // Headless: print connection details
       if (isHeadless) {
@@ -1358,6 +1517,15 @@ app.whenReady().then(async () => {
     // In headless mode the server runs without any UI — skip window creation.
     if (!isHeadless) {
       await createInitialWindows()
+      // The helper may have reported a permission failure before the renderer
+      // installed its listener. Replay the current state after window startup.
+      setTimeout(() => {
+        const status = doubleCommandShortcut?.getStatus()
+        if (!status || status === 'ready' || status === 'starting') return
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send(RPC_CHANNELS.screenCapture.SHORTCUT_STATUS, status)
+        }
+      }, 1_000)
       recordStartupMilestone('initial-windows-created')
     }
 
@@ -1553,6 +1721,7 @@ app.on('before-quit', async (event) => {
     releaseServerLock,
     logger: mainLog,
   })
+  doubleCommandShortcut?.stop()
   mainLog.info('[shutdown] complete', {
     phases: shutdownResults.length,
     failed: shutdownResults.filter((result) => !result.ok).map((result) => result.phase),

@@ -90,7 +90,9 @@ export interface ISessionManager {
     opts?: { parentSessionId?: string },
   ): Promise<{ labelId: string } | undefined>
   setSessionProjectId(sessionId: string, projectId: string | null): Promise<void>
+  setSessionExpertId(sessionId: string, expertId: string | null): Promise<void>
   setKanbanColumn(sessionId: string, column: string | null): Promise<void>
+  setSessionPinned(sessionId: string, pinned: boolean): Promise<void>
   setTaskDetails(sessionId: string, patch: {
     goal?: string | null
     priority?: TaskPriority | null
@@ -105,17 +107,6 @@ export interface ISessionManager {
     messageId?: string
   }): Promise<void>
   deleteTaskCheckpoint(sessionId: string, checkpointId: string): Promise<void>
-  setTaskNodeCount(sessionId: string, count: number): Promise<void>
-  adoptGeneratedTaskOrchestrator(
-    sessionId: string,
-    taskSlug: string,
-    reconcile?: { name?: string; projectId?: string; workingDirectory?: string; model?: string; llmConnection?: string; permissionMode?: PermissionMode },
-  ): Promise<boolean>
-  bindExistingSessionToTask(
-    sessionId: string,
-    taskSlug: string,
-    reconcile?: { name?: string; projectId?: string; workingDirectory?: string; model?: string; llmConnection?: string; permissionMode?: PermissionMode },
-  ): Promise<boolean>
   setSessionConnection(sessionId: string, connectionSlug: string): Promise<void>
   updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void>
 
@@ -134,14 +125,6 @@ export interface ISessionManager {
     onAck?: (messageId: string) => void,
     rpcContext?: { callerClientId?: string },
   ): Promise<void>
-  generateExploreBrief(
-    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
-  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
-
-  /** Explore "完成并归档" — mark done, optional checkpoint/loops/guidance, archive, clear snooze. */
-  completeAndArchive(
-    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
-  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
@@ -170,6 +153,10 @@ export interface ISessionManager {
     annotationId: string,
     patch: Partial<AnnotationV1>,
   ): void
+  /** Edit a user message by creating a new seeded branch; never mutates the source history. */
+  editMessageAsBranch(sessionId: string, messageId: string, content: string): Promise<Session>
+  /** Delete a historical message by creating an auditable seeded branch. */
+  deleteMessageAsBranch(sessionId: string, messageId: string): Promise<Session>
 
   // ---------------------------------------------------------------------------
   // Permissions & credentials
@@ -284,6 +271,8 @@ export interface ISessionManager {
   getActiveSessionCount(workspaceId?: string): number
   /** Automation summary for a workspace (count of configured automations + scheduler state). */
   getWorkspaceAutomationSummary(workspaceId: string): { automationCount: number; schedulerRunning: boolean }
+  /** Deliver a real external event to the workspace automation runtime. */
+  emitAutomationEvent(workspaceId: string, event: import('@craft-agent/shared/automations').AppEvent, data: Record<string, unknown>): Promise<void>
   /** Active sessions across all workspaces (sessions with running backend processes). */
   getActiveSessionsInfo(): ActiveSessionInfo[]
 
@@ -320,6 +309,9 @@ export interface ExecutePromptAutomationInput {
   /** Override the workspace default thinking level for the spawned session. */
   thinkingLevel?: ThinkingLevel
   automationName?: string
+  projectId?: string
+  /** Optional expert identity for a workflow/session execution node. */
+  expertId?: string
   /**
    * When `false`, `executePromptAutomation` returns as soon as the session is
    * created and the prompt is dispatched, instead of awaiting the whole turn.

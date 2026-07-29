@@ -102,22 +102,24 @@ export interface Session {
   isArchived?: boolean
   archivedAt?: number
   supportsBranching?: boolean
+  /** Source session for a branch; together with branchFromMessageId forms the audit edge. */
+  branchFromSessionId?: string
+  branchFromMessageId?: string
   /** Workspace-scoped project id this session is bound to (undefined = unbound) */
   projectId?: string
+  /** Explicit expert override; omitted inherits parent/project/default assistant. */
+  expertId?: string
+  /** Keep this session above unpinned sessions in list views. */
+  isPinned?: boolean
   /** Parent session id — when set, this session is a subtask of the parent (undefined = top-level task) */
   parentSessionId?: string
   /** Kanban board column id ('todo' | 'in-progress' | 'done'); independent of sessionStatus */
   kanbanColumn?: string
   /** Tasks Conductor: slug of the task spec this session belongs to. */
-  taskSlug?: string
   /** Tasks Conductor: id of the run that spawned this child session (child nodes only). */
-  taskRunId?: string
   /** Tasks Conductor: id of the DAG node this child session executes (child nodes only). */
-  taskNodeId?: string
   /** Tasks Conductor: total DAG node count (orchestrator only) — stable board progress denominator. */
-  taskNodeCount?: number
   /** Tasks Conductor: generate-time draft orchestrator, hidden from the board until adopted by createTask. */
-  taskDraft?: boolean
   /** Long-running task objective and resume metadata. */
   taskGoal?: string
   taskPriority?: TaskPriority
@@ -164,16 +166,13 @@ export interface CreateSessionOptions {
   branchFromSessionId?: string
   /** Bind the new session to a workspace project (inherits project's workingDirectory). */
   projectId?: string
+  expertId?: string
   /** Mark the new session as a subtask of this parent session (undefined = top-level task). */
   parentSessionId?: string
   /** Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes). */
-  taskSlug?: string
   /** Tasks Conductor: id of the run that spawned this child session (child nodes only). */
-  taskRunId?: string
   /** Tasks Conductor: id of the DAG node this child session executes (child nodes only). */
-  taskNodeId?: string
   /** Tasks Conductor: mark the orchestrator as a generate-time draft (hidden until adopted by createTask). */
-  taskDraft?: boolean
   /**
    * Apply the reserved "Task" label (valueType 'number') after creation. Top-level sessions
    * allocate the next task number; sessions with a `parentSessionId` inherit the parent's
@@ -200,187 +199,6 @@ export interface RemoteSessionTransferPayload {
 
 export interface ImportRemoteSessionTransferResult {
   sessionId: string
-}
-
-// ---------------------------------------------------------------------------
-// Tasks (Conductor) DTOs — wire contract for the tasks:* channels.
-// ---------------------------------------------------------------------------
-
-export interface TaskValidationIssueDto {
-  /** Dotted path into the spec, e.g. "nodes.design.depends_on". */
-  path: string
-  message: string
-  severity: 'error' | 'warning'
-  suggestion?: string
-}
-
-export interface TaskValidationResultDto {
-  valid: boolean
-  errors: TaskValidationIssueDto[]
-  warnings: TaskValidationIssueDto[]
-  /** Pre-flight estimate: total nodes and how many sessions a run would spawn. */
-  estimate?: { nodeCount: number; sessionNodeCount: number }
-}
-
-export interface TaskCreateRequest {
-  /** task.yaml source text (authoritative). */
-  yaml: string
-  /**
-   * When this YAML was authored by a `tasks:generate` orchestrator, the id of that hidden
-   * draft session. tasks:create promotes it in place (clears taskDraft, binds taskSlug)
-   * instead of minting a second top-level session — preventing duplicate board tiles (#bug1).
-   * Only honored when the draft is still unadopted and its slug matches; otherwise ignored.
-   */
-  orchestratorSessionId?: string
-  /**
-   * Edit-mode bind: the id of an existing, board-visible session (e.g. a quick-add tile) that the
-   * user is saving this spec onto. tasks:create calls `bindExistingSessionToTask` and HARD-ERRORS
-   * if the bind fails — it must never fall through to minting a fresh orchestrator (that would
-   * leave a duplicate tile). Distinct from `orchestratorSessionId`, which adopts a hidden draft.
-   */
-  attachToExistingSession?: string
-}
-
-export interface TaskCreateResult {
-  /** Empty string when validation failed — inspect `validation`. */
-  slug: string
-  /** The persistent parent/orchestrator session (author + final verifier). */
-  orchestratorSessionId: string
-  validation: TaskValidationResultDto
-  /**
-   * Resolved id of the reserved "Task" label applied to the orchestrator. May differ from the
-   * literal 'task' (a user-owned label with that name forces a fresh slug like 'task-2'), so
-   * navigation/filtering MUST use this id. Undefined when label application failed (fail-soft).
-   */
-  taskLabelId?: string
-}
-
-export interface TaskGenerateRequest {
-  /** Natural-language goal the orchestrator turns into a task.yaml DAG. */
-  goal: string
-  /** Optional working title for the task / orchestrator session. */
-  title?: string
-  /** Optional model for the orchestrator session (defaults to the session default). */
-  model?: string
-  /** Optional working directory for the orchestrator session (defaults to project/workspace cwd). */
-  cwd?: string
-  /** Project to bind the draft orchestrator to, so it authors against the project's `<project_context>`. */
-  projectId?: string
-  /**
-   * LLM connection slug that serves `model`. Required for non-default (e.g. pi/*) models — without it
-   * the authoring turn can't resolve a backend and completes instantly with no output (invalid spec).
-   */
-  llmConnection?: string
-  /** Task-level source slugs the draft orchestrator may author against (omitted → workspace default). */
-  enabledSourceSlugs?: string[]
-  /** Permission mode for the draft orchestrator, so its authoring turn matches the task's chosen
-   *  autonomy from the start instead of running at the workspace default until adoption. */
-  permissionMode?: PermissionMode
-}
-
-/**
- * Synchronous ack for `tasks:generate`. The orchestrator session is created immediately
- * (cheap) and returned right away; the authored spec arrives later via the `tasks:generated`
- * push event. This keeps the RPC well under the uniform client timeout even when authoring
- * takes longer than the request budget.
- */
-export interface TaskGenerateAck {
-  /** The persistent orchestrator session, reachable immediately so its work is never lost. */
-  orchestratorSessionId: string
-}
-
-export interface TaskGenerateResult {
-  /** The persistent orchestrator session that authored the spec (also handles revisions). */
-  orchestratorSessionId: string
-  /** Slug of the authored spec; empty when generation produced an invalid spec. */
-  slug: string
-  /** Parsed TaskSpec when valid (consumers cast to TaskSpec from @craft-agent/shared/tasks). */
-  spec?: unknown
-  /** The raw task.yaml the orchestrator produced — shown and editable in the editor. */
-  yaml: string
-  validation: TaskValidationResultDto
-  /** Set when generation failed before producing a spec (e.g. orchestrator turn errored/timed out). */
-  error?: string
-}
-
-export interface TaskRunRequest {
-  slug: string
-  runId?: string
-  orchestratorSessionId?: string
-  params?: Record<string, unknown>
-}
-
-export interface TaskNodeRunStateDto {
-  id: string
-  /** pending | running | done | failed | cancelled | skipped */
-  state: string
-  sessionId?: string
-  attempt: number
-}
-
-export interface TaskRunSnapshotDto {
-  slug: string
-  runId: string
-  taskId: string
-  /** running | paused | verifying | stopped | completed | failed */
-  status: string
-  orchestratorSessionId?: string
-  nodes: TaskNodeRunStateDto[]
-  /** Sum of each child's (input + output) tokens observed at completion. */
-  tokensUsed: number
-}
-
-export interface TaskGetResult {
-  slug: string
-  validation: TaskValidationResultDto
-  /** The parsed TaskSpec (from @craft-agent/shared/tasks) when valid; consumers cast. */
-  spec?: unknown
-  /** Active run snapshot when a runId was supplied and known; otherwise null. */
-  run?: TaskRunSnapshotDto | null
-}
-
-/** One subtask's outcome in a completed/persisted run, for the editor's Results tab. */
-export interface TaskResultNodeDto {
-  id: string
-  title: string
-  /** pending | running | done | failed | cancelled | skipped */
-  state: string
-  /** The child session that ran this node, recovered from the run log (drill-in link). */
-  sessionId?: string
-  /** The node's recorded final output text (from nodes/<id>.json), when present. */
-  output?: string
-}
-
-/**
- * Storage-backed read of a task run's outcome — verdict + per-node final output, recovered from
- * the persisted run artifacts (run-log.jsonl, nodes/<id>.json, per-run spec.json snapshot). Unlike
- * `TaskRunSnapshotDto` this survives restart and does not require an active in-memory run.
- */
-export interface TaskResultsDto {
-  slug: string
-  /** The run inspected; null when the task has never been run. */
-  runId: string | null
-  /** All run ids for this task (newest last), for a run picker. */
-  runIds: string[]
-  /** The most recent verdict (kept for back-compat with single-verdict consumers). */
-  verdict?: {
-    result: 'pass' | 'fail' | 'unparsed'
-    reason?: string
-    nodes?: string[]
-  }
-  /** Every verdict in order (a FAIL→repair loop produces several), for the Results history view. */
-  verdicts?: {
-    result: 'pass' | 'fail' | 'unparsed'
-    reason?: string
-    nodes?: string[]
-  }[]
-  /** Repair-loop accounting: attempts consumed (= count of FAIL verdicts) and the resolved cap. */
-  repair?: { used: number; max: number }
-  /** Terminal run status recovered from the run-log (completed | failed | stopped | …). */
-  runStatus?: string
-  /** The run's acceptance criteria (from the per-run spec snapshot), shown above the verdict. */
-  acceptanceCriteria?: string
-  nodes: TaskResultNodeDto[]
 }
 
 export interface PermissionModeState {
@@ -573,11 +391,9 @@ export type SessionEvent =
       changes: Partial<
         Pick<
           Session,
-          | 'taskNodeCount'
           | 'kanbanColumn'
-          | 'taskDraft'
-          | 'taskSlug'
           | 'projectId'
+          | 'isPinned'
           | 'taskGoal'
           | 'taskPriority'
           | 'taskDueAt'
@@ -658,7 +474,9 @@ export type SessionCommand =
   | { type: 'setSources'; sourceSlugs: string[] }
   | { type: 'setLabels'; labels: string[] }
   | { type: 'setProjectId'; projectId: string | null }
+  | { type: 'setExpertId'; expertId: string | null }
   | { type: 'setKanbanColumn'; column: string | null }
+  | { type: 'setPinned'; pinned: boolean }
   | {
       type: 'setTaskDetails'
       patch: {
@@ -687,6 +505,8 @@ export type SessionCommand =
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
   | { type: 'clearPendingPlanExecution' }
+  | { type: 'editMessageAsBranch'; messageId: string; content: string }
+  | { type: 'deleteMessageAsBranch'; messageId: string }
   | { type: 'addAnnotation'; messageId: string; annotation: AnnotationV1 }
   | { type: 'removeAnnotation'; messageId: string; annotationId: string }
   | {
@@ -922,131 +742,6 @@ export interface RefreshTitleResult {
   success: boolean
   title?: string
   error?: string
-}
-
-export interface ExploreBriefSessionInput {
-  id: string
-  title: string
-  preview?: string
-  lastMessageAt?: number
-  isProcessing?: boolean
-  hasUnread?: boolean
-  taskGoal?: string
-  taskPriority?: TaskPriority
-  taskDueAt?: number
-  taskReminderAt?: number
-  latestCheckpoint?: string
-  nextSteps?: string[]
-  /** Server-enriched recent user/assistant context. Never required from clients. */
-  recentContext?: string
-}
-
-export interface ExploreBriefTabInput {
-  id: string
-  title: string
-  url?: string
-}
-
-export interface ExploreBriefRequest {
-  workspaceId: string
-  locale: string
-  recommendationCount: 3 | 5
-  sessions: ExploreBriefSessionInput[]
-  tabs: ExploreBriefTabInput[]
-}
-
-export interface ExploreBriefThread {
-  title: string
-  detail: string
-}
-
-export interface ExploreBriefRecommendation {
-  kind: 'session' | 'tab' | 'prompt'
-  targetId?: string
-  title: string
-  description: string
-  prompt?: string
-}
-
-export interface ExploreBriefResult {
-  headline: string
-  summary: string
-  threads: ExploreBriefThread[]
-  recommendations: ExploreBriefRecommendation[]
-  generatedAt: number
-  model?: string
-}
-
-// ---------------------------------------------------------------------------
-// Complete and archive (v0.16 Phase C) — single RPC
-// ---------------------------------------------------------------------------
-
-export interface CompleteAndArchiveRequest {
-  workspaceId: string
-  sessionId: string
-  options?: {
-    createFinalCheckpoint?: boolean
-    resolveOpenLoops?: boolean
-    dismissGuidance?: boolean
-    clearTodaySnooze?: boolean
-  }
-  /** Client idempotency key; same key retries return the same logical result. */
-  idempotencyKey?: string
-}
-
-export type CompleteAndArchiveStepName =
-  | 'mark_done'
-  | 'create_checkpoint'
-  | 'resolve_loops'
-  | 'dismiss_guidance'
-  | 'archive'
-  | 'clear_snooze'
-
-export interface CompleteAndArchiveStepResult {
-  step: CompleteAndArchiveStepName
-  status: 'ok' | 'skipped' | 'failed' | 'already_done'
-  detail?: string
-  errorCode?: string
-}
-
-export interface CompleteAndArchiveResponse {
-  sessionId: string
-  ok: boolean
-  alreadyCompleted: boolean
-  steps: CompleteAndArchiveStepResult[]
-}
-
-// ---------------------------------------------------------------------------
-// Today product state (snooze) — v0.16 Phase C
-// ---------------------------------------------------------------------------
-
-export interface TodaySnoozeDto {
-  schemaVersion: 1
-  targetKey: string
-  until: number | null
-  createdAt: number
-  source: 'user'
-}
-
-export interface TodayStateDto {
-  schemaVersion: 1
-  snoozes: TodaySnoozeDto[]
-}
-
-export interface TodayGetStateRequest {
-  workspaceId: string
-}
-
-export interface TodaySnoozeRequest {
-  workspaceId: string
-  targetKey: string
-  /** Unix ms, or null = pause until user clears ("暂时不再提醒") */
-  until: number | null
-}
-
-export interface TodayClearSnoozeRequest {
-  workspaceId: string
-  targetKey: string
 }
 
 // ---------------------------------------------------------------------------
@@ -1346,7 +1041,35 @@ export interface BrowserPermissionEntry {
   updatedAt: number
 }
 
-export type BrowserProfileCollectionKind = 'bookmarks' | 'history' | 'downloads'
+export type BrowserProfileCollectionKind = 'bookmarks' | 'history' | 'downloads' | 'permissions'
+
+export type BrowserLinkOpenBehavior = 'internal' | 'system' | 'ask'
+export type BrowserNewTabBehavior = 'default' | 'blank' | 'custom'
+export type BrowserPermissionBehavior = 'ask' | 'block'
+export type BrowserDataTimeRange = 'hour' | 'day' | 'week' | 'four-weeks' | 'all'
+
+export interface BrowserSettings {
+  linkOpenBehavior: BrowserLinkOpenBehavior
+  newTabBehavior: BrowserNewTabBehavior
+  customNewTabUrl: string
+  downloadPath: string
+  askDownloadLocation: boolean
+  permissionBehavior: BrowserPermissionBehavior
+}
+
+export interface BrowserClearDataRequest {
+  timeRange: BrowserDataTimeRange
+  history: boolean
+  downloads: boolean
+  cookiesAndSiteData: boolean
+  cache: boolean
+  permissions: boolean
+}
+
+export interface BrowserSiteDataSummary {
+  origin: string
+  cookieCount: number
+}
 
 export interface BrowserWorkspaceSnapshot {
   version: 1
@@ -1899,5 +1622,3 @@ export const PRIVACY_NEVER_COLLECT_DTO = [
   'password',
   'form_sensitive',
 ] as const
-
-

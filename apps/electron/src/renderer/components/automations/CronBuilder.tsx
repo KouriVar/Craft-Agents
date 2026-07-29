@@ -27,13 +27,13 @@ interface CronPreset {
 }
 
 const PRESETS: CronPreset[] = [
-  { label: 'Every minute',       cron: '* * * * *',     description: 'Runs every minute' },
-  { label: 'Every 15 min',       cron: '*/15 * * * *',  description: 'Runs every 15 minutes' },
-  { label: 'Every hour',         cron: '0 * * * *',     description: 'At the top of every hour' },
-  { label: 'Daily at midnight',  cron: '0 0 * * *',     description: 'Once a day at 00:00' },
-  { label: 'Daily at 9am',       cron: '0 9 * * *',     description: 'Once a day at 09:00' },
-  { label: 'Weekdays at 9am',    cron: '0 9 * * 1-5',   description: 'Monday–Friday at 09:00' },
-  { label: 'Monthly on 1st',     cron: '0 0 1 * *',     description: 'First day of each month at 00:00' },
+  { label: '每分钟', cron: '* * * * *', description: '每分钟运行' },
+  { label: '每 15 分钟', cron: '*/15 * * * *', description: '每 15 分钟运行' },
+  { label: '每小时', cron: '0 * * * *', description: '每个整点运行' },
+  { label: '每天午夜', cron: '0 0 * * *', description: '每天 00:00 运行' },
+  { label: '每天上午 9 点', cron: '0 9 * * *', description: '每天 09:00 运行' },
+  { label: '工作日上午 9 点', cron: '0 9 * * 1-5', description: '周一至周五 09:00 运行' },
+  { label: '每月 1 日', cron: '0 0 1 * *', description: '每月第一天 00:00 运行' },
 ]
 
 // ============================================================================
@@ -48,19 +48,19 @@ interface FieldDef {
 }
 
 const FIELDS: FieldDef[] = [
-  { label: 'Minute', min: 0, max: 59 },
-  { label: 'Hour', min: 0, max: 23 },
-  { label: 'Day', min: 1, max: 31 },
-  { label: 'Month', min: 1, max: 12, options: [
-    { value: '1', label: 'Jan' }, { value: '2', label: 'Feb' }, { value: '3', label: 'Mar' },
-    { value: '4', label: 'Apr' }, { value: '5', label: 'May' }, { value: '6', label: 'Jun' },
-    { value: '7', label: 'Jul' }, { value: '8', label: 'Aug' }, { value: '9', label: 'Sep' },
-    { value: '10', label: 'Oct' }, { value: '11', label: 'Nov' }, { value: '12', label: 'Dec' },
+  { label: '分钟', min: 0, max: 59 },
+  { label: '小时', min: 0, max: 23 },
+  { label: '日期', min: 1, max: 31 },
+  { label: '月份', min: 1, max: 12, options: [
+    { value: '1', label: '1 月' }, { value: '2', label: '2 月' }, { value: '3', label: '3 月' },
+    { value: '4', label: '4 月' }, { value: '5', label: '5 月' }, { value: '6', label: '6 月' },
+    { value: '7', label: '7 月' }, { value: '8', label: '8 月' }, { value: '9', label: '9 月' },
+    { value: '10', label: '10 月' }, { value: '11', label: '11 月' }, { value: '12', label: '12 月' },
   ]},
-  { label: 'Weekday', min: 0, max: 6, options: [
-    { value: '0', label: 'Sun' }, { value: '1', label: 'Mon' }, { value: '2', label: 'Tue' },
-    { value: '3', label: 'Wed' }, { value: '4', label: 'Thu' }, { value: '5', label: 'Fri' },
-    { value: '6', label: 'Sat' },
+  { label: '星期', min: 0, max: 6, options: [
+    { value: '0', label: '周日' }, { value: '1', label: '周一' }, { value: '2', label: '周二' },
+    { value: '3', label: '周三' }, { value: '4', label: '周四' }, { value: '5', label: '周五' },
+    { value: '6', label: '周六' },
   ]},
 ]
 
@@ -70,7 +70,7 @@ const FIELDS: FieldDef[] = [
 
 function validateCron(cron: string): string | null {
   const parts = cron.trim().split(/\s+/)
-  if (parts.length !== 5) return 'Schedule needs 5 parts: minute, hour, day, month, and weekday'
+  if (parts.length !== 5) return '定时表达式需要 5 段：分钟、小时、日期、月份和星期'
   // Basic validation per field
   const ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]]
   for (let i = 0; i < 5; i++) {
@@ -78,7 +78,7 @@ function validateCron(cron: string): string | null {
     if (part === '*') continue
     if (/^\*\/\d+$/.test(part)) continue
     if (/^[\d,\-\/]+$/.test(part)) continue
-    return `Invalid value in ${FIELDS[i]?.label ?? `field ${i + 1}`}: "${part}"`
+    return `${FIELDS[i]?.label ?? `第 ${i + 1} 段`}的值无效："${part}"`
   }
   return null
 }
@@ -242,7 +242,7 @@ export function CronBuilder({
       </div>
 
       {/* Summary */}
-      <div className="bg-background shadow-minimal rounded-[8px] p-4 space-y-3">
+      <div className="bg-background shadow-minimal rounded-surface p-4 space-y-3">
         {/* Human-readable description */}
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-muted-foreground" />
@@ -252,18 +252,18 @@ export function CronBuilder({
         {/* Next runs */}
         {nextRuns.length > 0 && !validationError && (
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Next runs:</span>
+            <span className="text-xs text-muted-foreground">下次运行：</span>
             <div className="flex flex-col gap-0.5">
               {(() => {
                 const spansYears = nextRuns.length > 1 && nextRuns[0].getFullYear() !== nextRuns[nextRuns.length - 1].getFullYear()
                 return nextRuns.map((date, i) => (
                   <span key={i} className="text-xs text-foreground/70 tabular-nums">
-                    {date.toLocaleDateString('en-US', {
+                    {date.toLocaleDateString('zh-CN', {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
                       ...(spansYears && { year: 'numeric' }),
-                    })} {date.toLocaleTimeString('en-US', {
+                    })} {date.toLocaleTimeString('zh-CN', {
                       hour: '2-digit',
                       minute: '2-digit',
                       hour12: false,

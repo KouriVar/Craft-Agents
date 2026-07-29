@@ -24,8 +24,9 @@ export const KEYS = {
   collapsedSidebarItems: 'collapsed-sidebar-items',
   chatGroupingMode: 'chat-grouping-mode', // How to group chats: 'date' | 'status'
   collapsedSessionGroups: 'collapsed-session-groups', // Collapsed group keys in session list
-  collapsedExploreGroups: 'collapsed-explore-groups', // Collapsed group keys in the Explore (browser tabs) list
-  exploreMode: 'explore-mode', // Last Explore perspective: sessions or browser
+  browserCollapsedGroups: 'browser-collapsed-groups', // Collapsed group keys in the browser tab list
+  legacyCollapsedExploreGroups: 'collapsed-explore-groups', // Read once then removed during v0.20 migration
+  legacyExploreMode: 'explore-mode', // Obsolete v0.19 shared Explore state; retained only for cleanup
 
   // Focus mode (legacy key retained only so AppShell can remove persisted state)
   focusModeEnabled: 'focus-mode-enabled',
@@ -44,7 +45,6 @@ export const KEYS = {
   rightSidebarWidgetTabs: 'right-sidebar-widget-tabs',
   browserWorkspace: 'browser-workspace',
   browserIntentCorrections: 'browser-intent-corrections',
-  exploreBrief: 'explore-brief',
 
   // Working directory
   recentWorkingDirs: 'recent-working-dirs',
@@ -65,6 +65,9 @@ export const KEYS = {
   // Appearance
   showConnectionIcons: 'show-connection-icons',
   projectColorTreatment: 'project-color-treatment', // 'stripe' | 'stripe-tint'
+  windowsBackgroundEffectEnabled: 'windows-background-effect-enabled', // boolean; migrated from shellGlassIntensity on Windows
+  shellGlassIntensity: 'shell-glass-intensity', // 'off' | 'subtle' | 'medium' | 'strong' | 'max'
+  panelGlassIntensity: 'panel-glass-intensity', // 'off' | 'subtle' | 'medium' | 'strong' | 'max'
 
   // What's New
   whatsNewLastSeenVersion: 'whats-new-last-seen-version',

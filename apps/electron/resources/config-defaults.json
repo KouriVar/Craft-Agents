@@ -3,6 +3,8 @@
   "description": "Default configuration values for Craft Agents",
   "defaults": {
     "notificationsEnabled": true,
+    "doubleCommandScreenshotEnabled": true,
+    "doubleCommandScreenshotHideApp": false,
     "colorTheme": "default",
     "autoCapitalisation": true,
     "sendMessageKey": "enter",

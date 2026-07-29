@@ -179,7 +179,7 @@ export function MobileAppMenu(props: AppMenuProps) {
         onClick={() => state.isOpen ? close() : dispatch({ type: 'open' })}
         aria-label={t('menu.craftMenu')}
         data-state={state.isOpen ? 'open' : 'closed'}
-        className="rounded-[8px]"
+        className="rounded-surface"
       >
         <CraftAgentsSymbol className="!h-5 !w-auto text-accent" />
       </TopBarButton>

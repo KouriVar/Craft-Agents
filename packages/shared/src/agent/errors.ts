@@ -181,6 +181,14 @@ const ERROR_DEFINITIONS: Record<ErrorCode, Omit<AgentError, 'code' | 'originalEr
     ],
     canRetry: false,
   },
+  model_disabled: {
+    title: '模型不可用',
+    message: '当前模型已被服务商或账号策略禁用。请在设置中刷新模型列表并切换到可用模型；重复重试不会恢复该模型。',
+    actions: [
+      { key: 's', label: '打开模型设置', command: '/settings', action: 'settings' },
+    ],
+    canRetry: false,
+  },
   invalid_model: {
     title: 'Invalid Model',
     message: 'The selected model was not found. Please check your model configuration in settings.',
@@ -387,6 +395,13 @@ export function parseError(
     code = 'data_policy_error';
   // Check for model-specific errors (OpenRouter, etc.)
   // Tool support errors must be checked BEFORE model errors since tool errors often contain "model"
+  } else if (
+    lowerMessage.includes('model is disabled') ||
+    lowerMessage.includes('model has been disabled') ||
+    lowerMessage.includes('model disabled') ||
+    lowerMessage.includes('disabled model')
+  ) {
+    code = 'model_disabled';
   } else if (
     lowerMessage.includes('no endpoints found that support tool use') ||
     lowerMessage.includes('does not support tool') ||

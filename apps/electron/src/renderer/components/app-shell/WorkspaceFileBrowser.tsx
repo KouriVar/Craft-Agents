@@ -85,7 +85,7 @@ export function WorkspaceFileBrowser({ rootPath, className }: WorkspaceFileBrows
           type="button"
           onClick={() => void loadPath(currentPath)}
           disabled={!currentPath || loading}
-          className="h-7 w-7 shrink-0 rounded-[4px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors flex items-center justify-center disabled:opacity-40"
+          className="h-7 w-7 shrink-0 rounded-menu-item text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors flex items-center justify-center disabled:opacity-40"
           aria-label="Refresh"
           title="Refresh"
         >
@@ -132,7 +132,7 @@ export function WorkspaceFileBrowser({ rootPath, className }: WorkspaceFileBrows
                   key={entry.path}
                   type="button"
                   onClick={() => handleEntryClick(entry)}
-                  className="grid h-8 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-[6px] px-2 text-left text-sm text-foreground/85 hover:bg-sidebar-hover transition-colors"
+                  className="grid h-8 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-control px-2 text-left text-sm text-foreground/85 hover:bg-sidebar-hover transition-colors"
                   title={entry.path}
                 >
                   {getEntryIcon(entry)}

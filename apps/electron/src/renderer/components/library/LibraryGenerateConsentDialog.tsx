@@ -70,7 +70,7 @@ export function LibraryGenerateConsentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2 rounded-[8px] border border-border/50 bg-foreground/[0.02] px-3 py-2.5 text-[11px] text-muted-foreground">
+        <div className="space-y-2 rounded-surface border border-border/50 bg-foreground/[0.02] px-3 py-2.5 text-[11px] text-muted-foreground">
           <p>{t('library.consentSource')}: {t('library.consentSourceSession')}</p>
           <p>{t('library.consentScope')}: {messageScopeLabel || t('library.consentScopeAll')}</p>
           <p>{t('library.consentModel')}: {modelLabel || t('library.consentModelDefault')}</p>

@@ -92,6 +92,8 @@ export interface EntityRowProps {
   menuContent?: React.ReactNode
   /** Context menu content when different from dropdown (e.g. batch menu in multi-select) */
   contextMenuContent?: React.ReactNode
+  /** Opens a menu outside the React/Radix overlay stack, such as an Electron native menu. */
+  onOpenNativeMenu?: (e: React.MouseEvent) => void | Promise<void>
   /** Whether to hide the more button (e.g. when overlay is showing) */
   hideMoreButton?: boolean
   /** Whether to render the menu surface in compact (drawer) mode. Pass-through
@@ -138,6 +140,7 @@ export function EntityRow({
   showSeparator = false,
   menuContent,
   contextMenuContent,
+  onOpenNativeMenu,
   hideMoreButton = false,
   isCompactMode = false,
   compactMenu,
@@ -194,6 +197,17 @@ export function EntityRow({
     setCompactMenuOpen(true)
     armSuppression()
   }, [armSuppression])
+
+  const openNativeMenuFromGesture = React.useCallback(
+    (e: React.MouseEvent) => {
+      if (!onOpenNativeMenu) return
+      e.preventDefault()
+      e.stopPropagation()
+      setMenuOpen(true)
+      void Promise.resolve(onOpenNativeMenu(e)).finally(() => setMenuOpen(false))
+    },
+    [onOpenNativeMenu],
+  )
 
   const onPointerDown = React.useCallback(
     (e: React.PointerEvent) => {
@@ -259,7 +273,7 @@ export function EntityRow({
   // In compact mode we don't render Radix ContextMenu, so don't expose the
   // override either — the batch menu / right-click is handled by the drawer.
   // In desktop mode the existing fallback applies.
-  const resolvedContextMenu = useCompactMenu
+  const resolvedContextMenu = useCompactMenu || onOpenNativeMenu
     ? null
     : contextMenuContent ?? menuContent
 
@@ -277,7 +291,7 @@ export function EntityRow({
       <button
         {...(buttonProps as React.ButtonHTMLAttributes<HTMLButtonElement>)}
         className={cn(
-          "entity-row-btn flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]",
+          "entity-row-btn flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-surface",
           "transition-[background-color] duration-75",
           (isSelected || isInMultiSelect)
             ? "bg-foreground/3"
@@ -291,7 +305,7 @@ export function EntityRow({
         onPointerUp={useCompactMenu ? cancelLongPress : undefined}
         onPointerCancel={useCompactMenu ? cancelLongPress : undefined}
         onPointerLeave={useCompactMenu ? cancelLongPress : undefined}
-        onContextMenu={useCompactMenu ? onContextMenuCompact : undefined}
+        onContextMenu={useCompactMenu ? onContextMenuCompact : openNativeMenuFromGesture}
       >
         {/* Content column */}
         <div className="flex flex-col gap-1.5 min-w-0 flex-1">
@@ -315,7 +329,7 @@ export function EntityRow({
                 )}>
                   {titleTrailing}
                 </span>
-                {(menuContent || useCompactMenu) && !hideMoreButton && (
+                {(menuContent || useCompactMenu || onOpenNativeMenu) && !hideMoreButton && (
                   <div
                     data-touch-reveal="true"
                     className={cn(
@@ -332,16 +346,25 @@ export function EntityRow({
                       <button
                         type="button"
                         onClick={() => setCompactMenuOpen(true)}
-                        className="p-1 rounded-[6px] hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer"
+                        className="p-1 rounded-control hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer"
                         aria-haspopup="dialog"
                         aria-expanded={compactMenuOpen}
                       >
                         <MoreHorizontal className="h-3.5 w-3.5 text-foreground/40" />
                       </button>
+                    ) : onOpenNativeMenu ? (
+                      <button
+                        type="button"
+                        onClick={openNativeMenuFromGesture}
+                        className="p-1 rounded-control hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer"
+                        aria-haspopup="menu"
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
                     ) : (
                       <DropdownMenu modal={true} open={menuOpen} onOpenChange={setMenuOpen}>
                         <DropdownMenuTrigger asChild>
-                          <div className="p-1 rounded-[6px] hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
+                          <div className="p-1 rounded-control hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
                             <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
                           </div>
                         </DropdownMenuTrigger>
@@ -421,7 +444,7 @@ export function EntityRow({
       {overlay}
 
       {/* More menu button — visible on hover or when menu is open (skipped when titleTrailing handles it inline) */}
-      {(menuContent || useCompactMenu) && !hideMoreButton && !titleTrailing && (
+      {(menuContent || useCompactMenu || onOpenNativeMenu) && !hideMoreButton && !titleTrailing && (
         <div
           data-touch-reveal="true"
           className={cn(
@@ -434,7 +457,7 @@ export function EntityRow({
           )}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center rounded-[8px] overflow-hidden border border-transparent hover:border-border/50">
+          <div className="flex items-center rounded-surface overflow-hidden border border-transparent hover:border-border/50">
             {useCompactMenu ? (
               <button
                 type="button"
@@ -444,6 +467,15 @@ export function EntityRow({
                 aria-expanded={compactMenuOpen}
               >
                 <MoreHorizontal className="h-4 w-4 text-foreground/40" />
+              </button>
+            ) : onOpenNativeMenu ? (
+              <button
+                type="button"
+                onClick={openNativeMenuFromGesture}
+                className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer"
+                aria-haspopup="menu"
+              >
+                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
               </button>
             ) : (
               <DropdownMenu modal={true} open={menuOpen} onOpenChange={setMenuOpen}>

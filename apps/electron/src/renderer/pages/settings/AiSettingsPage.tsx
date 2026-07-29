@@ -24,7 +24,7 @@ import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
 import { motion, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -55,6 +55,8 @@ import { useAppShellContext } from '@/context/AppShellContext'
 import { getModelShortName, type ModelDefinition } from '@config/models'
 import { getModelsForProviderType, resolveMidStreamBehavior, type CustomEndpointApi, type MidStreamBehavior } from '@config/llm-connections'
 import { toast } from 'sonner'
+import { useSettingsSectionScroll } from './SettingsPageChrome'
+import { useSettingsNavSection } from './SettingsSectionContext'
 
 /**
  * Compact token count: 1234 → "1.2K", 1234567 → "1.2M". Used by the RTK
@@ -625,6 +627,7 @@ function getApiKeyMethodForConnection(conn: LlmConnectionWithStatus): ApiSetupMe
 
 export default function AiSettingsPage() {
   const { t } = useTranslation()
+  useSettingsSectionScroll(useSettingsNavSection())
   const { llmConnections, refreshLlmConnections, activeWorkspaceId } = useAppShellContext()
 
   // API Setup overlay state
@@ -1051,7 +1054,7 @@ export default function AiSettingsPage() {
             <div className="space-y-8">
               {/* Default Settings - only show if connections exist */}
               {llmConnections.length > 0 && (
-              <SettingsSection title={t("settings.ai.defaultSection")} description={t("settings.ai.defaultSectionDesc")}>
+              <SettingsSection id="defaults" title={t("settings.ai.defaultSection")} description={t("settings.ai.defaultSectionDesc")}>
                 <SettingsCard>
                   <SettingsMenuSelectRow
                     label={t("settings.ai.connection")}
@@ -1093,7 +1096,7 @@ export default function AiSettingsPage() {
 
               {/* Workspace Overrides - only show if connections exist */}
               {workspaces.length > 0 && llmConnections.length > 0 && (
-                <SettingsSection title={t("settings.ai.workspaceOverrides")} description={t("settings.ai.workspaceOverridesDesc")}>
+                <SettingsSection id="workspace-overrides" title={t("settings.ai.workspaceOverrides")} description={t("settings.ai.workspaceOverridesDesc")}>
                   <div className="space-y-2">
                     {workspaces.map((workspace) => (
                       <WorkspaceOverrideCard
@@ -1108,7 +1111,7 @@ export default function AiSettingsPage() {
               )}
 
               {/* Connections Management */}
-              <SettingsSection title={t("settings.ai.connections")} description={t("settings.ai.connectionsDesc")}>
+              <SettingsSection id="connections" title={t("settings.ai.connections")} description={t("settings.ai.connectionsDesc")}>
                 <SettingsCard>
                   {llmConnections.length === 0 ? (
                     <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -1151,7 +1154,7 @@ export default function AiSettingsPage() {
               </SettingsSection>
 
               {/* Performance */}
-              <SettingsSection title={t("settings.ai.performance")} description={t("settings.ai.performanceDesc")}>
+              <SettingsSection id="performance" title={t("settings.ai.performance")} description={t("settings.ai.performanceDesc")}>
                 <SettingsCard>
                   <SettingsToggle
                     label={t("settings.ai.extendedContext")}

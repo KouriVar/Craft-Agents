@@ -101,6 +101,16 @@ export { resolveAutomationsConfigPath, generateShortId } from './resolve-config-
 
 // Cron matching
 export { matchesCron } from './cron-matcher.ts';
+export { pauseProjectAutomations, restoreProjectAutomations, listPausedProjectAutomations, type PausedProjectAutomation } from './project-lifecycle.ts';
+export { WebPageMonitorService, type WebPageMonitorTarget, type WebPageMonitorState } from './web-page-monitor.ts';
+export { handleIncomingAutomationWebhook } from './incoming-webhook.ts';
+
+export { inferAutomationDraft, validateAutomationDraft, confirmAutomationDraft, type AutomationDraft, type AutomationKind, type AutomationTrigger as V020AutomationTrigger, type AutomationEventSource } from './draft.ts';
+
+// v0.20 workflow runtime. Canvas editors must use this exact node set.
+export { evaluateWorkflowCondition, runWorkflow, validateWorkflow, WorkflowApprovalRequired, WorkflowApprovalRejected, type WorkflowDefinition, type WorkflowNode, type WorkflowRunContext, type WorkflowRunResult, type WorkflowNodeRun, type WorkflowOutputKind, type WorkflowResumeState } from './workflow.ts';
+export { listWorkflows, getWorkflow, saveWorkflow, deleteWorkflow, type StoredWorkflow } from './workflow-store.ts';
+export { savePendingWorkflowApproval, getWorkflowApproval, finishWorkflowApproval, WORKFLOW_APPROVAL_STORE_SCHEMA_VERSION, type PendingWorkflowApproval, type WorkflowApprovalStatus } from './workflow-approval-store.ts';
 
 // Event Bus
 export {

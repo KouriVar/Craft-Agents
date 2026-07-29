@@ -38,6 +38,19 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.window.FOCUS_STATE,
   RPC_CHANNELS.window.GET_FOCUS_STATE,
 
+  // screenCapture — Electron desktop capture and macOS shortcut state
+  RPC_CHANNELS.screenCapture.CURRENT,
+  RPC_CHANNELS.screenCapture.RESULT,
+  RPC_CHANNELS.screenCapture.REQUESTED,
+  RPC_CHANNELS.screenCapture.SHORTCUT_STATUS,
+  RPC_CHANNELS.screenCapture.GET_SHORTCUT_ENABLED,
+  RPC_CHANNELS.screenCapture.SET_SHORTCUT_ENABLED,
+  RPC_CHANNELS.screenCapture.GET_HIDE_APP,
+  RPC_CHANNELS.screenCapture.SET_HIDE_APP,
+  RPC_CHANNELS.screenCapture.GET_SHORTCUT_STATUS,
+  RPC_CHANNELS.screenCapture.GET_PERMISSION_STATUS,
+  RPC_CHANNELS.screenCapture.OPEN_PERMISSION_SETTINGS,
+
   // file — native file dialog
   RPC_CHANNELS.file.OPEN_DIALOG,
   // file — draft hydration for user-attached paths. Paths in drafts.json were captured
@@ -53,6 +66,7 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.library.DELETE,
   RPC_CHANNELS.library.RESTORE_VERSION,
   RPC_CHANNELS.library.REPAIR,
+  RPC_CHANNELS.search.REPAIR,
 
   // auth — local auth state + native dialogs
   RPC_CHANNELS.auth.LOGOUT,
@@ -136,9 +150,7 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   // deeplink — local deep link handling
   RPC_CHANNELS.deeplink.NAVIGATE,
 
-  // notification — local OS notifications
-  RPC_CHANNELS.notification.SHOW,
-  RPC_CHANNELS.notification.NAVIGATE,
+  // notification preferences
   RPC_CHANNELS.notification.GET_ENABLED,
   RPC_CHANNELS.notification.SET_ENABLED,
 
@@ -286,8 +298,6 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.DELETE,
   RPC_CHANNELS.sessions.GET_MESSAGES,
   RPC_CHANNELS.sessions.SEND_MESSAGE,
-  RPC_CHANNELS.sessions.GENERATE_EXPLORE_BRIEF,
-  RPC_CHANNELS.sessions.COMPLETE_AND_ARCHIVE,
   RPC_CHANNELS.sessions.CANCEL,
   RPC_CHANNELS.sessions.KILL_SHELL,
   RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
@@ -299,8 +309,6 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.GET_MODEL,
   RPC_CHANNELS.sessions.SET_MODEL,
   RPC_CHANNELS.sessions.GET_FILES,
-  RPC_CHANNELS.sessions.GET_NOTES,
-  RPC_CHANNELS.sessions.SET_NOTES,
   RPC_CHANNELS.sessions.WATCH_FILES,
   RPC_CHANNELS.sessions.UNWATCH_FILES,
   RPC_CHANNELS.sessions.FILES_CHANGED,
@@ -310,30 +318,11 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.sessions.EXPORT_REMOTE_TRANSFER,
   RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER,
 
-  // today — Explore Today snooze state (workspace-local product state)
-  RPC_CHANNELS.today.GET_STATE,
-  RPC_CHANNELS.today.SNOOZE,
-  RPC_CHANNELS.today.CLEAR_SNOOZE,
-
   // transfer — chunked large-payload import (sessions, resources)
   RPC_CHANNELS.transfer.START,
   RPC_CHANNELS.transfer.CHUNK,
   RPC_CHANNELS.transfer.COMMIT,
   RPC_CHANNELS.transfer.ABORT,
-
-  // tasks — workspace content (Conductor DAG runs on the workspace server)
-  RPC_CHANNELS.tasks.GET_OUTPUT,
-  RPC_CHANNELS.tasks.VALIDATE,
-  RPC_CHANNELS.tasks.CREATE,
-  RPC_CHANNELS.tasks.GENERATE,
-  RPC_CHANNELS.tasks.GENERATED,
-  RPC_CHANNELS.tasks.RUN,
-  RPC_CHANNELS.tasks.PAUSE,
-  RPC_CHANNELS.tasks.RESUME,
-  RPC_CHANNELS.tasks.STOP,
-  RPC_CHANNELS.tasks.GET,
-  RPC_CHANNELS.tasks.LIST,
-  RPC_CHANNELS.tasks.GET_RESULTS,
 
   // file — workspace files (not openDialog which is native)
   RPC_CHANNELS.file.READ,
@@ -459,6 +448,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.plugins.ADD_MARKETPLACE_SOURCE,
   RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE,
   RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG,
+  RPC_CHANNELS.plugins.PREVIEW_UPDATE,
   RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN,
   RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE,
   RPC_CHANNELS.plugins.REGISTER_LOCAL,
@@ -490,6 +480,8 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
 
   // automations — workspace automations
   RPC_CHANNELS.automations.GET,
+  RPC_CHANNELS.automations.CREATE,
+  RPC_CHANNELS.automations.INFER,
   RPC_CHANNELS.automations.TEST,
   RPC_CHANNELS.automations.SET_ENABLED,
   RPC_CHANNELS.automations.DUPLICATE,
@@ -498,6 +490,21 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.automations.GET_LAST_EXECUTED,
   RPC_CHANNELS.automations.REPLAY,
   RPC_CHANNELS.automations.CHANGED,
+
+  // dynamic — workspace notification center
+  RPC_CHANNELS.dynamic.CREATE,
+  RPC_CHANNELS.dynamic.LIST,
+  RPC_CHANNELS.dynamic.MARK_READ,
+  RPC_CHANNELS.dynamic.CLEAR,
+  RPC_CHANNELS.dynamic.RESOLVE,
+  RPC_CHANNELS.dynamic.GET_MUTE_RULES,
+  RPC_CHANNELS.dynamic.SET_MUTE_RULES,
+  RPC_CHANNELS.dynamic.RESPOND_PERMISSION,
+
+  RPC_CHANNELS.workflows.LIST,
+  RPC_CHANNELS.workflows.SAVE,
+  RPC_CHANNELS.workflows.DELETE,
+  RPC_CHANNELS.workflows.RUN,
 
   // projects — workspace projects
   RPC_CHANNELS.projects.GET,
@@ -510,6 +517,8 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.projects.DELETE_ASSET,
   RPC_CHANNELS.projects.GET_MEMORY,
   RPC_CHANNELS.projects.SET_MEMORY,
+  RPC_CHANNELS.projects.RESTORE_AUTOMATIONS,
+  RPC_CHANNELS.projects.LIST_PAUSED_AUTOMATIONS,
   RPC_CHANNELS.projects.CHANGED,
 
   // git — workspace filesystem
@@ -584,6 +593,26 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.library.GET_VERSION,
   RPC_CHANNELS.library.EXPORT,
   RPC_CHANNELS.library.UNLINK_SESSION,
+  RPC_CHANNELS.library.IMPORT_FILE,
+  RPC_CHANNELS.library.CREATE_MINDMAP,
+  RPC_CHANNELS.library.UPDATE_MINDMAP,
+  RPC_CHANNELS.library.LIST_MINDMAPS,
+  RPC_CHANNELS.library.GET_MINDMAP,
+  RPC_CHANNELS.search.QUERY,
+  RPC_CHANNELS.experts.LIST,
+  RPC_CHANNELS.experts.GET,
+  RPC_CHANNELS.experts.CREATE,
+  RPC_CHANNELS.experts.UPDATE,
+  RPC_CHANNELS.experts.DUPLICATE,
+  RPC_CHANNELS.experts.DELETE,
+  RPC_CHANNELS.experts.RESOLVE_CAPABILITIES,
+  RPC_CHANNELS.experts.GET_CAPABILITY_ASSIGNMENT,
+  RPC_CHANNELS.experts.SET_CAPABILITY_ASSIGNMENT,
+  RPC_CHANNELS.connectors.LIST,
+  RPC_CHANNELS.connectors.GET,
+  RPC_CHANNELS.connectors.CREATE,
+  RPC_CHANNELS.connectors.UPDATE,
+  RPC_CHANNELS.connectors.DELETE,
 ])
 
 // ---------------------------------------------------------------------------

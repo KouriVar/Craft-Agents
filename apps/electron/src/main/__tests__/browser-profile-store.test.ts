@@ -89,7 +89,7 @@ describe('BrowserProfileStore', () => {
     expect(restored.listPermissions('https://example.com')).toEqual([
       expect.objectContaining({ permission: 'notifications', allowed: false }),
     ])
-    expect(JSON.parse(readFileSync(filePath, 'utf8')).version).toBe(3)
+    expect(JSON.parse(readFileSync(filePath, 'utf8')).version).toBe(4)
     expect(statSync(filePath).mode & 0o777).toBe(0o600)
   })
 
@@ -134,6 +134,77 @@ describe('BrowserProfileStore', () => {
     store.removeHistoryEntry('workspace-a', 'history-workspace-a')
     expect(store.listHistory('workspace-a')).toEqual([])
     expect(store.listHistory('workspace-b')).toHaveLength(1)
+  })
+
+  it('clears history and download records within a time range without touching bookmarks or files', () => {
+    const { store } = createStore()
+    const oldTimestamp = Date.now() - 10_000
+    const recentTimestamp = Date.now()
+    store.addBookmark({
+      id: 'bookmark-keep',
+      workspaceId: 'workspace-a',
+      url: 'https://example.com/',
+      title: 'Keep me',
+      favicon: null,
+      createdAt: 1,
+    })
+    for (const [suffix, timestamp] of [['old', oldTimestamp], ['recent', recentTimestamp]] as const) {
+      store.recordHistory({
+        id: `history-${suffix}`,
+        workspaceId: 'workspace-a',
+        tabId: 'browser-1',
+        url: `https://example.com/${suffix}`,
+        title: suffix,
+        favicon: null,
+        visitedAt: timestamp,
+      })
+      store.upsertDownload({
+        id: `download-${suffix}`,
+        workspaceId: 'workspace-a',
+        tabId: 'browser-1',
+        timestamp,
+        url: `https://example.com/${suffix}.zip`,
+        filename: `${suffix}.zip`,
+        state: 'completed',
+        bytesReceived: 1,
+        totalBytes: 1,
+        mimeType: 'application/zip',
+        savePath: `/tmp/${suffix}.zip`,
+      })
+    }
+
+    store.clearHistory('workspace-a', recentTimestamp)
+    store.clearDownloads('workspace-a', recentTimestamp)
+
+    expect(store.listHistory('workspace-a').map((entry) => entry.id)).toEqual(['history-old'])
+    expect(store.listDownloads('workspace-a').map((entry) => entry.id)).toEqual(['download-old'])
+    expect(store.listBookmarks('workspace-a')).toHaveLength(1)
+  })
+
+  it('persists browser settings and clears permission exceptions independently', () => {
+    const { store, filePath } = createStore()
+    store.updateSettings({
+      linkOpenBehavior: 'system',
+      downloadPath: '/tmp',
+      askDownloadLocation: true,
+      permissionBehavior: 'block',
+    })
+    store.setPermission({
+      origin: 'https://example.com',
+      permission: 'media',
+      allowed: true,
+      updatedAt: 1,
+    })
+    store.clearPermissions()
+
+    const restored = new BrowserProfileStore(filePath)
+    expect(restored.getSettings()).toMatchObject({
+      linkOpenBehavior: 'system',
+      downloadPath: '/tmp',
+      askDownloadLocation: true,
+      permissionBehavior: 'block',
+    })
+    expect(restored.listPermissions()).toEqual([])
   })
 
   it('persists crash-recovery tab snapshots in the browser profile', () => {

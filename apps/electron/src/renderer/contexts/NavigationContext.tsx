@@ -72,6 +72,7 @@ import {
   isPluginsNavigation,
   isBrowserNavigation,
   isAutomationsNavigation,
+  isDynamicNavigation,
   isProjectsNavigation,
   isLibraryNavigation,
   DEFAULT_NAVIGATION_STATE,
@@ -98,7 +99,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isPluginsNavigation, isBrowserNavigation, isAutomationsNavigation, isProjectsNavigation, isLibraryNavigation }
+export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isPluginsNavigation, isBrowserNavigation, isAutomationsNavigation, isDynamicNavigation, isProjectsNavigation, isLibraryNavigation }
 
 // =============================================================================
 // Context
@@ -679,14 +680,9 @@ export function NavigationProvider({
         return nextState
       }
 
-      // Skills: auto-select first skill
-      if (isSkillsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
-        const firstSkillSlug = getFirstSkillSlug()
-        if (firstSkillSlug) {
-          return { ...nextState, details: { type: 'skill', skillSlug: firstSkillSlug } }
-        }
-        return nextState
-      }
+      // The top-level Skills route is the v0.20 capability center. Do not
+      // auto-select a legacy skill detail; explicit deep links remain supported.
+      if (isSkillsNavigation(nextState) && !nextState.details) return nextState
 
       if (isPluginsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
         const firstPluginName = getFirstPluginName()
@@ -1050,19 +1046,12 @@ export function NavigationProvider({
         // Replace all params with the saved workspace's URL
         url.search = savedSearch
       } else {
-        // No saved state — default to Explore.
+        // No saved state — Sessions is the confirmed default app destination.
         for (const key of [...url.searchParams.keys()]) {
           url.searchParams.delete(key)
         }
         url.searchParams.set('ws', workspaceSlug)
-        const savedExploreMode = storage.get<'sessions' | 'browser'>(
-          storage.KEYS.exploreMode,
-          'sessions',
-        )
-        url.searchParams.set(
-          'route',
-          savedExploreMode === 'browser' ? routes.view.browser() : routes.view.allSessions(),
-        )
+        url.searchParams.set('route', routes.view.allSessions())
       }
 
       // Push a new history entry for the workspace switch

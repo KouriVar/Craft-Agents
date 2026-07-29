@@ -22,15 +22,18 @@ import { registerSkillsHandlers } from './skills'
 import { registerSourcesHandlers } from './sources'
 import { registerStatusesHandlers } from './statuses'
 import { registerSystemCoreHandlers } from './system'
-import { registerTasksHandlers } from './tasks'
 import { registerTransferHandlers } from './transfer'
 import { registerWorkspaceCoreHandlers } from './workspace'
 import { registerMessagingHandlers } from './messaging'
 import { registerWidgetHandlers } from './widgets'
 import { registerCognitionHandlers } from './cognition'
 import { registerPrivacyHandlers } from './privacy'
-import { registerTodayHandlers } from './today'
 import { registerLibraryHandlers } from './library'
+import { registerExpertsHandlers } from './experts'
+import { registerConnectorsHandlers } from './connectors'
+import { registerSearchHandlers } from './search'
+import { registerDynamicHandlers } from './dynamic'
+import { registerWorkflowHandlers } from './workflows'
 
 export function registerCoreRpcHandlers(
   server: RpcServer,
@@ -54,13 +57,16 @@ export function registerCoreRpcHandlers(
   registerSourcesHandlers(server, deps)
   registerStatusesHandlers(server, deps)
   registerSystemCoreHandlers(server, deps)
-  registerTasksHandlers(server, deps)
   registerTransferHandlers(server)
   registerWorkspaceCoreHandlers(server, deps)
   registerMessagingHandlers(server, deps)
   registerWidgetHandlers(server, deps)
   registerCognitionHandlers(server, deps)
   registerPrivacyHandlers(server, deps)
-  registerTodayHandlers(server, deps)
   registerLibraryHandlers(server, deps)
+  registerExpertsHandlers(server, deps)
+  registerConnectorsHandlers(server, deps)
+  registerSearchHandlers(server, deps)
+  registerDynamicHandlers(server, deps)
+  registerWorkflowHandlers(server, deps)
 }

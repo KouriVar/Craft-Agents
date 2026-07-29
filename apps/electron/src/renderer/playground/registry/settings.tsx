@@ -4,7 +4,7 @@ import SettingsNavigator from '@/pages/settings/SettingsNavigator'
 import type { ComponentEntry } from './types'
 
 function SettingsNavigatorPreview() {
-  const [selectedSubpage, setSelectedSubpage] = useState<SettingsSubpage>('appearance')
+  const [selectedSubpage, setSelectedSubpage] = useState<SettingsSubpage>('app')
 
   return (
     <div className="h-full w-[292px] overflow-hidden rounded-xl border border-border bg-background shadow-sm">

@@ -9,7 +9,7 @@
  * - Dots (.)
  */
 import { describe, it, expect } from 'bun:test'
-import { parseMentions, findMentionMatches, removeMention, stripAllMentions, resolveSkillMentions, resolveSourceMentions, extractBadges } from '../mentions'
+import { parseMentions, findMentionMatches, removeMention, stripAllMentions, resolveSkillMentions, resolveSourceMentions, resolveFileMentions, extractBadges } from '../mentions'
 
 // ============================================================================
 // parseMentions - Skill Pattern Tests
@@ -167,6 +167,36 @@ describe('removeMention - skill pattern with workspace IDs', () => {
   it('removes simple skill mention', () => {
     const result = removeMention('[skill:commit] please', 'skill', 'commit')
     expect(result).toBe('please')
+  })
+})
+
+describe('project resource mentions', () => {
+  it('finds and removes knowledge references', () => {
+    const text = 'Use [knowledge:doc-123] for this task'
+    expect(findMentionMatches(text, [], [])).toContainEqual(expect.objectContaining({
+      type: 'knowledge',
+      id: 'doc-123',
+    }))
+    expect(removeMention(text, 'knowledge', 'doc-123')).toBe('Use for this task')
+  })
+
+  it('renders project file references as explicit agent context', () => {
+    expect(resolveFileMentions('[project-file:/tmp/project/assets/brief.md]', '/tmp/project')).toBe(
+      '[Mentioned project file: brief.md (at /tmp/project/assets/brief.md)]'
+    )
+  })
+
+  it('extracts display badges for project resources', () => {
+    const badges = extractBadges(
+      '[knowledge:doc-123] [project-file:/tmp/project/assets/brief.md]',
+      [],
+      [],
+      'workspace',
+    )
+    expect(badges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'knowledge', label: 'doc-123' }),
+      expect.objectContaining({ type: 'project-file', label: 'brief.md' }),
+    ]))
   })
 })
 

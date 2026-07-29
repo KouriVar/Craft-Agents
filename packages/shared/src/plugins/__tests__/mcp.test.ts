@@ -80,7 +80,7 @@ describe('loadPluginMcpServers', () => {
         bearerTokenEnvVar: undefined,
       },
       'multi-plugin_worker': {
-        type: 'sse',
+        type: 'http',
         url: 'https://example.test/sse',
         headers: undefined,
         bearerTokenEnvVar: 'PLUGIN_TOKEN',

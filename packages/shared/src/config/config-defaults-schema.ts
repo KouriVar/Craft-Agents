@@ -13,6 +13,8 @@ export interface ConfigDefaults {
   description: string;
   defaults: {
     notificationsEnabled: boolean;
+    doubleCommandScreenshotEnabled: boolean;
+    doubleCommandScreenshotHideApp: boolean;
     colorTheme: string;
     autoCapitalisation: boolean;
     sendMessageKey: 'enter' | 'cmd-enter';

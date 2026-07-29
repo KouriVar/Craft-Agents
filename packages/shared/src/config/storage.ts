@@ -63,6 +63,8 @@ export interface StoredConfig {
   activeSessionId: string | null;  // Currently active session (primary scope)
   // Notifications
   notificationsEnabled?: boolean;  // Desktop notifications for task completion (default: true)
+  doubleCommandScreenshotEnabled?: boolean;  // macOS: press both Command keys to capture into the current draft
+  doubleCommandScreenshotHideApp?: boolean;  // Hide Craft Agent windows before capturing the screen
   // Appearance
   colorTheme?: string;  // ID of selected preset theme (e.g., 'dracula', 'nord'). Default: 'default'
   // Auto-update
@@ -120,6 +122,8 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
   description: 'Default configuration values for Craft Agents',
   defaults: {
     notificationsEnabled: true,
+    doubleCommandScreenshotEnabled: true,
+    doubleCommandScreenshotHideApp: false,
     colorTheme: 'default',
     autoCapitalisation: true,
     sendMessageKey: 'enter',
@@ -363,6 +367,47 @@ export function setNotificationsEnabled(enabled: boolean): void {
   if (!config) return;
   config.notificationsEnabled = enabled;
   saveConfig(config);
+}
+
+export function getDoubleCommandScreenshotEnabled(): boolean {
+  const config = loadStoredConfig()
+  if (config?.doubleCommandScreenshotEnabled !== undefined) {
+    return config.doubleCommandScreenshotEnabled
+  }
+  // Main registers the native listener before bundled defaults are synced on a
+  // completely fresh profile. Keep first launch safe and preserve the declared
+  // default without requiring config-defaults.json to exist yet.
+  try {
+    return loadConfigDefaults().defaults.doubleCommandScreenshotEnabled
+  } catch {
+    return true
+  }
+}
+
+export function setDoubleCommandScreenshotEnabled(enabled: boolean): void {
+  const config = loadStoredConfig()
+  if (!config) return
+  config.doubleCommandScreenshotEnabled = enabled
+  saveConfig(config)
+}
+
+export function getDoubleCommandScreenshotHideApp(): boolean {
+  const config = loadStoredConfig()
+  if (config?.doubleCommandScreenshotHideApp !== undefined) {
+    return config.doubleCommandScreenshotHideApp
+  }
+  try {
+    return loadConfigDefaults().defaults.doubleCommandScreenshotHideApp
+  } catch {
+    return false
+  }
+}
+
+export function setDoubleCommandScreenshotHideApp(enabled: boolean): void {
+  const config = loadStoredConfig()
+  if (!config) return
+  config.doubleCommandScreenshotHideApp = enabled
+  saveConfig(config)
 }
 
 /**

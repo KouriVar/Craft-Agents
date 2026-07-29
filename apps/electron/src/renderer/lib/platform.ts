@@ -36,6 +36,11 @@ export const isLinux =
 export function applyPlatformAttribute(): void {
   if (typeof document === 'undefined') return
   document.documentElement.dataset.platform = isWindows ? 'windows' : isMac ? 'macos' : 'linux'
+  if (isMac || isWindows) {
+    document.documentElement.dataset.nativeMaterial = 'true'
+  } else {
+    delete document.documentElement.dataset.nativeMaterial
+  }
 }
 
 /**

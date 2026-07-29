@@ -21,6 +21,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.plugins.ADD_MARKETPLACE_SOURCE,
   RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE,
   RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG,
+  RPC_CHANNELS.plugins.PREVIEW_UPDATE,
   RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN,
   RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE,
   RPC_CHANNELS.plugins.REGISTER_LOCAL,
@@ -141,6 +142,7 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
         ?? pluginPackage.manifest.description
         ?? pluginPackage.manifest.interface?.shortDescription
       plugin.compatibilityReport = report
+      plugin.version = pluginPackage.manifest.version
       plugin.compatibility = report.level === 'unsupported' ? 'unsupported' : 'compatible'
       plugin.compatibilityReason = report.reasons[0] ?? report.summary
       plugin.iconPath = pluginPackage.iconPath
@@ -465,6 +467,28 @@ export function registerPluginsHandlers(server: RpcServer, deps: HandlerDeps): v
     const source = loadPluginMarketplaceSources(workspace.rootPath).find(item => item.id === sourceId)
     if (!source) throw new Error(`Marketplace source not found: ${sourceId}`)
     return (await loadMarketplaceCatalog(workspace.rootPath, source, options?.refresh)).catalog
+  })
+
+  server.handle(RPC_CHANNELS.plugins.PREVIEW_UPDATE, async (_ctx, workspaceId: string, pluginName: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const { listPluginEntries, loadPluginMarketplaceSources } = await import('@craft-agent/shared/plugins')
+    const installed = listPluginEntries(workspace.rootPath).find(entry => entry.name === pluginName)
+    if (!installed) throw new Error(`Plugin not found: ${pluginName}`)
+    for (const source of loadPluginMarketplaceSources(workspace.rootPath)) {
+      const { catalog } = await loadMarketplaceCatalog(workspace.rootPath, source, true)
+      const candidate = catalog.plugins.find(item => item.name === pluginName)
+      if (!candidate) continue
+      return {
+        marketplaceId: source.id,
+        pluginName,
+        currentVersion: installed.version,
+        nextVersion: candidate.version,
+        hasUpdate: Boolean(candidate.version && candidate.version !== installed.version),
+        compatibility: candidate.compatibilityReport,
+      }
+    }
+    return null
   })
 
   server.handle(RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN, async (

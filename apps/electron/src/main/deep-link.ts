@@ -39,6 +39,7 @@ import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { RPC_CHANNELS } from '../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
+import { isSettingsTopLevelRouteId } from '../shared/settings-registry'
 
 export interface DeepLinkTarget {
   /** Workspace ID - undefined means use active window */
@@ -240,8 +241,23 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
 
     // craftagents://allSessions/..., craftagents://settings/..., etc. (compound routes)
     if (COMPOUND_ROUTE_PREFIXES.includes(host)) {
-      // Reconstruct the full compound route from host + pathname
-      const viewRoute = pathParts.length > 0 ? `${host}/${pathParts.join('/')}` : host
+      // Reconstruct the full compound route from host + pathname (+ hash for settings sections)
+      let viewRoute = pathParts.length > 0 ? `${host}/${pathParts.join('/')}` : host
+      if (host === 'settings' && parsed.hash) {
+        viewRoute += parsed.hash
+      }
+      return {
+        workspaceId: undefined,
+        view: viewRoute,
+        windowMode,
+        rightSidebar,
+      }
+    }
+
+    // Top-level settings aliases / pages: craftagents://appearance, //privacy, …
+    if (isSettingsTopLevelRouteId(host)) {
+      let viewRoute = `settings/${host}`
+      if (parsed.hash) viewRoute += parsed.hash
       return {
         workspaceId: undefined,
         view: viewRoute,

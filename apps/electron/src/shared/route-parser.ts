@@ -16,7 +16,11 @@ import type {
   AutomationFilter,
   RightSidebarPanel,
 } from './types'
-import { isValidSettingsSubpage, type SettingsSubpage } from './settings-registry'
+import {
+  isSettingsTopLevelRouteId,
+  resolveSettingsRoute,
+  type SettingsSubpage,
+} from './settings-registry'
 
 // =============================================================================
 // Route Types
@@ -35,7 +39,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'browser' | 'automations' | 'projects' | 'library' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'plugins' | 'browser' | 'automations' | 'dynamic' | 'projects' | 'library' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -53,6 +57,8 @@ export interface ParsedCompoundRoute {
     type: string
     id: string
   } | null
+  /** In-page settings section anchor (settings routes only), e.g. bookmarks */
+  settingsSection?: string
 }
 
 // =============================================================================
@@ -63,15 +69,17 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'plugins', 'browser', 'automations', 'projects', 'library', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'explore', 'today', 'task', 'tasks', 'sources', 'skills', 'plugins', 'browser', 'automations', 'dynamic', 'projects', 'library', 'settings'
 ]
 
 /**
  * Check if a route is a compound route (new format)
  */
 export function isCompoundRoute(route: string): boolean {
-  const firstSegment = route.split('?')[0].split('/')[0]
-  return COMPOUND_ROUTE_PREFIXES.includes(firstSegment)
+  const firstSegment = route.split('?')[0].split('/')[0].split('#')[0]
+  if (COMPOUND_ROUTE_PREFIXES.includes(firstSegment)) return true
+  // Top-level settings aliases / pages: appearance, shortcuts, privacy, …
+  return isSettingsTopLevelRouteId(firstSegment)
 }
 
 /**
@@ -88,16 +96,35 @@ export function isCompoundRoute(route: string): boolean {
  *   'sources/source/github' -> { navigator: 'sources', details: { type: 'source', id: 'github' } }
  *   'sources/api/source/gmail' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: { type: 'source', id: 'gmail' } }
  *   'settings' -> { navigator: 'settings', details: null }  // navigator-only view
- *   'settings/shortcuts' -> { navigator: 'settings', details: { type: 'shortcuts', id: 'shortcuts' } }
+ *   'settings/shortcuts' -> { navigator: 'settings', details: { type: 'interface', id: 'interface' }, settingsSection: 'shortcuts' }
+ *   'appearance' -> same as settings/appearance (top-level alias deep link)
  */
 export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
   // Compound routes are pure slash-segment paths; defensively strip any query tail
   // so a stray `?x=y` never leaks into segment parsing (e.g. into a labelId).
-  const [pathPart] = route.split('?')
+  // Settings section anchors use `#section` (e.g. settings/browser#bookmarks).
+  const [pathWithPossibleHash] = route.split('?')
+  const [pathPart, routeHashSection] = pathWithPossibleHash.split('#')
   const segments = pathPart.split('/').filter(Boolean)
   if (segments.length === 0) return null
 
   const first = segments[0]
+
+  // v0.20 compatibility route for the removed Explore product surface.
+  if (first === 'explore') {
+    return { navigator: 'sessions', sessionFilter: { kind: 'allSessions' }, details: null }
+  }
+  if (first === 'today') {
+    return { navigator: 'dynamic', details: null }
+  }
+  if (first === 'task' || first === 'tasks') {
+    return { navigator: 'sessions', sessionFilter: { kind: 'allSessions' }, details: null }
+  }
+  // Plugin routes redirect to the capability center since plugins are no longer a
+  // standalone navigator in v0.20. Source routes have dedicated handling below.
+  if (first === 'plugins') {
+    return { navigator: 'skills', details: null }
+  }
 
   // Kanban board — standalone route. A view of all sessions in board mode.
   // Encoded as its own prefix (not `allSessions/board`) so it never collides
@@ -111,17 +138,34 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     }
   }
 
-  // Settings navigator
+  // Top-level settings aliases / pages: craftagents://appearance, //privacy, //ai, …
+  // (`browser` is excluded — that host is the browser workspace navigator.)
+  if (first !== 'settings' && isSettingsTopLevelRouteId(first)) {
+    const resolved = resolveSettingsRoute(first)
+    if (!resolved) return null
+    const section = routeHashSection || resolved.section
+    return {
+      navigator: 'settings',
+      details: { type: resolved.page, id: resolved.page },
+      ...(section ? { settingsSection: section } : {}),
+    }
+  }
+
+  // Settings navigator — accepts canonical IDs and legacy aliases.
+  // Optional section: settings/browser#bookmarks or settings/bookmarks (alias).
   if (first === 'settings') {
-    const subpage = segments[1]
-    if (subpage === undefined) {
+    const rawSubpage = segments[1]
+    if (rawSubpage === undefined) {
       // Bare `settings` route — navigator-only view (compact) / App fallback (desktop).
       return { navigator: 'settings', details: null }
     }
-    if (!isValidSettingsSubpage(subpage)) return null
+    const resolved = resolveSettingsRoute(rawSubpage)
+    if (!resolved) return null
+    const section = routeHashSection || resolved.section
     return {
       navigator: 'settings',
-      details: { type: subpage, id: subpage },
+      details: { type: resolved.page, id: resolved.page },
+      ...(section ? { settingsSection: section } : {}),
     }
   }
 
@@ -273,6 +317,7 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
 
     return null
   }
+  if (first === 'dynamic' && segments.length === 1) return { navigator: 'dynamic', details: null }
 
   // Sessions navigator (allSessions, flagged, state)
   let sessionFilter: SessionFilter
@@ -338,7 +383,8 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
 export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   if (parsed.navigator === 'settings') {
     if (!parsed.details) return 'settings'
-    return `settings/${parsed.details.type}`
+    const base = `settings/${parsed.details.type}`
+    return parsed.settingsSection ? `${base}#${parsed.settingsSection}` : base
   }
 
   if (parsed.navigator === 'sources') {
@@ -375,6 +421,7 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
     if (!parsed.details) return base
     return `${base}/automation/${parsed.details.id}`
   }
+  if (parsed.navigator === 'dynamic') return 'dynamic'
 
   if (parsed.navigator === 'projects') {
     if (!parsed.details) return 'projects'
@@ -480,13 +527,16 @@ export function parseRoute(route: string): ParsedRoute | null {
  * Convert a parsed compound route to ParsedRoute format (type: 'view')
  */
 function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute {
-  // Settings
+  // Settings — always name:'settings' so `browser` page never collides with
+  // the browser-workspace navigator view name.
   if (compound.navigator === 'settings') {
     const subpage = compound.details?.type || 'app'
-    if (subpage === 'app') {
-      return { type: 'view', name: 'settings', params: {} }
+    const params: Record<string, string> = {}
+    if (compound.settingsSection) params.section = compound.settingsSection
+    if (subpage === 'app' && !compound.settingsSection) {
+      return { type: 'view', name: 'settings', params }
     }
-    return { type: 'view', name: subpage, params: {} }
+    return { type: 'view', name: 'settings', id: subpage, params }
   }
 
   // Sources
@@ -522,6 +572,7 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
     }
     return { type: 'view', name: 'automation-info', id: compound.details.id, params: {} }
   }
+  if (compound.navigator === 'dynamic') return { type: 'view', name: 'dynamic', params: {} }
 
   // Projects
   if (compound.navigator === 'projects') {
@@ -631,7 +682,11 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     if (!compound.details) {
       return { navigator: 'settings', subpage: null }
     }
-    return { navigator: 'settings', subpage: compound.details.type as SettingsSubpage }
+    return {
+      navigator: 'settings',
+      subpage: compound.details.type as SettingsSubpage,
+      ...(compound.settingsSection ? { section: compound.settingsSection } : {}),
+    }
   }
 
   // Sources - include filter if present
@@ -696,6 +751,7 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
       details: { type: 'automation', automationId: compound.details.id },
     }
   }
+  if (compound.navigator === 'dynamic') return { navigator: 'dynamic', details: null }
 
   // Projects
   if (compound.navigator === 'projects') {
@@ -754,33 +810,50 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
   }
 
   switch (parsed.name) {
-    case 'settings':
-      return { navigator: 'settings', subpage: 'app' }
-    case 'workspace':
-      return { navigator: 'settings', subpage: 'workspace' }
-    case 'permissions':
-      return { navigator: 'settings', subpage: 'permissions' }
-    case 'labels':
-      return { navigator: 'settings', subpage: 'labels' }
-    case 'shortcuts':
-      return { navigator: 'settings', subpage: 'shortcuts' }
-    case 'preferences':
-      return { navigator: 'settings', subpage: 'preferences' }
-    case 'privacy':
-    case 'cognition':
+    case 'settings': {
+      const routeId = parsed.id || 'app'
+      const resolved = resolveSettingsRoute(routeId)
+      if (!resolved) return { navigator: 'settings', subpage: 'app' }
+      const section = parsed.params.section || resolved.section
+      return {
+        navigator: 'settings',
+        subpage: resolved.page,
+        ...(section ? { section } : {}),
+      }
+    }
+    // Legacy Explore was removed in v0.20. Preserve old deep links by taking
+    // users to the confirmed default product surface instead of a dead route.
     case 'explore':
+      return { navigator: 'sessions', filter: { kind: 'allSessions' }, details: null }
+    // Legacy / alias settings IDs that may still appear as view names
+    case 'workspace':
+    case 'permissions':
+    case 'labels':
+    case 'shortcuts':
+    case 'preferences':
     case 'ai':
     case 'accounts':
     case 'appearance':
     case 'input':
+    case 'app':
+    case 'privacy':
+    case 'cognition':
     case 'messaging':
     case 'server':
-    case 'app':
-      // Settings subpages derived from settings-registry (keep in sync with SETTINGS_PAGES)
-      if (isValidSettingsSubpage(parsed.name)) {
-        return { navigator: 'settings', subpage: parsed.name }
+    case 'bookmarks':
+    case 'interface':
+    case 'profile':
+    case 'integrations':
+    case 'security': {
+      const resolved = resolveSettingsRoute(parsed.name)
+      if (!resolved) return null
+      const section = parsed.params.section || resolved.section
+      return {
+        navigator: 'settings',
+        subpage: resolved.page,
+        ...(section ? { section } : {}),
       }
-      return null
+    }
     case 'sources':
       return { navigator: 'sources', details: null }
     case 'source-info':
@@ -829,6 +902,8 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
       return { navigator: 'browser', details: null }
     case 'automations':
       return { navigator: 'automations', details: null }
+    case 'dynamic':
+      return { navigator: 'dynamic', details: null }
     case 'automation-info':
       if (parsed.id) {
         return {
@@ -943,6 +1018,7 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     return {
       navigator: 'settings',
       details: { type: state.subpage, id: state.subpage },
+      ...(state.section ? { settingsSection: state.section } : {}),
     }
   }
 
@@ -982,6 +1058,7 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
       details: state.details ? { type: 'automation', id: state.details.automationId } : null,
     }
   }
+  if (state.navigator === 'dynamic') return { navigator: 'dynamic', details: null }
 
   if (state.navigator === 'projects') {
     return {

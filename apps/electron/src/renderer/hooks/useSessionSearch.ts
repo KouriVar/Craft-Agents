@@ -43,7 +43,6 @@ export function taskMetadataSearchScore(session: SessionMeta, query: string): nu
     session.taskGoal,
     session.workingDirectory,
     session.projectId,
-    session.taskSlug,
     ...(session.labels ?? []),
     ...(session.taskCheckpoints ?? []).flatMap((checkpoint) => [
       checkpoint.summary,
@@ -406,12 +405,19 @@ export function useSessionSearch({
 
   // --- Data pipeline ---
 
-  // Filter out hidden sessions before any processing
-  const visibleItems = useMemo(() => items.filter(item => !item.hidden), [items])
+  // Child sessions remain reachable from their parent/board, but do not crowd
+  // the top-level conversation list.
+  const visibleItems = useMemo(
+    () => items.filter((item) => !item.hidden && !item.parentSessionId),
+    [items],
+  )
 
-  // Sort by most recent activity first
+  // Pinned sessions always lead; activity time resolves ties within each group.
   const sortedItems = useMemo(() =>
-    [...visibleItems].sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)),
+    [...visibleItems].sort((a, b) => {
+      if (Boolean(a.isPinned) !== Boolean(b.isPinned)) return a.isPinned ? -1 : 1
+      return (b.lastMessageAt || 0) - (a.lastMessageAt || 0)
+    }),
     [visibleItems]
   )
 

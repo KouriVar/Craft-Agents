@@ -3,10 +3,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { appendAutomationHistoryEntry, compactAutomationHistory } from './history-store.ts';
+import { appendAutomationHistoryEntry, AUTOMATION_HISTORY_SCHEMA_FILE, compactAutomationHistory } from './history-store.ts';
 import { AUTOMATIONS_HISTORY_FILE } from './constants.ts';
 
 function readHistory(dir: string): Array<{ id: string; ts: number; [k: string]: unknown }> {
@@ -47,6 +47,7 @@ describe('history-store', () => {
       const entries = readHistory(tempDir);
       expect(entries).toHaveLength(1);
       expect(entries[0]!.id).toBe('a1');
+      expect(JSON.parse(readFileSync(join(tempDir, AUTOMATION_HISTORY_SCHEMA_FILE), 'utf8')).schemaVersion).toBe(1);
     });
 
     it('should append multiple entries in order', async () => {
@@ -133,7 +134,7 @@ describe('history-store', () => {
       }
     });
 
-    it('should drop malformed JSON lines', async () => {
+    it('should preserve malformed history and stop compaction with a clear error', async () => {
       const lines = [
         JSON.stringify(makeEntry('a1', 1)),
         'not-json{{{',
@@ -143,10 +144,9 @@ describe('history-store', () => {
       ];
       writeFileSync(join(tempDir, AUTOMATIONS_HISTORY_FILE), lines.join('\n') + '\n');
 
-      await compactAutomationHistory(tempDir, 20, 1000);
-
-      const entries = readHistory(tempDir);
-      expect(entries).toHaveLength(3);
+      await expect(compactAutomationHistory(tempDir, 2, 1000)).rejects.toThrow('已停止压缩并保留原文件');
+      expect(readFileSync(join(tempDir, AUTOMATIONS_HISTORY_FILE), 'utf8')).toContain('not-json{{{');
+      expect(existsSync(join(tempDir, `${AUTOMATIONS_HISTORY_FILE}.pre-v020-schema-v0.bak`))).toBe(true);
     });
 
     it('should no-op when file does not exist', async () => {

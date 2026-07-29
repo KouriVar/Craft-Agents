@@ -16,7 +16,6 @@ import type {
   BrowserInstanceInfo,
   BrowserProfileCollectionKind,
   DeepLinkNavigation,
-  TaskGenerateResult,
 } from './dto'
 
 export interface BroadcastEventMap {
@@ -33,7 +32,6 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.skills.CHANGED]: [workspaceId: string, skills: LoadedSkill[]]
   [RPC_CHANNELS.plugins.CHANGED]: [workspaceId: string, plugins: WorkspacePluginEntry[]]
   [RPC_CHANNELS.projects.CHANGED]: [workspaceId: string, projects: LoadedProject[]]
-  [RPC_CHANNELS.tasks.GENERATED]: [workspaceId: string, result: TaskGenerateResult]
   [RPC_CHANNELS.llmConnections.CHANGED]: []
   [RPC_CHANNELS.permissions.DEFAULTS_CHANGED]: [value: null]
 
@@ -62,7 +60,6 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.browserPane.PROFILE_CHANGED]: [kind: BrowserProfileCollectionKind]
 
   // Navigation events (per-window)
-  [RPC_CHANNELS.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]
   [RPC_CHANNELS.deeplink.NAVIGATE]: [navigation: DeepLinkNavigation]
 
   // Copilot device code event

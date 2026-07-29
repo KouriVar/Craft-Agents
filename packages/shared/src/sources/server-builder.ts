@@ -30,10 +30,10 @@ export const SERVER_BUILD_ERRORS = {
 
 /**
  * MCP server configuration compatible with Claude Agent SDK
- * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
+ * Supports HTTP (remote) and stdio (local subprocess) transports.
  */
 export type McpServerConfig =
-  | { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }
+  | { type: 'http'; url: string; headers?: Record<string, string> }
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> };
 
 /**
@@ -113,7 +113,7 @@ export class SourceServerBuilder {
     const url = normalizeMcpUrl(mcp.url);
 
     const config: McpServerConfig = {
-      type: mcp.transport === 'sse' ? 'sse' : 'http',
+      type: 'http',
       url,
     };
 

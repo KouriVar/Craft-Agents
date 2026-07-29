@@ -261,7 +261,7 @@ function ChatScrollLocator({
       <div
         className={cn(
           "pointer-events-auto flex items-center gap-[8px]",
-          isBottom ? "h-[30px] w-[360px] max-w-[40vw] flex-row-reverse justify-start px-2" : "w-7 flex-col py-2"
+          isBottom ? "h-control-compact w-[360px] max-w-[40vw] flex-row-reverse justify-start px-2" : "w-7 flex-col py-2"
         )}
         onMouseLeave={() => setHoveredKey(null)}
       >
@@ -621,7 +621,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
   const displayMessage = statusMessage || t(PROCESSING_MESSAGE_KEYS[messageIndex])
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
+    <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-control text-muted-foreground">
       {/* Spinner in same location as TurnCard chevron */}
       <div className="w-3 h-3 flex items-center justify-center shrink-0">
         <Spinner className="text-[10px]" />
@@ -2012,7 +2012,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         className="flex items-center justify-center h-64 px-4"
                       >
                         <div
-                          className="max-w-sm rounded-[8px] border border-destructive/20 px-4 py-3 text-center shadow-tinted"
+                          className="max-w-sm rounded-surface border border-destructive/20 px-4 py-3 text-center shadow-tinted"
                           style={{
                             backgroundColor: 'oklch(from var(--destructive) l c h / 0.03)',
                             '--shadow-color': 'var(--destructive-rgb)',
@@ -2061,7 +2061,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   )}
                   {!compactMode && hasUnrenderedLoadedMessages && (
                     <div className="flex h-64 items-center justify-center px-4 text-center">
-                      <div className="max-w-sm rounded-[8px] border border-border/50 bg-muted/40 px-4 py-3">
+                      <div className="max-w-sm rounded-surface border border-border/50 bg-muted/40 px-4 py-3">
                         <CircleAlert className="mx-auto mb-2 h-4 w-4 text-muted-foreground" />
                         <div className="text-sm font-medium text-foreground/70">{t('chat.unrenderedMessagesTitle')}</div>
                         <p className="mt-1 text-xs text-muted-foreground">{t('chat.unrenderedMessagesDesc')}</p>
@@ -2100,6 +2100,37 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             compactMode={compactMode}
+                            onEditUserMessage={session && !session.isProcessing ? (message) => {
+                              const content = window.prompt('Edit message. This creates a new conversation branch.', message.content)
+                              if (content === null || content.trim() === message.content.trim()) return
+                              void (async () => {
+                                try {
+                                  const branch = await window.electronAPI.sessionCommand(session.id, {
+                                    type: 'editMessageAsBranch', messageId: message.id, content,
+                                  }) as Session
+                                  navigate(routes.view.allSessions(branch.id))
+                                } catch (error) {
+                                  toast.error('Could not create edited branch', { description: error instanceof Error ? error.message : String(error) })
+                                }
+                              })()
+                            } : undefined}
+                            onDeleteUserMessage={session && !session.isProcessing ? (message) => {
+                              const index = session.messages.findIndex(item => item.id === message.id)
+                              const later = index >= 0 ? session.messages.slice(index + 1) : []
+                              const toolCalls = later.filter(item => item.role === 'tool').length
+                              const detail = `${later.length} later message${later.length === 1 ? '' : 's'}${toolCalls ? `, including ${toolCalls} tool call${toolCalls === 1 ? '' : 's'}` : ''} will be excluded from the new branch.`
+                              if (!window.confirm(`Delete this message? The original conversation is preserved.\n\n${detail}`)) return
+                              void (async () => {
+                                try {
+                                  const branch = await window.electronAPI.sessionCommand(session.id, {
+                                    type: 'deleteMessageAsBranch', messageId: message.id,
+                                  }) as Session
+                                  navigate(routes.view.allSessions(branch.id))
+                                } catch (error) {
+                                  toast.error('Could not create deletion branch', { description: error instanceof Error ? error.message : String(error) })
+                                }
+                              })()
+                            } : undefined}
                           />
                         </div>
                       )
@@ -2368,7 +2399,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         }}
                       />
                       {inlineWidgets.map(descriptor => (
-                        <div key={descriptor.id} className="mt-2 overflow-hidden rounded-[8px] border border-border/50">
+                        <div key={descriptor.id} className="mt-2 overflow-hidden rounded-surface border border-border/50">
                           <WidgetHost descriptor={descriptor} sessionId={session.id} />
                         </div>
                       ))}
@@ -2636,6 +2667,8 @@ interface MessageBubbleProps {
   compactMode?: boolean
   /** Callback to resend the user message that preceded an error */
   onRetry?: () => void
+  onEditUserMessage?: (message: Message) => void
+  onDeleteUserMessage?: (message: Message) => void
 }
 
 /**
@@ -2654,7 +2687,7 @@ function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Mes
     <div className="flex justify-start mt-4">
       {/* Subtle bg (3% opacity) + tinted shadow for softer error appearance */}
       <div
-        className="max-w-[80%] shadow-tinted rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words"
+        className="max-w-[80%] shadow-tinted rounded-surface pl-5 pr-4 pt-2 pb-2.5 break-words"
         style={{
           backgroundColor: 'oklch(from var(--destructive) l c h / 0.03)',
           '--shadow-color': 'var(--destructive-rgb)',
@@ -2723,6 +2756,8 @@ function MessageBubble({
   onPopOut,
   compactMode,
   onRetry,
+  onEditUserMessage,
+  onDeleteUserMessage,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
 
@@ -2738,6 +2773,8 @@ function MessageBubble({
         onUrlClick={onOpenUrl}
         onFileClick={onOpenFile}
         compactMode={compactMode}
+        onEdit={onEditUserMessage ? () => onEditUserMessage(message) : undefined}
+        onDelete={onDeleteUserMessage ? () => onDeleteUserMessage(message) : undefined}
       />
     )
   }
@@ -2746,7 +2783,7 @@ function MessageBubble({
   if (message.role === 'assistant') {
     return (
       <div className="flex justify-start group">
-        <div className="relative max-w-[90%] bg-background shadow-minimal rounded-[8px] pl-6 pr-4 py-3 break-words min-w-0 select-text">
+        <div className="relative max-w-[90%] bg-background shadow-minimal rounded-surface pl-6 pr-4 py-3 break-words min-w-0 select-text">
           {/* Pop-out button - visible on hover */}
           {onPopOut && !message.isStreaming && (
             <button
@@ -2806,7 +2843,7 @@ function MessageBubble({
   // === STATUS MESSAGE: Matches ProcessingIndicator layout for visual consistency ===
   if (message.role === 'status') {
     return (
-      <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
+      <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-control text-muted-foreground">
         {/* Spinner in same location as TurnCard chevron */}
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Spinner className="text-[10px]" />
@@ -2842,7 +2879,7 @@ function MessageBubble({
     const Icon = config.icon
 
     return (
-      <div className={cn('flex items-center gap-2 px-3 py-1 text-[13px] select-none', config.className)}>
+      <div className={cn('flex items-center gap-2 px-3 py-1 text-control select-none', config.className)}>
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Icon className="w-3 h-3" />
         </div>
@@ -2855,7 +2892,7 @@ function MessageBubble({
   if (message.role === 'warning') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-info/10 rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words select-none">
+        <div className="max-w-[80%] bg-info/10 rounded-surface pl-5 pr-4 pt-2 pb-2.5 break-words select-none">
           <div className="text-xs text-info/50 mb-0.5 font-semibold">
             Warning
           </div>

@@ -80,6 +80,9 @@ export type EditContextKey =
   | 'add-source-mcp'   // Filter-specific: user is viewing MCPs
   | 'add-source-local' // Filter-specific: user is viewing Local Folders
   | 'add-skill'
+  | 'add-project'
+  | 'add-expert'
+  | 'add-connector'
   | 'edit-statuses'
   | 'edit-labels'
   | 'edit-auto-rules'
@@ -399,6 +402,60 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     displayLabelKey: 'editPopover.label.addSkill',
     exampleKey: 'editPopover.example.addSkill',
     overridePlaceholderKey: 'editPopover.placeholder.addSkill',
+  }),
+
+  'add-project': (location) => ({
+    context: {
+      label: 'Add Project',
+      filePath: `${location}/projects/`,
+      context:
+        'The user wants to create a new project. ' +
+        'Create a project configuration in the workspace projects directory following the existing project storage format. ' +
+        'Infer a concise project name, description, and details from the user request. ' +
+        'After creating the project, confirm clearly what was created.',
+    },
+    example: 'A project for the mobile redesign',
+    overridePlaceholder: 'What project should I create?',
+    displayLabel: 'New Project',
+    model: 'default',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
+  }),
+
+  'add-expert': (location) => ({
+    context: {
+      label: 'Add Expert',
+      filePath: `${location}/experts/`,
+      context:
+        'The user wants to create a reusable expert profile. ' +
+        'Create an expert with a concise name, description, and system prompt based on the user request. ' +
+        'Use the workspace expert storage format. Keep memoryRule as inherit unless the user asks otherwise. ' +
+        'After creating the expert, confirm clearly what was created.',
+    },
+    example: 'A senior product design expert for reviewing UX flows',
+    overridePlaceholder: 'What should this expert be good at?',
+    displayLabel: 'New Expert',
+    model: 'default',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
+  }),
+
+  'add-connector': (location) => ({
+    context: {
+      label: 'Add Connector',
+      filePath: `${location}/connectors/`,
+      context:
+        'The user wants to create a connector. ' +
+        'Create a connector configuration using the workspace connector storage format. ' +
+        'Ask for missing required details if the name, provider, API base URL, or auth approach are unclear. ' +
+        'After creating the connector, confirm clearly what was created or what details are still needed.',
+    },
+    example: 'Connect to Linear using its API',
+    overridePlaceholder: 'What connector should I create?',
+    displayLabel: 'New Connector',
+    model: 'default',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   // Status configuration context
@@ -1108,7 +1165,7 @@ export const EditButton = React.forwardRef<
       variant="ghost"
       size="sm"
       // Merge our base styles with any className from asChild props
-      className={cn("h-8 px-3 rounded-[6px] bg-background shadow-minimal text-foreground/70 hover:text-foreground", className)}
+      className={cn("h-8 px-3 rounded-control bg-background shadow-minimal text-foreground/70 hover:text-foreground", className)}
       {...props}
     >
       {t("common.edit")}

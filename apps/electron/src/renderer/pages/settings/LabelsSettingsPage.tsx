@@ -37,7 +37,7 @@ import {
 } from '@/components/settings'
 import { routes } from '@/lib/navigate'
 import { navigate } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,7 +60,7 @@ const SectionActionButton = React.forwardRef<
   )
 })
 
-export default function LabelsSettingsPage() {
+export default function LabelsSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const { isDark } = useTheme()
   const { activeWorkspaceId } = useAppShellContext()
@@ -148,12 +148,7 @@ export default function LabelsSettingsPage() {
       ? t('common.cancel')
       : t('common.save')
 
-  return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title={t('settings.labels.title')} actions={<HeaderMenu route={routes.view.settings('labels')} />} />
-      <div className="flex-1 min-h-0 mask-fade-y">
-        <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
+  const body = (
             <div className="space-y-8">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -332,6 +327,17 @@ export default function LabelsSettingsPage() {
                 </>
               )}
             </div>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className="h-full flex flex-col">
+      <PanelHeader title={t('settings.labels.title')} actions={<HeaderMenu route={routes.view.settings('labels')} />} />
+      <div className="flex-1 min-h-0 mask-fade-y">
+        <ScrollArea className="h-full">
+          <div className="px-5 py-7 max-w-3xl mx-auto">
+            {body}
           </div>
         </ScrollArea>
       </div>

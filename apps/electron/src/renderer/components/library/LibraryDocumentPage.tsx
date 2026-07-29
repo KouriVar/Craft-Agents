@@ -14,6 +14,8 @@ import {
   FolderKanban,
   History,
   Link2,
+  Info,
+  MoreHorizontal,
   Pencil,
   RotateCcw,
   Save,
@@ -42,6 +44,7 @@ import {
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
 import { LibraryDeleteConfirmDialog } from './LibraryDeleteConfirmDialog'
+import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -64,6 +67,7 @@ export function LibraryDocumentPage({
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [versions, setVersions] = useState<DocumentVersionMeta[]>([])
   const [showVersions, setShowVersions] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
   const [versionPreview, setVersionPreview] = useState<{ id: string; body: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -251,14 +255,14 @@ export function LibraryDocumentPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2.5">
+      <div className="flex h-[50px] items-center gap-2 border-b border-border/50 px-3">
         <input
           value={title}
           onChange={(e) => {
             setTitle(e.target.value)
             scheduleSave(e.target.value, body)
           }}
-          className="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
         />
         <span className="text-[11px] text-muted-foreground">
           {saveState === 'saving' && t('library.saving')}
@@ -268,54 +272,56 @@ export function LibraryDocumentPage({
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
           }).format(doc.meta.updatedAt)}
         </span>
-        <button type="button" className={cn('rounded-control px-2 py-1 text-xs', mode === 'edit' && 'bg-foreground/[0.07]')} onClick={() => setMode('edit')}>
-          <Pencil className="mr-1 inline h-3 w-3" />{t('library.edit')}
-        </button>
-        <button type="button" className={cn('rounded-control px-2 py-1 text-xs', mode === 'preview' && 'bg-foreground/[0.07]')} onClick={() => setMode('preview')}>
-          <Eye className="mr-1 inline h-3 w-3" />{t('library.preview')}
-        </button>
-        <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => { void persist(title, body, true) }}>
-          <Save className="mr-1 inline h-3 w-3" />{t('library.saveVersion')}
-        </button>
-        <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => setShowVersions((v) => !v)}>
-          <History className="mr-1 inline h-3 w-3" />{t('library.versions')}
-        </button>
-        <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => { void copyMarkdown() }}>
-          <Copy className="mr-1 inline h-3 w-3" />{t('library.copyMarkdown')}
-        </button>
+        <HeaderIconButton
+          icon={mode === 'edit' ? <Eye className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+          tooltip={mode === 'edit' ? t('library.preview') : t('library.edit')}
+          onClick={() => setMode(value => value === 'edit' ? 'preview' : 'edit')}
+          className={cn(mode === 'preview' && 'bg-foreground/[0.05] text-foreground')}
+        />
+        <HeaderIconButton
+          icon={<History className="h-4 w-4" />}
+          tooltip={t('library.versions')}
+          onClick={() => {
+            setShowVersions(value => !value)
+            setShowInfo(true)
+          }}
+          className={cn(showVersions && 'bg-foreground/[0.05] text-foreground')}
+        />
+        <HeaderIconButton
+          icon={<Info className="h-4 w-4" />}
+          tooltip="文档信息"
+          onClick={() => setShowInfo(value => !value)}
+          className={cn(showInfo && 'bg-foreground/[0.05] text-foreground')}
+        />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05]"
-            >
-              <Download className="mr-1 inline h-3 w-3" />{t('library.export')}
-              <ChevronDown className="ml-0.5 inline h-3 w-3" />
-            </button>
+            <HeaderIconButton icon={<MoreHorizontal className="h-4 w-4" />} tooltip="更多" />
           </DropdownMenuTrigger>
           <StyledDropdownMenuContent align="end">
+            <StyledDropdownMenuItem onClick={() => { void persist(title, body, true) }}>
+              <Save className="mr-2 h-3.5 w-3.5" />{t('library.saveVersion')}
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem onClick={() => { void copyMarkdown() }}>
+              <Copy className="mr-2 h-3.5 w-3.5" />{t('library.copyMarkdown')}
+            </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={() => { void exportDoc('markdown') }}>
-              Markdown
+              <Download className="mr-2 h-3.5 w-3.5" />{t('library.export')} Markdown
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={() => { void exportDoc('html') }}>
-              HTML
+              <Download className="mr-2 h-3.5 w-3.5" />{t('library.export')} HTML
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={() => { void exportDoc('pdf') }}>
-              PDF
+              <Download className="mr-2 h-3.5 w-3.5" />{t('library.export')} PDF
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem onClick={() => { void archiveToggle() }}>
+              <Archive className="mr-2 h-3.5 w-3.5" />
+              {doc.meta.status === 'archived' ? t('library.unarchive') : t('library.archive')}
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuItem className="text-destructive" onClick={() => setDeleteOpen(true)}>
+              {t('library.delete')}
             </StyledDropdownMenuItem>
           </StyledDropdownMenuContent>
         </DropdownMenu>
-        <button type="button" className="rounded-control px-2 py-1 text-xs hover:bg-foreground/[0.05]" onClick={() => { void archiveToggle() }}>
-          <Archive className="mr-1 inline h-3 w-3" />
-          {doc.meta.status === 'archived' ? t('library.unarchive') : t('library.archive')}
-        </button>
-        <button
-          type="button"
-          className="rounded-control px-2 py-1 text-xs text-destructive hover:bg-foreground/[0.05]"
-          onClick={() => setDeleteOpen(true)}
-        >
-          {t('library.delete')}
-        </button>
       </div>
 
       <LibraryDeleteConfirmDialog
@@ -356,7 +362,7 @@ export function LibraryDocumentPage({
           </div>
         </div>
 
-        <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/50 p-3">
+        {showInfo && <aside className="w-72 shrink-0 overflow-y-auto border-l border-border/50 bg-background p-3">
           {doc?.meta.projectId && (
             <>
               <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
@@ -501,7 +507,7 @@ export function LibraryDocumentPage({
               ))}
             </>
           )}
-        </aside>
+        </aside>}
       </div>
     </div>
   )

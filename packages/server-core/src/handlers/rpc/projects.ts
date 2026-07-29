@@ -14,6 +14,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.projects.DELETE_ASSET,
   RPC_CHANNELS.projects.GET_MEMORY,
   RPC_CHANNELS.projects.SET_MEMORY,
+  RPC_CHANNELS.projects.RESTORE_AUTOMATIONS,
+  RPC_CHANNELS.projects.LIST_PAUSED_AUTOMATIONS,
 ] as const
 
 export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -56,8 +58,12 @@ export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): 
       workingDirectory: input.workingDirectory,
       details: input.details,
       colorTheme: input.colorTheme,
+      color: input.color,
+      defaultExpertId: input.defaultExpertId,
+      availableExpertIds: input.availableExpertIds,
     })
     await broadcastChanged(workspaceId, workspace.rootPath)
+    await deps.sessionManager.emitAutomationEvent(workspaceId, 'ProjectChange', { action: 'created', projectId: project.id, slug: project.slug })
     log.info(`Created project: ${project.slug}`)
     return project
   })
@@ -71,9 +77,16 @@ export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): 
   ) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-    const { updateProject } = await import('@craft-agent/shared/projects')
+    const { loadProject, updateProject } = await import('@craft-agent/shared/projects')
+    const existing = loadProject(workspace.rootPath, projectSlug)
     const updated = updateProject(workspace.rootPath, projectSlug, patch)
+    if (existing && !existing.config.archivedAt && updated.archivedAt) {
+      const { pauseProjectAutomations } = await import('@craft-agent/shared/automations')
+      const paused = pauseProjectAutomations(workspace.rootPath, updated.id)
+      if (paused) log.info(`Paused ${paused} automation(s) for archived project ${updated.id}`)
+    }
     await broadcastChanged(workspaceId, workspace.rootPath)
+    await deps.sessionManager.emitAutomationEvent(workspaceId, 'ProjectChange', { action: 'updated', projectId: updated.id, slug: updated.slug, archivedAt: updated.archivedAt })
     return updated
   })
 
@@ -87,9 +100,31 @@ export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.projects.SET_MEMORY, async (_ctx, workspaceId: string, projectSlug: string, content: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-    const { saveProjectMemory } = await import('@craft-agent/shared/projects')
+    const { saveProjectMemory, loadProject } = await import('@craft-agent/shared/projects')
     saveProjectMemory(workspace.rootPath, projectSlug, content)
     await broadcastChanged(workspaceId, workspace.rootPath)
+    const project = loadProject(workspace.rootPath, projectSlug)
+    if (project) await deps.sessionManager.emitAutomationEvent(workspaceId, 'ProjectChange', { action: 'memory_updated', projectId: project.config.id, slug: projectSlug })
+  })
+
+  // Restoration is deliberately a separate, explicit action from unarchiving.
+  server.handle(RPC_CHANNELS.projects.LIST_PAUSED_AUTOMATIONS, async (_ctx, workspaceId: string, projectSlug: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const { loadProject } = await import('@craft-agent/shared/projects'); const project = loadProject(workspace.rootPath, projectSlug)
+    if (!project) throw new Error(`Project not found: ${projectSlug}`)
+    const { listPausedProjectAutomations } = await import('@craft-agent/shared/automations')
+    return listPausedProjectAutomations(workspace.rootPath, project.config.id)
+  })
+  server.handle(RPC_CHANNELS.projects.RESTORE_AUTOMATIONS, async (_ctx, workspaceId: string, projectSlug: string, ids?: string[]) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const { loadProject } = await import('@craft-agent/shared/projects')
+    const project = loadProject(workspace.rootPath, projectSlug)
+    if (!project) throw new Error(`Project not found: ${projectSlug}`)
+    if (project.config.archivedAt) throw new Error('Restore the project before restoring its automations')
+    const { restoreProjectAutomations } = await import('@craft-agent/shared/automations')
+    return restoreProjectAutomations(workspace.rootPath, project.config.id, ids)
   })
 
   // Delete a project; unbinds projectId from any sessions that referenced it.
@@ -108,6 +143,7 @@ export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): 
     const touched = await unbindProjectFromSessions(workspace.rootPath, project.config.id)
     deleteProject(workspace.rootPath, projectSlug)
     await broadcastChanged(workspaceId, workspace.rootPath)
+    await deps.sessionManager.emitAutomationEvent(workspaceId, 'ProjectChange', { action: 'deleted', projectId: project.config.id, slug: projectSlug })
     log.info(`Deleted project ${projectSlug} (unbound ${touched} sessions)`)
   })
 

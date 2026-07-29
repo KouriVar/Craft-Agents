@@ -55,6 +55,38 @@ describe('session persistence header conflict helpers', () => {
     expect(mergeHeaderWithExternalMetadata(a, b).taskCheckpoints).toEqual(b.taskCheckpoints)
   })
 
+  it('treats the parent-session relationship as externally editable metadata', () => {
+    const local = makeHeader({ name: 'Child session' })
+    const disk = makeHeader({ name: 'Child session', parentSessionId: 'parent-1' })
+
+    expect(getHeaderMetadataSignature(local)).not.toBe(getHeaderMetadataSignature(disk))
+    expect(mergeHeaderWithExternalMetadata(local, disk).parentSessionId).toBe('parent-1')
+  })
+
+  it('treats an expert override as externally editable metadata', () => {
+    const local = makeHeader({ name: 'Assigned session' })
+    const disk = makeHeader({ name: 'Assigned session', expertId: 'expert_writer' })
+
+    expect(getHeaderMetadataSignature(local)).not.toBe(getHeaderMetadataSignature(disk))
+    expect(mergeHeaderWithExternalMetadata(local, disk).expertId).toBe('expert_writer')
+  })
+
+  it('treats session pinning as externally editable metadata', () => {
+    const local = makeHeader({ name: 'Pinned later' })
+    const disk = makeHeader({ name: 'Pinned later', isPinned: true })
+
+    expect(getHeaderMetadataSignature(local)).not.toBe(getHeaderMetadataSignature(disk))
+    expect(mergeHeaderWithExternalMetadata(local, disk).isPinned).toBe(true)
+  })
+
+  it('preserves branch ancestry as externally editable metadata', () => {
+    const local = makeHeader({ branchFromMessageId: 'message-1' })
+    const disk = makeHeader({ branchFromSessionId: 'session-source', branchFromMessageId: 'message-1' })
+
+    expect(getHeaderMetadataSignature(local)).not.toBe(getHeaderMetadataSignature(disk))
+    expect(mergeHeaderWithExternalMetadata(local, disk).branchFromSessionId).toBe('session-source')
+  })
+
   it('merge preserves external metadata while keeping local computed fields', () => {
     const local = makeHeader({
       name: 'Local Name',

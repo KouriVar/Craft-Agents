@@ -61,7 +61,7 @@ import {
   isCompatProvider,
   modelSupportsImages,
 } from '@config/llm-connections'
-import { useOptionalAppShellContext } from '@/context/AppShellContext'
+import { useOptionalAppShellContext, useSession } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
@@ -71,6 +71,8 @@ import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import { derivePickerMode } from './picker-mode'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
+import type { LoadedProject, ProjectAsset } from '@craft-agent/shared/projects/types'
+import type { LibraryIndexEntry } from '@craft-agent/shared/protocol'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelNameKey } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
@@ -331,8 +333,59 @@ export function FreeFormInput({
   // Read connection default model, connections, and workspace info from context.
   // Uses optional variant so playground (no provider) doesn't crash.
   const appShellCtx = useOptionalAppShellContext()
+  const session = useSession(sessionId ?? '')
   const llmConnections = appShellCtx?.llmConnections ?? []
   const workspaceDefaultConnection = appShellCtx?.workspaceDefaultLlmConnection
+
+  // Project resources are loaded separately from working-directory file search:
+  // a project-bound session may have assets and knowledge outside its cwd.
+  const [projectMentionResources, setProjectMentionResources] = React.useState<MentionItem[]>([])
+  const projectId = session?.projectId
+  React.useEffect(() => {
+    let cancelled = false
+    if (!workspaceId || !projectId) {
+      setProjectMentionResources([])
+      return
+    }
+    setProjectMentionResources([])
+
+    void (async () => {
+      try {
+        const [documents, rawProject] = await Promise.all([
+          window.electronAPI.listLibraryDocuments({ workspaceId, projectId, filter: 'recent', limit: 20 }),
+          window.electronAPI.getProject(workspaceId, projectId),
+        ])
+        if (cancelled) return
+
+        const project = rawProject as LoadedProject | null
+        const assets = project
+          ? await window.electronAPI.listProjectAssets(workspaceId, project.config.slug)
+          : []
+        if (cancelled) return
+
+        const knowledgeItems: MentionItem[] = (documents as LibraryIndexEntry[]).map((document) => ({
+          id: document.id,
+          type: 'knowledge',
+          label: document.title,
+          description: 'Knowledge',
+          resource: { id: document.id, projectId },
+        }))
+        const assetItems: MentionItem[] = (assets as ProjectAsset[]).map((asset) => ({
+          id: asset.absolutePath,
+          type: 'project-file',
+          label: asset.filename,
+          description: 'Project file',
+          resource: { id: asset.filename, projectId, path: asset.absolutePath },
+        }))
+        setProjectMentionResources([...knowledgeItems, ...assetItems])
+      } catch (error) {
+        console.warn('[FreeFormInput] Failed to load project mention resources:', error)
+        if (!cancelled) setProjectMentionResources([])
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [workspaceId, projectId])
 
   // Derive connectionDefaultModel per-session from the effective connection.
   // Only non-null for compat providers (custom endpoints with fixed models).
@@ -991,7 +1044,7 @@ export function FreeFormInput({
     homeDir,
   })
 
-  // Handle mention selection (sources, skills, files)
+  // Handle mention selection (sources, skills, files, and project resources)
   const handleMentionSelect = React.useCallback((item: MentionItem) => {
     // For sources: enable the source immediately
     if (item.type === 'source' && item.source && onSourcesChange) {
@@ -1007,11 +1060,12 @@ export function FreeFormInput({
     // Skills also don't need special handling beyond text insertion.
   }, [optimisticSourceSlugs, onSourcesChange])
 
-  // Inline mention hook (for skills, sources, and files)
+  // Inline mention hook (for skills, sources, files, and project resources)
   const inlineMention = useInlineMention({
     inputRef: richInputRef,
     skills,
     sources,
+    resources: projectMentionResources,
     basePath: workingDirectory,
     onSelect: handleMentionSelect,
     // Use workspace slug (not UUID) for SDK skill qualification
@@ -1766,7 +1820,7 @@ export function FreeFormInput({
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: -4, scale: 0.98 }}
                           transition={{ duration: 0.16, ease: [0.2, 0, 0.2, 1] }}
-                          className="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-[6px] bg-foreground/2 pl-1.5 pr-2 py-1 text-[13px] text-foreground/80 select-none transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-control bg-foreground/2 pl-1.5 pr-2 py-1 text-control text-foreground/80 select-none transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           onClick={(event) => {
                             const rect = event.currentTarget.getBoundingClientRect()
                             onFollowUpClick?.(item, {
@@ -1780,7 +1834,7 @@ export function FreeFormInput({
                               <span
                                 role="button"
                                 tabIndex={0}
-                                className="inline-flex h-4 min-w-4 cursor-pointer items-center justify-center rounded-[4px] bg-background px-0.5 text-[10px] font-medium text-foreground shadow-minimal focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                className="inline-flex h-4 min-w-4 cursor-pointer items-center justify-center rounded-menu-item bg-background px-0.5 text-[10px] font-medium text-foreground shadow-minimal focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                                 onMouseDown={(event) => {
                                   event.preventDefault()
                                   event.stopPropagation()
@@ -1941,7 +1995,7 @@ export function FreeFormInput({
                             {displaySources.map((source, index) => (
                               <div
                                 key={source.config.slug}
-                                className={cn("relative h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
+                                className={cn("relative h-5 w-5 rounded-menu-item bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
                                 style={{ zIndex: index + 1 }}
                               >
                                 <SourceAvatar source={source} size="xs" />
@@ -1949,7 +2003,7 @@ export function FreeFormInput({
                             ))}
                             {remainingCount > 0 && (
                               <div
-                                className="-ml-1 h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
+                                className="-ml-1 h-5 w-5 rounded-menu-item bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
                                 style={{ zIndex: displaySources.length + 1 }}
                               >
                                 +{remainingCount}
@@ -2059,7 +2113,7 @@ export function FreeFormInput({
                             {displaySources.map((source, index) => (
                               <div
                                 key={source.config.slug}
-                                className={cn("relative h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
+                                className={cn("relative h-5 w-5 rounded-menu-item bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
                                 style={{ zIndex: index + 1 }}
                               >
                                 <SourceAvatar source={source} size="xs" />
@@ -2067,7 +2121,7 @@ export function FreeFormInput({
                             ))}
                             {remainingCount > 0 && (
                               <div
-                                className="-ml-1 h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
+                                className="-ml-1 h-5 w-5 rounded-menu-item bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
                                 style={{ zIndex: displaySources.length + 1 }}
                               >
                                 +{remainingCount}
@@ -2139,7 +2193,7 @@ export function FreeFormInput({
               onClick={onRequestExpand}
               onMouseEnter={onRequestExpand}
               aria-label={t('chat.tapToType')}
-              className="flex-1 h-7 mx-1 flex items-center justify-center text-foreground/30 hover:text-foreground/60 transition-colors cursor-pointer rounded-[6px] hover:bg-foreground/5 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex-1 h-7 mx-1 flex items-center justify-center text-foreground/30 hover:text-foreground/60 transition-colors cursor-pointer rounded-control hover:bg-foreground/5 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <ChevronUp className="h-4 w-4" />
             </button>
@@ -2158,7 +2212,7 @@ export function FreeFormInput({
                   <button
                     type="button"
                     className={cn(
-                      "input-toolbar-btn inline-flex items-center h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors select-none",
+                      "input-toolbar-btn inline-flex items-center h-7 px-1.5 gap-0.5 text-control shrink-0 rounded-control hover:bg-foreground/5 transition-colors select-none",
                       modelDropdownOpen && "bg-foreground/5",
                       connectionUnavailable && "text-destructive",
                     )}
@@ -2535,7 +2589,7 @@ export function FreeFormInput({
                     type="button"
                     onClick={handleCompactClick}
                     disabled={isProcessing}
-                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-control shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
                       '--shadow-color': 'var(--info-rgb)',
                       color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',

@@ -23,17 +23,6 @@ export type BuiltInKanbanColumnId = 'todo' | 'in-progress' | 'done'
 
 export type SubtaskRunState = 'done' | 'running' | 'pending' | 'failed'
 
-/**
- * What the Task editor points at. `create` authors a brand-new task; `edit` opens an
- * existing tile — either spec-backed (`taskSlug` present → prefill from its task.yaml)
- * or a plain quick-add tile (`taskSlug` absent → start from the title, bind the spec
- * on save). Lives here (not in TaskEditor) so the editor-target atom can reference it
- * without importing a component module.
- */
-export type TaskEditorTarget =
-  | { mode: 'create'; initialProjectId?: string }
-  | { mode: 'edit'; sessionId: string; taskSlug?: string; initialTitle?: string }
-
 export interface KanbanSubtask {
   /** Row key. A child session id, or `node:<nodeId>` for an authored-but-never-run spec node. */
   id: string
@@ -59,18 +48,7 @@ export interface KanbanTask {
   model: string
   /** Optional project binding; colors the tile. */
   projectId?: string
-  /**
-   * Slug of the backing task.yaml when this tile is a spec-authored Conductor task. Absent for
-   * plain quick-add tiles. Drives edit-mode prefill (spec → editor) vs. start-empty in TaskEditor.
-   */
-  taskSlug?: string
   subtasks: KanbanSubtask[]
-  /**
-   * Total subtasks the Conductor run will produce (from the orchestrator's node count). Used as the
-   * progress denominator so it stays stable while `subtasks` fills in as children spawn lazily.
-   * Undefined for non-Conductor tasks (fall back to `subtasks.length`).
-   */
-  subtaskTotal?: number
   /** Flagged for attention (drives the flag star). */
   isFlagged?: boolean
   /** A turn is in flight — drives the live-pulse treatment when enabled. */

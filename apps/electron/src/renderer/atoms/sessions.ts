@@ -76,22 +76,24 @@ export interface SessionMeta {
   isArchived?: boolean
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number
+  /** Source session for a conversation branch. */
+  branchFromSessionId?: string
+  branchFromMessageId?: string
   /** Workspace-scoped project id this session is bound to (undefined = unbound) */
   projectId?: string
+  /** Explicit expert override; omission inherits parent/project/default assistant. */
+  expertId?: string
+  /** Keep this session above unpinned sessions in list views. */
+  isPinned?: boolean
   /** Parent session id — when set, this session is a subtask of the parent (undefined = top-level task) */
   parentSessionId?: string
   /** Kanban board column id ('todo' | 'in-progress' | 'done'); independent of sessionStatus */
   kanbanColumn?: string
   /** Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes) */
-  taskSlug?: string
   /** Tasks Conductor: id of the run that spawned this child session (Conductor-owned children only) */
-  taskRunId?: string
   /** Tasks Conductor: id of the DAG node this child session executes (Conductor-owned children only) */
-  taskNodeId?: string
   /** Tasks Conductor: total DAG node count (orchestrator only) — stable board progress denominator while children spawn lazily */
-  taskNodeCount?: number
   /** Tasks Conductor: a generate-time draft orchestrator, hidden from the board until adopted by createTask. */
-  taskDraft?: boolean
   /** Long-running task continuity metadata used by Today and resume surfaces. */
   taskGoal?: string
   taskPriority?: TaskPriority

@@ -305,41 +305,6 @@ export const mockElectronAPI = {
     }
   },
 
-  generateExploreBrief: async () => ({
-    headline: '探索体验正在收敛',
-    summary: '你正在把网页与会话整合成一个统一的工作入口，当前重点是完成默认页的信息层级和交互闭环。',
-    threads: [
-      { title: '统一入口', detail: '对齐网页与会话两种模式的默认体验。' },
-      { title: 'AI 整理', detail: '使用默认模型生成工作概览和下一步建议。' },
-      { title: '状态保持', detail: '确保会话和网页在重启后依然可继续。' },
-    ],
-    recommendations: [
-      { kind: 'session' as const, targetId: 'route-analysis', title: '继续路线分析', description: '验证两种模式下的默认页跳转。' },
-      { kind: 'session' as const, targetId: 'agent-framework', title: '收敛 Agent 框架方案', description: '把已有讨论整理成可执行的实现步骤。' },
-      { kind: 'prompt' as const, title: '完成打包前回归', description: '检查探索页的加载、失败和空状态。', prompt: '请帮我回归测试探索页的所有状态' },
-    ],
-    generatedAt: Date.now(),
-    model: 'deepseek-v4-flash',
-  }),
-
-  completeAndArchiveSession: async (request: { sessionId: string }) => ({
-    sessionId: request.sessionId,
-    ok: true,
-    alreadyCompleted: false,
-    steps: [
-      { step: 'mark_done' as const, status: 'ok' as const },
-      { step: 'create_checkpoint' as const, status: 'ok' as const },
-      { step: 'resolve_loops' as const, status: 'already_done' as const },
-      { step: 'dismiss_guidance' as const, status: 'already_done' as const },
-      { step: 'archive' as const, status: 'ok' as const },
-      { step: 'clear_snooze' as const, status: 'ok' as const },
-    ],
-  }),
-
-  getTodayState: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
-  snoozeTodayItem: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
-  clearTodaySnooze: async () => ({ schemaVersion: 1 as const, snoozes: [] }),
-
   writePreferences: async (prefs: unknown) => {
     console.log('[Playground] writePreferences called:', prefs)
   },

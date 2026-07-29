@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'bun:test'
-import { isInQuietHours } from '../explore-settings'
+import { isInQuietHours } from '../task-reminder-settings'
 
 function localTime(hours: number, minutes = 0): Date {
   const date = new Date(2026, 6, 22, hours, minutes, 0, 0)
   return date
 }
 
-describe('Explore reminder quiet hours', () => {
+describe('session reminder quiet hours', () => {
   it('supports quiet hours that cross midnight', () => {
     const settings = { quietHoursStart: '22:00', quietHoursEnd: '08:00' }
     expect(isInQuietHours(settings, localTime(23))).toBe(true)

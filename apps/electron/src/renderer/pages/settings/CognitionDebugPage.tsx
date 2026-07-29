@@ -13,7 +13,7 @@ import {
   SettingsCard,
   SettingsRow,
 } from '@/components/settings'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import { useAppShellContext } from '@/context/AppShellContext'
 import type {
   CognitionEventSummary,

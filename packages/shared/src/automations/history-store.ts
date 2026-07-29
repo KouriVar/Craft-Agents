@@ -13,8 +13,8 @@
  */
 
 import { appendFile, readFile, writeFile } from 'fs/promises';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'path';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'path';
 import { createLogger } from '../utils/debug.ts';
 import {
   AUTOMATIONS_HISTORY_FILE,
@@ -23,6 +23,35 @@ import {
 } from './constants.ts';
 
 const log = createLogger('history-store');
+export const AUTOMATION_HISTORY_SCHEMA_VERSION = 1 as const;
+export const AUTOMATION_HISTORY_SCHEMA_FILE = 'automations-history.schema.json';
+
+/**
+ * JSONL cannot carry a data version without breaking legacy readers, so its
+ * schema is explicit in a sidecar. Existing history is backed up before the
+ * sidecar is first created; corrupt/future sidecars stop writes.
+ */
+export function ensureAutomationHistorySchema(workspaceRootPath: string): void {
+  const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
+  const schemaPath = join(workspaceRootPath, AUTOMATION_HISTORY_SCHEMA_FILE);
+  if (!existsSync(schemaPath)) {
+    if (existsSync(historyPath)) {
+      const backupPath = `${historyPath}.pre-v020-schema-v0.bak`;
+      if (!existsSync(backupPath)) copyFileSync(historyPath, backupPath);
+    }
+    writeFileSync(schemaPath, `${JSON.stringify({ schemaVersion: AUTOMATION_HISTORY_SCHEMA_VERSION }, null, 2)}\n`, 'utf8');
+    return;
+  }
+  let schema: { schemaVersion?: unknown };
+  try {
+    schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as { schemaVersion?: unknown };
+  } catch {
+    throw new Error(`自动化运行审计版本文件已损坏，原文件已保留：${schemaPath}`);
+  }
+  if (schema.schemaVersion !== AUTOMATION_HISTORY_SCHEMA_VERSION) {
+    throw new Error(`自动化运行审计数据版本 ${String(schema.schemaVersion)} 不受当前应用支持，原文件已保留`);
+  }
+}
 
 // ============================================================================
 // Per-workspace mutex — serializes writes to avoid corruption
@@ -61,6 +90,7 @@ export async function appendAutomationHistoryEntry(
   const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
 
   await withMutex(workspaceRootPath, async () => {
+    ensureAutomationHistorySchema(workspaceRootPath);
     await appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8');
 
     const count = (appendCounters.get(workspaceRootPath) ?? 0) + 1;
@@ -102,6 +132,7 @@ export function compactAutomationHistorySync(
 ): void {
   const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
   if (!existsSync(historyPath)) return;
+  ensureAutomationHistorySchema(workspaceRootPath);
 
   let content: string;
   try { content = readFileSync(historyPath, 'utf-8'); } catch { return; }
@@ -124,6 +155,7 @@ async function runCompaction(
   let content: string;
   try {
     if (!existsSync(historyPath)) return;
+    ensureAutomationHistorySchema(dirname(historyPath));
     content = await readFile(historyPath, 'utf-8');
   } catch {
     return;
@@ -145,7 +177,7 @@ async function runCompaction(
  * 1. Per-automation cap: keep last `maxPerMatcher` entries per automation ID
  * 2. Global cap: keep last `maxTotal` entries overall
  *
- * Also drops malformed JSON lines.
+ * Malformed JSON is a data-integrity error and is never silently dropped.
  *
  * Returns the compacted output string, or `null` if no compaction was needed.
  */
@@ -164,7 +196,7 @@ function compactEntries(
       const parsed = JSON.parse(line);
       entries.push({ raw: line, id: parsed.id ?? '' });
     } catch {
-      // Drop malformed lines
+      throw new Error('自动化运行审计数据包含损坏的 JSON 行；已停止压缩并保留原文件');
     }
   }
 

@@ -40,7 +40,7 @@ export function MobileMenuItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-3 px-4 min-h-[44px] py-2.5 text-left',
+        'flex w-full items-center gap-3 px-4 min-h-control-touch py-2.5 text-left',
         'active:bg-foreground/10 transition-colors',
         destructive ? 'text-destructive' : 'text-foreground',
         className,
@@ -57,7 +57,7 @@ export function MobileMenuItem({
       <span className="flex-1 min-w-0">
         <span className="block text-base leading-tight">{label}</span>
         {description && (
-          <span className="block text-[13px] text-foreground/50 truncate mt-0.5">
+          <span className="block text-control text-foreground/50 truncate mt-0.5">
             {description}
           </span>
         )}

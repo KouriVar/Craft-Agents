@@ -51,12 +51,17 @@ import {
 } from '@craft-agent/shared/library'
 import type { PolicyInput } from '@craft-agent/shared/privacy'
 import { getPrivacyService } from '../privacy'
+import { migrateLibraryToKnowledge } from '@craft-agent/shared/migrations'
+import { rebuildKnowledgeSearchIndex, removeSearchEntry, upsertSearchEntry } from '@craft-agent/shared/search-index'
 
 const log = createLogger('library')
 
 function now(): number {
   return Date.now()
 }
+
+/** Confirmed v0.20 retention period for recoverable Knowledge deletion. */
+export const KNOWLEDGE_TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 function newId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 16)}`
@@ -93,12 +98,33 @@ export class LibraryService {
   ) {}
 
   ensureInitialized(): LibraryManifest {
+    // v0.20 canonicalizes the storage directory before any new write.  The
+    // move is atomic on a workspace filesystem and intentionally refuses to
+    // guess when both trees exist (a recovery/backup can then be inspected).
+    const migration = migrateLibraryToKnowledge(this.workspaceDataRoot)
+    if (migration === 'conflict') {
+      throw new Error('Knowledge migration conflict: both library and knowledge directories exist')
+    }
     const root = libraryRoot(this.workspaceDataRoot)
     mkdirSync(join(root, 'documents'), { recursive: true })
     mkdirSync(join(root, 'versions'), { recursive: true })
     let manifest = readJsonFile<LibraryManifest>(manifestPath(this.workspaceDataRoot))
     if (!manifest) {
-      manifest = { schemaVersion: 1, migrationsApplied: ['v0.16.0-init'], updatedAt: now() }
+      manifest = { schemaVersion: 1, migrationsApplied: ['v0.16.0-init', 'v0.20.0.library-to-knowledge'], updatedAt: now() }
+      writeJsonAtomic(manifestPath(this.workspaceDataRoot), manifest)
+    }
+    // This additive migration needs no per-document rewrite: older metadata is
+    // valid with an absent `trashedAt`, which means the document is not trashed.
+    if (!manifest.migrationsApplied.includes('v0.20.0-knowledge-trash')) {
+      manifest = {
+        ...manifest,
+        migrationsApplied: [...manifest.migrationsApplied, 'v0.20.0-knowledge-trash'],
+        updatedAt: now(),
+      }
+      writeJsonAtomic(manifestPath(this.workspaceDataRoot), manifest)
+    }
+    if (!manifest.migrationsApplied.includes('v0.20.0.library-to-knowledge')) {
+      manifest = { ...manifest, migrationsApplied: [...manifest.migrationsApplied, 'v0.20.0.library-to-knowledge'], updatedAt: now() }
       writeJsonAtomic(manifestPath(this.workspaceDataRoot), manifest)
     }
     if (!existsSync(indexPath(this.workspaceDataRoot))) {
@@ -162,6 +188,14 @@ export class LibraryService {
         items: nextItems,
       }
       writeJsonAtomic(indexPath(this.workspaceDataRoot), next)
+      // The metadata index is a cache; global search is independently
+      // rebuildable and includes the Markdown body for full-text results.
+      if (meta.status === 'trashed') removeSearchEntry(this.workspaceDataRoot, `knowledge:${meta.id}`)
+      else upsertSearchEntry(this.workspaceDataRoot, {
+        id: `knowledge:${meta.id}`,
+        kind: 'knowledge', title: meta.title, text: this.readBody(meta.id),
+        updatedAt: meta.updatedAt, workspaceId: meta.workspaceId, projectId: meta.projectId,
+      })
     } catch (err) {
       log.warn('index update failed (meta remains authoritative)', err)
     }
@@ -175,6 +209,7 @@ export class LibraryService {
         updatedAt: now(),
         items: index.items.filter((item) => item.id !== documentId),
       } satisfies LibraryResourcesIndex)
+      removeSearchEntry(this.workspaceDataRoot, `knowledge:${documentId}`)
     } catch (err) {
       log.warn('index remove failed', err)
     }
@@ -220,7 +255,7 @@ export class LibraryService {
     return this.rebuildIndexFromMetas()
   }
 
-  repair(): { ok: boolean; rebuiltIndex: number; orphanBodies: string[]; missingBodies: string[] } {
+  repair(): { ok: boolean; rebuiltIndex: number; rebuiltSearchIndex: number; orphanBodies: string[]; missingBodies: string[] } {
     this.ensureInitialized()
     const docsDir = join(libraryRoot(this.workspaceDataRoot), 'documents')
     const orphanBodies: string[] = []
@@ -250,7 +285,8 @@ export class LibraryService {
       }
     }
     const index = this.rebuildIndex()
-    return { ok: true, rebuiltIndex: index.items.length, orphanBodies, missingBodies }
+    const search = rebuildKnowledgeSearchIndex(this.workspaceDataRoot, this.workspaceId)
+    return { ok: search.ok, rebuiltIndex: index.items.length, rebuiltSearchIndex: search.entries, orphanBodies, missingBodies }
   }
 
   list(query: LibraryListQuery): LibraryIndexEntry[] {
@@ -259,6 +295,8 @@ export class LibraryService {
     const filter = query.filter ?? 'all'
     if (filter === 'archived') {
       items = items.filter((item) => item.status === 'archived')
+    } else if (filter === 'trash') {
+      items = items.filter((item) => item.status === 'trashed')
     } else {
       items = items.filter((item) => item.status === 'active')
     }
@@ -574,7 +612,7 @@ export class LibraryService {
     } catch (err) {
       log.error('createFromSession write failed — cleaning partial', err)
       try {
-        this.delete(documentId)
+        this.permanentlyDelete(documentId)
       } catch {
         /* ignore */
       }
@@ -653,8 +691,31 @@ export class LibraryService {
     return meta
   }
 
+  /** Move a document to the recoverable Knowledge trash. */
   delete(documentId: string): { ok: boolean } {
     assertSafeDocumentId(documentId)
+    const meta = this.readMeta(documentId)
+    if (!meta) return { ok: false }
+    meta.status = 'trashed'
+    meta.trashedAt = now()
+    meta.updatedAt = now()
+    this.writeMeta(meta)
+    this.upsertIndexEntry(meta)
+    return { ok: true }
+  }
+
+  restoreFromTrash(documentId: string): DocumentMeta | null {
+    const meta = this.readMeta(documentId)
+    if (!meta || meta.status !== 'trashed') return null
+    meta.status = 'active'
+    delete meta.trashedAt
+    meta.updatedAt = now()
+    this.writeMeta(meta)
+    this.upsertIndexEntry(meta)
+    return meta
+  }
+
+  private permanentlyDelete(documentId: string): boolean {
     const metaPath = documentMetaPath(this.workspaceDataRoot, documentId)
     const bodyPath = documentBodyPath(this.workspaceDataRoot, documentId)
     const vdir = versionDir(this.workspaceDataRoot, documentId)
@@ -663,11 +724,22 @@ export class LibraryService {
       if (existsSync(metaPath)) unlinkSync(metaPath)
       if (existsSync(vdir)) rmSync(vdir, { recursive: true, force: true })
       this.removeIndexEntry(documentId)
-      return { ok: true }
+      return true
     } catch (err) {
-      log.error('delete failed', err)
-      return { ok: false }
+      log.error('permanent delete failed', err)
+      return false
     }
+  }
+
+  /** Permanently remove only trash entries whose 30-day recovery window elapsed. */
+  purgeExpiredTrash(currentTime = now()): number {
+    let purged = 0
+    for (const item of this.list({ workspaceId: this.workspaceId, filter: 'trash', limit: Number.MAX_SAFE_INTEGER })) {
+      const meta = this.readMeta(item.id)
+      if (!meta?.trashedAt || currentTime - meta.trashedAt < KNOWLEDGE_TRASH_RETENTION_MS) continue
+      if (this.permanentlyDelete(item.id)) purged += 1
+    }
+    return purged
   }
 
   listVersions(documentId: string): DocumentVersionMeta[] {

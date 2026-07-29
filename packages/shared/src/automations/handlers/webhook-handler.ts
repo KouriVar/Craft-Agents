@@ -14,6 +14,7 @@ import { matcherMatches, buildWebhookEnv, expandEnvVars } from '../utils.ts';
 import { executeWithRetry, redactUrl, isTransientFailure, createWebhookHistoryEntry, expandWebhookAction } from '../webhook-utils.ts';
 import { RetryScheduler } from '../retry-scheduler.ts';
 import { appendAutomationHistoryEntry } from '../history-store.ts';
+import { createDynamicItem } from '../../dynamic/index.ts';
 
 const log = createLogger('webhook-handler');
 
@@ -115,7 +116,15 @@ export class WebhookHandler implements AutomationHandler {
   constructor(options: WebhookHandlerOptions, configProvider: AutomationsConfigProvider) {
     this.options = options;
     this.configProvider = configProvider;
-    this.retryScheduler = new RetryScheduler({ workspaceRootPath: options.workspaceRootPath });
+    this.retryScheduler = new RetryScheduler({
+      workspaceRootPath: options.workspaceRootPath,
+      onFinalFailure: (entry, result) => {
+        createDynamicItem(options.workspaceRootPath, {
+          kind: 'automation', title: 'Automation failed after retries', body: result.error ?? 'Webhook retry limit reached',
+          automationId: entry.matcherId, requiresAction: true, priority: 'high', source: {},
+        })
+      },
+    });
   }
 
   /**
@@ -248,6 +257,13 @@ export class WebhookHandler implements AutomationHandler {
           this.retryScheduler.enqueue(task.matcherId, expandedAction, result.url, result.error)
             .catch(e => log.debug(`[WebhookHandler] Failed to enqueue for deferred retry: ${e}`));
         }
+      } else if (!result.success) {
+        // Permanent errors (including validation/rate limiting) cannot become
+        // successful via retry; surface the source automation immediately.
+        createDynamicItem(this.options.workspaceRootPath, {
+          kind: 'automation', title: 'Automation failed', body: result.error,
+          automationId: task.matcherId, requiresAction: true, priority: 'high', source: {},
+        });
       }
     }
 

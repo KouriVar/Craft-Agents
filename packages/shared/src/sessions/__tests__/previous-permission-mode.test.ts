@@ -63,3 +63,19 @@ describe('session persistence: task continuity', () => {
     expect(picked.taskCheckpoints).toEqual(source.taskCheckpoints);
   });
 });
+
+describe('session persistence: parent-child relation', () => {
+  it('includes and preserves parentSessionId', () => {
+    expect(SESSION_PERSISTENT_FIELDS).toContain('parentSessionId');
+
+    const picked = pickSessionFields({
+      id: 'child-1',
+      workspaceRootPath: '/tmp/ws',
+      createdAt: 1,
+      lastUsedAt: 2,
+      parentSessionId: 'parent-1',
+    });
+
+    expect(picked.parentSessionId).toBe('parent-1');
+  });
+});

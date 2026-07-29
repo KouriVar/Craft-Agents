@@ -256,7 +256,7 @@ export function InputContainer({
           className="absolute top-0 left-0 right-0 invisible pointer-events-none"
           aria-hidden="true"
         >
-          <div className="rounded-[8px] bg-background overflow-hidden">
+          <div className="rounded-surface bg-background overflow-hidden">
             {renderContent(true)}
           </div>
         </div>

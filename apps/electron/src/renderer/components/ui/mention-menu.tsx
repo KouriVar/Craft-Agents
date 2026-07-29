@@ -11,7 +11,7 @@ import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 // Types
 // ============================================================================
 
-export type MentionItemType = 'skill' | 'plugin' | 'source' | 'file' | 'folder'
+export type MentionItemType = 'skill' | 'plugin' | 'source' | 'file' | 'folder' | 'knowledge' | 'project-file'
 
 export interface MentionItem {
   id: string
@@ -23,6 +23,8 @@ export interface MentionItem {
   pluginSkills?: LoadedSkill[]
   source?: LoadedSource
   file?: { path: string; type: 'file' | 'directory'; relativePath: string }
+  /** Project-scoped knowledge or file reference. */
+  resource?: { id: string; projectId?: string; path?: string }
 }
 
 export interface MentionSection {
@@ -49,12 +51,12 @@ export interface InlineMentionMenuProps {
 // Shared Styles
 // ============================================================================
 
-const MENU_CONTAINER_STYLE = 'overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
+const MENU_CONTAINER_STYLE = 'overflow-hidden rounded-surface bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto py-1'
-const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] mx-1 px-2 py-1.5 text-[13px]'
+const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-control mx-1 px-2 py-1.5 text-control'
 const MENU_ITEM_SELECTED = 'bg-foreground/5'
 // Type badge shown to the right of each item label (e.g. "Skill", "Source")
-const MENU_TYPE_BADGE = 'rounded-[4px] shadow-minimal bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0'
+const MENU_TYPE_BADGE = 'rounded-menu-item shadow-minimal bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0'
 
 // ============================================================================
 // Path utilities
@@ -338,25 +340,31 @@ export function InlineMentionMenu({
                     <path d="M20.5 10C20.5 9.07003 20.5 8.60504 20.3978 8.22354C20.1204 7.18827 19.3117 6.37962 18.2765 6.10222C17.895 6 17.43 6 16.5 6H13.1008C12.4742 6 12.1609 6 11.8739 5.91181C11.6824 5.85298 11.5009 5.76572 11.3353 5.65295C11.0871 5.48389 10.8914 5.23926 10.5 4.75L10.4095 4.63693C10.107 4.25881 9.9558 4.06975 9.7736 3.92674C9.54464 3.74703 9.27921 3.61946 8.99585 3.55294C8.77037 3.5 8.52825 3.5 8.04402 3.5C6.60485 3.5 5.88527 3.5 5.32008 3.74178C4.61056 4.0453 4.0453 4.61056 3.74178 5.32008C3.5 5.88527 3.5 6.60485 3.5 8.04402V10M9.46502 20.5H14.535C16.9102 20.5 18.0978 20.5 18.9301 19.8113C19.7624 19.1226 19.9846 17.9559 20.429 15.6227L20.8217 13.5613C21.1358 11.9121 21.2929 11.0874 20.843 10.5437C20.393 10 19.5536 10 17.8746 10H6.12537C4.44643 10 3.60696 10 3.15704 10.5437C2.70713 11.0874 2.8642 11.9121 3.17835 13.5613L3.57099 15.6227C4.01541 17.9559 4.23763 19.1226 5.06992 19.8113C5.90221 20.5 7.08981 20.5 9.46502 20.5Z"/>
                   </svg>
                 )}
-                {item.type === 'file' && (
+                {(item.type === 'file' || item.type === 'project-file') && (
                   <FileMenuIcon name={item.label} />
+                )}
+                {item.type === 'knowledge' && (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                    <path d="M4.5 5.5A2.5 2.5 0 0 1 7 3h10a2.5 2.5 0 0 1 2.5 2.5v13A2.5 2.5 0 0 1 17 21H7a2.5 2.5 0 0 1-2.5-2.5z" />
+                    <path d="M8 8h8M8 12h8M8 16h5" />
+                  </svg>
                 )}
               </div>
 
               {/* Label and optional path/badge */}
-              {(item.type === 'file' || item.type === 'folder') ? (
+              {(item.type === 'file' || item.type === 'folder' || item.type === 'project-file') ? (
                 <>
                   {/* File/folder: filename then parent path fading out on overflow */}
                   <span className="shrink-0">{item.label}</span>
-                  {item.file?.relativePath && getParentDir(item.file.relativePath) && (
+                  {(item.file?.relativePath || item.resource?.path) && getParentDir(item.file?.relativePath || item.resource?.path || '') && (
                     <FadingText className="text-[11px] text-muted-foreground min-w-0 opacity-50" fadeWidth={20}>
-                      {getParentDir(item.file.relativePath)}
+                      {getParentDir(item.file?.relativePath || item.resource?.path || '')}
                     </FadingText>
                   )}
                 </>
               ) : (
                 <>
-                  {/* Skill/source: label with type badge */}
+                  {/* Skill/source/knowledge: label with type badge */}
                   <div className="flex-1 min-w-0">
                     <span className="truncate block">{item.label}</span>
                   </div>
@@ -365,7 +373,9 @@ export function InlineMentionMenu({
                       ? t('common.skill')
                       : item.type === 'plugin'
                         ? t('common.plugin')
-                        : t('common.source')}
+                        : item.type === 'knowledge'
+                          ? 'Knowledge'
+                          : t('common.source')}
                   </span>
                 </>
               )}
@@ -455,6 +465,8 @@ export interface UseInlineMentionOptions {
   inputRef: React.RefObject<MentionInputElement | null>
   skills: LoadedSkill[]
   sources: LoadedSource[]
+  /** Resources scoped to the project bound to the active session. */
+  resources?: MentionItem[]
   /** Base path for file search (working directory) */
   basePath?: string
   onSelect: (item: MentionItem) => void
@@ -478,6 +490,7 @@ export function useInlineMention({
   inputRef,
   skills,
   sources,
+  resources = [],
   basePath,
   onSelect,
   workspaceId,
@@ -508,7 +521,7 @@ export function useInlineMention({
     }
   }, [])
 
-  // Build sections from available data (skills, sources, and file search results)
+  // Build sections from available data (skills, sources, project resources, and file search results)
   const sections = React.useMemo((): MentionSection[] => {
     const result: MentionSection[] = []
 
@@ -563,6 +576,14 @@ export function useInlineMention({
       })
     }
 
+    if (resources.length > 0) {
+      result.push({
+        id: 'project-resources',
+        label: 'Project resources',
+        items: resources,
+      })
+    }
+
     // Files section (from async search results)
     if (fileResults.length > 0) {
       result.push({
@@ -573,7 +594,7 @@ export function useInlineMention({
     }
 
     return result
-  }, [skills, sources, fileResults])
+  }, [skills, sources, resources, fileResults])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
@@ -708,7 +729,7 @@ export function useInlineMention({
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
-      const buildMentionText = (kind: 'skill' | 'plugin' | 'source' | 'file' | 'folder', value: string): string =>
+      const buildMentionText = (kind: 'skill' | 'plugin' | 'source' | 'file' | 'folder' | 'knowledge' | 'project-file', value: string): string =>
         '[' + kind + ':' + value + '] '
 
       // Build the mention text based on type using bracket syntax.
@@ -731,6 +752,10 @@ export function useInlineMention({
         mentionText = buildMentionText('file', item.file?.relativePath || item.id)
       } else if (item.type === 'folder') {
         mentionText = buildMentionText('folder', item.file?.relativePath || item.id)
+      } else if (item.type === 'knowledge') {
+        mentionText = buildMentionText('knowledge', item.resource?.id || item.id)
+      } else if (item.type === 'project-file') {
+        mentionText = buildMentionText('project-file', item.resource?.path || item.id)
       } else {
         mentionText = buildMentionText('skill', item.id)
       }

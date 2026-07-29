@@ -9,16 +9,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500&display=swap" rel="stylesheet">
   <script>
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.classList.replace('light', 'dark')
-    }
+    const appearance = new URLSearchParams(window.location.search).get('appearance')
+    const dark = appearance === 'dark'
+      || (appearance !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.classList.toggle('light', !dark)
   </script>
   <style>
     html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
     html, body { background: #fafafb; }
-    @media (prefers-color-scheme: dark) {
-      html, body { background: #2b292e; }
-    }
+    html.dark, html.dark body { background: #2b292e; }
   </style>
 </head>
 <body>

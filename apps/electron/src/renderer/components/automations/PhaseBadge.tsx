@@ -9,16 +9,16 @@ import { getEventCategory, type AutomationTrigger, type EventCategory } from './
 import { Info_Badge, type BadgeColor } from '@/components/info'
 
 const CATEGORY_BADGE: Record<EventCategory, { label: string; color: BadgeColor }> = {
-  'scheduled':   { label: 'Scheduled', color: 'success' },
-  'agent-pre':   { label: 'Before',    color: 'warning' },
-  'agent-post':  { label: 'After',     color: 'success' },
-  'agent-error': { label: 'On Error',  color: 'destructive' },
-  'label':       { label: 'Event',     color: 'default' },
-  'permission':  { label: 'Event',     color: 'default' },
-  'flag':        { label: 'Event',     color: 'default' },
-  'todo':        { label: 'Event',     color: 'default' },
-  'session':     { label: 'Event',     color: 'default' },
-  'other':       { label: 'Event',     color: 'default' },
+  'scheduled':   { label: '定时', color: 'success' },
+  'agent-pre':   { label: '执行前', color: 'warning' },
+  'agent-post':  { label: '执行后', color: 'success' },
+  'agent-error': { label: '失败时', color: 'destructive' },
+  'label':       { label: '事件', color: 'default' },
+  'permission':  { label: '事件', color: 'default' },
+  'flag':        { label: '事件', color: 'default' },
+  'todo':        { label: '事件', color: 'default' },
+  'session':     { label: '事件', color: 'default' },
+  'other':       { label: '事件', color: 'default' },
 }
 
 export interface PhaseBadgeProps {

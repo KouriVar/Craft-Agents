@@ -13,6 +13,7 @@ import {
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { getLibraryService } from '../../library/LibraryService'
+import { KnowledgeAssetService } from '../../knowledge/KnowledgeAssetService'
 import { prepareLibraryDocumentFromAi } from '../../library/library-generate-llm'
 import {
   consumeLibraryConsentToken,
@@ -34,6 +35,11 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.library.EXPORT,
   RPC_CHANNELS.library.REPAIR,
   RPC_CHANNELS.library.UNLINK_SESSION,
+  RPC_CHANNELS.library.IMPORT_FILE,
+  RPC_CHANNELS.library.CREATE_MINDMAP,
+  RPC_CHANNELS.library.UPDATE_MINDMAP,
+  RPC_CHANNELS.library.LIST_MINDMAPS,
+  RPC_CHANNELS.library.GET_MINDMAP,
 ] as const
 
 function resolveWorkspace(workspaceId: string) {
@@ -314,5 +320,26 @@ export function registerLibraryHandlers(server: RpcServer, deps: HandlerDeps): v
   server.handle(RPC_CHANNELS.library.UNLINK_SESSION, async (_ctx, request: import('@craft-agent/shared/protocol').LibraryUnlinkSessionRequest) => {
     const ws = resolveWorkspace(request.workspaceId)
     return getLibraryService(ws.rootPath, ws.id).unlinkSession(request.documentId, request.sessionId)
+  })
+
+  server.handle(RPC_CHANNELS.library.IMPORT_FILE, async (_ctx, input: { workspaceId: string; sourcePath: string; projectId?: string; mimeType?: string; sourceSessionId?: string }) => {
+    const ws = resolveWorkspace(input.workspaceId)
+    return new KnowledgeAssetService(ws.rootPath, ws.id).importFile(input)
+  })
+
+  server.handle(RPC_CHANNELS.library.CREATE_MINDMAP, async (_ctx, input: { workspaceId: string; title?: string; projectId?: string; sourceSessionId?: string }) => {
+    const ws = resolveWorkspace(input.workspaceId)
+    return new KnowledgeAssetService(ws.rootPath, ws.id).createMindMap(input)
+  })
+
+  server.handle(RPC_CHANNELS.library.UPDATE_MINDMAP, async (_ctx, input: import('@craft-agent/shared/knowledge').MindMapDocument) => {
+    const ws = resolveWorkspace(input.workspaceId)
+    return new KnowledgeAssetService(ws.rootPath, ws.id).updateMindMap(input)
+  })
+  server.handle(RPC_CHANNELS.library.LIST_MINDMAPS, async (_ctx, input: { workspaceId: string; projectId?: string }) => {
+    const ws = resolveWorkspace(input.workspaceId); return new KnowledgeAssetService(ws.rootPath, ws.id).listMindMaps(input.projectId)
+  })
+  server.handle(RPC_CHANNELS.library.GET_MINDMAP, async (_ctx, input: { workspaceId: string; id: string }) => {
+    const ws = resolveWorkspace(input.workspaceId); return new KnowledgeAssetService(ws.rootPath, ws.id).getMindMap(input.id)
   })
 }

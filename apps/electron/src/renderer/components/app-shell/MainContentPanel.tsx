@@ -17,12 +17,11 @@
 
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
-import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
   useNavigationState,
@@ -33,6 +32,7 @@ import {
   isPluginsNavigation,
   isBrowserNavigation,
   isAutomationsNavigation,
+  isDynamicNavigation,
   isProjectsNavigation,
   isLibraryNavigation,
 } from '@/contexts/NavigationContext'
@@ -42,21 +42,23 @@ import { extractLabelId } from '@craft-agent/shared/labels'
 import type { SessionStatusId } from '@/config/session-status-config'
 import { SourceInfoPage, ChatPage } from '@/pages'
 import SkillInfoPage from '@/pages/SkillInfoPage'
+import { CapabilityCenterPage } from '@/pages/CapabilityCenterPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
+import { SettingsSectionProvider } from '@/pages/settings/SettingsSectionContext'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
 import { LibraryDocumentPage } from '../library/LibraryDocumentPage'
 import { PluginInfoPage } from '../plugins/PluginInfoPage'
 import { BrowserWorkspacePage } from '../browser/BrowserWorkspacePage'
-import { ExploreHome } from '../explore/ExploreHome'
-import { browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
 import { navigate, routes } from '@/lib/navigate'
 import { BrowserExtensionInfoPage } from '../plugins/BrowserExtensionInfoPage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
-import { pluginListKindAtom } from '@/atoms/plugins'
+import { pluginListKindAtom, pluginsAtom } from '@/atoms/plugins'
+import { skillsAtom } from '@/atoms/skills'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
+import { DynamicCenterPage } from '../dynamic/DynamicCenterPage'
 
 export interface MainContentPanelProps {
   /** Whether both sidebar and navigator are hidden (focus mode / CMD+.) */
@@ -77,6 +79,7 @@ export function MainContentPanel({
   navStateOverride,
 }: MainContentPanelProps) {
   const { t } = useTranslation()
+  const skills = useAtomValue(skillsAtom)
   const globalNavState = useNavigationState()
   const navState = navStateOverride ?? globalNavState
   const {
@@ -95,11 +98,8 @@ export function MainContentPanel({
     automationTestResults,
     getAutomationHistory,
     activeSessionWorkingDirectory,
-    onOpenUrl,
-    onOpenBrowserUrl,
-    openNewChat,
-    isUnifiedExploreNavigation,
   } = useAppShellContext()
+
 
   // Session multi-select state
   const isMultiSelectActive = useIsMultiSelectActive()
@@ -107,23 +107,11 @@ export function MainContentPanel({
   const selectionCount = useSelectionCount()
   const { clearMultiSelect } = useSessionSelection()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const browserTabs = useAtomValue(browserWorkspaceTabsAtom)
   const automations = useAtomValue(automationsAtom)
   const pluginListKind = useAtomValue(pluginListKindAtom)
-
-  // Recent items for the Explore home: most-recent sessions (by last message)
-  // and the current browser tabs. Derived from existing data — no extra store.
-  const recentSessions = useMemo(() => {
-    return [...sessionMetaMap.values()]
-      .filter((meta) => meta.workspaceId === activeWorkspaceId && !meta.isArchived)
-      .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))
-      .slice(0, 12)
-  }, [activeWorkspaceId, sessionMetaMap])
-  const taskSessions = useMemo(() => {
-    return [...sessionMetaMap.values()]
-      .filter((meta) => meta.workspaceId === activeWorkspaceId && !meta.isArchived)
-  }, [activeWorkspaceId, sessionMetaMap])
-  const recentTabs = useMemo(() => browserTabs.slice(0, 8), [browserTabs])
+  const installedPlugins = useAtomValue(pluginsAtom)
+  const setInstalledPlugins = useSetAtom(pluginsAtom)
+  const capabilitySkills = useAtomValue(skillsAtom)
 
   // Execution history for the selected automation
   const selectedAutomationId = isAutomationsNavigation(navState) ? navState.details?.automationId : undefined
@@ -264,20 +252,9 @@ export function MainContentPanel({
     </StoplightProvider>
   )
 
-  const renderExploreHome = () => wrapWithStoplight(
-    <Panel variant="grow" className={className}>
-      <ExploreHome
-        workspaceId={activeWorkspaceId || ''}
-        recentSessions={recentSessions}
-        taskSessions={taskSessions}
-        recentTabs={recentTabs}
-        onOpenSession={(sessionId) => navigate(routes.view.allSessions(sessionId))}
-        onOpenTab={(tabId) => navigate(routes.view.browser(tabId))}
-        onOpenUrl={onOpenBrowserUrl ?? onOpenUrl}
-        onNewSession={(prompt) => { void openNewChat?.({ input: prompt }) }}
-      />
-    </Panel>
-  )
+  if (isDynamicNavigation(navState)) {
+    return wrapWithStoplight(<Panel variant="grow" className={className}><DynamicCenterPage workspaceId={activeWorkspaceId || ''} /></Panel>)
+  }
 
   // Settings navigator - uses component map from settings-pages.ts.
   // Bare `settings` route (subpage === null) means navigator-only view in compact mode;
@@ -288,7 +265,9 @@ export function MainContentPanel({
     const SettingsPageComponent = getSettingsPageComponent(subpage)
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <SettingsPageComponent />
+        <SettingsSectionProvider section={navState.section}>
+          <SettingsPageComponent />
+        </SettingsSectionProvider>
       </Panel>
     )
   }
@@ -329,6 +308,9 @@ export function MainContentPanel({
 
   // Skills navigator - show skill info, multi-select panel, or empty state
   if (isSkillsNavigation(navState)) {
+    if (!navState.details?.type && activeWorkspaceId) {
+      return wrapWithStoplight(<Panel variant="grow" className={className}><CapabilityCenterPage workspaceId={activeWorkspaceId} skills={capabilitySkills} installedPlugins={installedPlugins} onPluginInstalled={plugin => setInstalledPlugins(current => [...current.filter(item => item.name !== plugin.name), plugin])} /></Panel>)
+    }
     if (isSkillMultiSelectActive) {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
@@ -387,7 +369,6 @@ export function MainContentPanel({
   }
 
   if (isBrowserNavigation(navState)) {
-    if (!navState.details) return renderExploreHome()
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <BrowserWorkspacePage activeTabId={navState.details?.tabId ?? null} />
@@ -430,8 +411,10 @@ export function MainContentPanel({
     }
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("automations.noAutomationsConfigured")}</p>
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <p className="text-sm">
+            {automations.length > 0 ? '从左侧选择一个自动化查看详情' : t("automations.noAutomationsConfigured")}
+          </p>
         </div>
       </Panel>
     )
@@ -510,9 +493,7 @@ export function MainContentPanel({
         </Panel>
       )
     }
-    if (isUnifiedExploreNavigation) return renderExploreHome()
-
-    // No session selected outside Explore - keep the regular navigator empty state.
+    // No session selected: keep the regular navigator empty state.
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -531,3 +512,4 @@ export function MainContentPanel({
     </Panel>
   )
 }
+import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'

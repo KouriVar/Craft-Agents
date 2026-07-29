@@ -49,6 +49,28 @@ function createMockDeps(): HandlerDeps {
       dispose: () => {},
       size: 0,
     } as unknown as HandlerDeps['oauthFlowStore'],
+    messagingRegistry: {
+      getConfig: async () => ({}),
+      updateConfig: async () => {},
+      testLark: async () => ({ ok: true }),
+      saveLark: async () => {},
+      disconnect: async () => {},
+      forget: async () => {},
+      getBindings: async () => [],
+      generateCode: async () => '',
+      unbind: async () => {},
+      unbindBinding: async () => {},
+      wechatStartConnect: async () => {},
+      wechatSubmitCode: async () => {},
+      getPlatformOwners: async () => [],
+      setPlatformOwners: async () => {},
+      getPlatformAccessMode: async () => 'inherit',
+      setPlatformAccessMode: async () => {},
+      getPendingSenders: async () => [],
+      dismissPendingSender: async () => {},
+      allowPendingSender: async () => {},
+      setBindingAccess: async () => {},
+    } as unknown as HandlerDeps['messagingRegistry'],
   }
 }
 
@@ -72,9 +94,18 @@ async function getExpectedChannels(): Promise<Set<string>> {
     plugins,
     resources,
     transfer,
-    tasks,
     projects,
     widgets,
+    cognition,
+    connectors,
+    dynamic,
+    experts,
+    library,
+    messaging,
+    privacy,
+    search,
+    server,
+    workflows,
   ] = await Promise.all([
     import('@craft-agent/server-core/handlers/rpc/auth'),
     import('@craft-agent/server-core/handlers/rpc/automations'),
@@ -93,9 +124,18 @@ async function getExpectedChannels(): Promise<Set<string>> {
     import('@craft-agent/server-core/handlers/rpc/plugins'),
     import('@craft-agent/server-core/handlers/rpc/resources'),
     import('@craft-agent/server-core/handlers/rpc/transfer'),
-    import('@craft-agent/server-core/handlers/rpc/tasks'),
     import('@craft-agent/server-core/handlers/rpc/projects'),
     import('@craft-agent/server-core/handlers/rpc/widgets'),
+    import('@craft-agent/server-core/handlers/rpc/cognition'),
+    import('@craft-agent/server-core/handlers/rpc/connectors'),
+    import('@craft-agent/server-core/handlers/rpc/dynamic'),
+    import('@craft-agent/server-core/handlers/rpc/experts'),
+    import('@craft-agent/server-core/handlers/rpc/library'),
+    import('@craft-agent/server-core/handlers/rpc/messaging'),
+    import('@craft-agent/server-core/handlers/rpc/privacy'),
+    import('@craft-agent/server-core/handlers/rpc/search'),
+    import('@craft-agent/server-core/handlers/rpc/server'),
+    import('@craft-agent/server-core/handlers/rpc/workflows'),
   ])
 
   // GUI handler channels (remain in electron)
@@ -124,9 +164,18 @@ async function getExpectedChannels(): Promise<Set<string>> {
     ...plugins.HANDLED_CHANNELS,
     ...resources.HANDLED_CHANNELS,
     ...transfer.HANDLED_CHANNELS,
-    ...tasks.HANDLED_CHANNELS,
     ...projects.HANDLED_CHANNELS,
     ...widgets.HANDLED_CHANNELS,
+    ...cognition.HANDLED_CHANNELS,
+    ...connectors.HANDLED_CHANNELS,
+    ...dynamic.HANDLED_CHANNELS,
+    ...experts.HANDLED_CHANNELS,
+    ...library.HANDLED_CHANNELS,
+    ...messaging.HANDLED_CHANNELS,
+    ...privacy.HANDLED_CHANNELS,
+    ...search.HANDLED_CHANNELS,
+    ...server.HANDLED_CHANNELS,
+    ...workflows.HANDLED_CHANNELS,
     ...browser.HANDLED_CHANNELS,
     ...guiSystem.GUI_HANDLED_CHANNELS,
     ...guiWorkspace.GUI_HANDLED_CHANNELS,
@@ -143,7 +192,12 @@ describe('RPC handler registration', () => {
     const expected = await getExpectedChannels()
     const { registerAllRpcHandlers } = await import('../index')
 
-    registerAllRpcHandlers(createMockServer(), createMockDeps())
+    const mockServerCtx = {
+      getConnectedClientCount: () => 0,
+      serverId: 'test-server',
+      startedAt: Date.now(),
+    }
+    registerAllRpcHandlers(createMockServer(), createMockDeps(), mockServerCtx)
 
     const appChannels = registeredChannels.filter(ch => ch.includes(':'))
     const actual = new Set(appChannels)

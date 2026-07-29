@@ -25,24 +25,8 @@ export const CHANNEL_MAP = {
   createSession: invoke(RPC_CHANNELS.sessions.CREATE),
   deleteSession: invoke(RPC_CHANNELS.sessions.DELETE),
   sendMessage: invoke(RPC_CHANNELS.sessions.SEND_MESSAGE),
-  generateExploreBrief: invoke(RPC_CHANNELS.sessions.GENERATE_EXPLORE_BRIEF),
-  completeAndArchiveSession: invoke(RPC_CHANNELS.sessions.COMPLETE_AND_ARCHIVE),
   cancelProcessing: invoke(RPC_CHANNELS.sessions.CANCEL),
   killShell: invoke(RPC_CHANNELS.sessions.KILL_SHELL),
-  getTaskOutput: invoke(RPC_CHANNELS.tasks.GET_OUTPUT),
-
-  // Tasks (Conductor)
-  validateTask: invoke(RPC_CHANNELS.tasks.VALIDATE),
-  createTask: invoke(RPC_CHANNELS.tasks.CREATE),
-  generateTask: invoke(RPC_CHANNELS.tasks.GENERATE),
-  runTask: invoke(RPC_CHANNELS.tasks.RUN),
-  pauseTask: invoke(RPC_CHANNELS.tasks.PAUSE),
-  resumeTask: invoke(RPC_CHANNELS.tasks.RESUME),
-  stopTask: invoke(RPC_CHANNELS.tasks.STOP),
-  getTask: invoke(RPC_CHANNELS.tasks.GET),
-  listTasks: invoke(RPC_CHANNELS.tasks.LIST),
-  getTaskResults: invoke(RPC_CHANNELS.tasks.GET_RESULTS),
-  onTaskGenerated: listener(RPC_CHANNELS.tasks.GENERATED),
   respondToPermission: invoke(RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION),
   respondToCredential: invoke(RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL),
   sessionCommand: invoke(RPC_CHANNELS.sessions.COMMAND),
@@ -210,6 +194,8 @@ export const CHANNEL_MAP = {
   // User Preferences
   readPreferences: invoke(RPC_CHANNELS.preferences.READ),
   writePreferences: invoke(RPC_CHANNELS.preferences.WRITE),
+  searchWorkspace: invoke(RPC_CHANNELS.search.QUERY),
+  repairSearchIndex: invoke(RPC_CHANNELS.search.REPAIR),
 
   // Session Drafts
   getDraft: invoke(RPC_CHANNELS.drafts.GET),
@@ -219,8 +205,6 @@ export const CHANNEL_MAP = {
 
   // Session Info Panel
   getSessionFiles: invoke(RPC_CHANNELS.sessions.GET_FILES),
-  getSessionNotes: invoke(RPC_CHANNELS.sessions.GET_NOTES),
-  setSessionNotes: invoke(RPC_CHANNELS.sessions.SET_NOTES),
   watchSessionFiles: invoke(RPC_CHANNELS.sessions.WATCH_FILES),
   unwatchSessionFiles: invoke(RPC_CHANNELS.sessions.UNWATCH_FILES),
   onSessionFilesChanged: listener(RPC_CHANNELS.sessions.FILES_CHANGED),
@@ -236,6 +220,22 @@ export const CHANNEL_MAP = {
   getDefaultPermissionsConfig: invoke(RPC_CHANNELS.permissions.GET_DEFAULTS),
   onDefaultPermissionsChanged: listener(RPC_CHANNELS.permissions.DEFAULTS_CHANGED),
   getMcpTools: invoke(RPC_CHANNELS.sources.GET_MCP_TOOLS),
+
+  // Capability center — user-facing Experts and Connectors.
+  listExperts: invoke(RPC_CHANNELS.experts.LIST),
+  getExpert: invoke(RPC_CHANNELS.experts.GET),
+  createExpert: invoke(RPC_CHANNELS.experts.CREATE),
+  updateExpert: invoke(RPC_CHANNELS.experts.UPDATE),
+  duplicateExpert: invoke(RPC_CHANNELS.experts.DUPLICATE),
+  deleteExpert: invoke(RPC_CHANNELS.experts.DELETE),
+  getCapabilityAssignment: invoke(RPC_CHANNELS.experts.GET_CAPABILITY_ASSIGNMENT),
+  setCapabilityAssignment: invoke(RPC_CHANNELS.experts.SET_CAPABILITY_ASSIGNMENT),
+  resolveExpertCapabilities: invoke(RPC_CHANNELS.experts.RESOLVE_CAPABILITIES),
+  listConnectors: invoke(RPC_CHANNELS.connectors.LIST),
+  getConnector: invoke(RPC_CHANNELS.connectors.GET),
+  createConnector: invoke(RPC_CHANNELS.connectors.CREATE),
+  updateConnector: invoke(RPC_CHANNELS.connectors.UPDATE),
+  deleteConnector: invoke(RPC_CHANNELS.connectors.DELETE),
 
   // Session content search
   searchSessionContent: invoke(RPC_CHANNELS.sessions.SEARCH_CONTENT),
@@ -269,6 +269,7 @@ export const CHANNEL_MAP = {
   addPluginMarketplaceSource: invoke(RPC_CHANNELS.plugins.ADD_MARKETPLACE_SOURCE),
   removePluginMarketplaceSource: invoke(RPC_CHANNELS.plugins.REMOVE_MARKETPLACE_SOURCE),
   getPluginMarketplaceCatalog: invoke(RPC_CHANNELS.plugins.GET_MARKETPLACE_CATALOG),
+  previewPluginUpdate: invoke(RPC_CHANNELS.plugins.PREVIEW_UPDATE),
   installMarketplacePlugin: invoke(RPC_CHANNELS.plugins.INSTALL_MARKETPLACE_PLUGIN),
   connectPluginNativeSource: invoke(RPC_CHANNELS.plugins.CONNECT_NATIVE_SOURCE),
   registerLocalPlugin: invoke(RPC_CHANNELS.plugins.REGISTER_LOCAL),
@@ -319,7 +320,6 @@ export const CHANNEL_MAP = {
   onWorkspaceThemeChange: listener(RPC_CHANNELS.theme.WORKSPACE_THEME_CHANGED),
 
   // Notifications
-  showNotification: invoke(RPC_CHANNELS.notification.SHOW),
   getNotificationsEnabled: invoke(RPC_CHANNELS.notification.GET_ENABLED),
   setNotificationsEnabled: invoke(RPC_CHANNELS.notification.SET_ENABLED),
 
@@ -338,6 +338,8 @@ export const CHANNEL_MAP = {
   setRightSidebarFollowSession: invoke(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION),
   getBrowserOpenMode: invoke(RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE),
   setBrowserOpenMode: invoke(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE),
+  getDoubleCommandScreenshotHideApp: invoke(RPC_CHANNELS.screenCapture.GET_HIDE_APP),
+  setDoubleCommandScreenshotHideApp: invoke(RPC_CHANNELS.screenCapture.SET_HIDE_APP),
 
   // Power settings
   getKeepAwakeWhileRunning: invoke(RPC_CHANNELS.power.GET_KEEP_AWAKE),
@@ -372,7 +374,8 @@ export const CHANNEL_MAP = {
   // Window focus
   getWindowFocusState: invoke(RPC_CHANNELS.window.GET_FOCUS_STATE),
   onWindowFocusChange: listener(RPC_CHANNELS.window.FOCUS_STATE),
-  onNotificationNavigate: listener(RPC_CHANNELS.notification.NAVIGATE),
+  getWindowMaximizedState: invoke(RPC_CHANNELS.window.GET_MAXIMIZED_STATE),
+  onWindowMaximizedChange: listener(RPC_CHANNELS.window.MAXIMIZED_STATE),
 
   // Git
   getGitBranch: invoke(RPC_CHANNELS.git.GET_BRANCH),
@@ -399,10 +402,6 @@ export const CHANNEL_MAP = {
   listPrivacyAccessLog: invoke(RPC_CHANNELS.privacy.LIST_ACCESS_LOG),
   clearPrivacyData: invoke(RPC_CHANNELS.privacy.CLEAR_DATA),
   getPrivacyStorageUsage: invoke(RPC_CHANNELS.privacy.GET_STORAGE_USAGE),
-  // Explore Today product state
-  getTodayState: invoke(RPC_CHANNELS.today.GET_STATE),
-  snoozeTodayItem: invoke(RPC_CHANNELS.today.SNOOZE),
-  clearTodaySnooze: invoke(RPC_CHANNELS.today.CLEAR_SNOOZE),
   // Library (资源库)
   listLibraryDocuments: invoke(RPC_CHANNELS.library.LIST),
   getLibraryDocument: invoke(RPC_CHANNELS.library.GET),
@@ -418,6 +417,11 @@ export const CHANNEL_MAP = {
   exportLibraryDocument: invoke(RPC_CHANNELS.library.EXPORT),
   repairLibrary: invoke(RPC_CHANNELS.library.REPAIR),
   unlinkLibrarySession: invoke(RPC_CHANNELS.library.UNLINK_SESSION),
+  importKnowledgeFile: invoke(RPC_CHANNELS.library.IMPORT_FILE),
+  createKnowledgeMindMap: invoke(RPC_CHANNELS.library.CREATE_MINDMAP),
+  updateKnowledgeMindMap: invoke(RPC_CHANNELS.library.UPDATE_MINDMAP),
+  listKnowledgeMindMaps: invoke(RPC_CHANNELS.library.LIST_MINDMAPS),
+  getKnowledgeMindMap: invoke(RPC_CHANNELS.library.GET_MINDMAP),
   checkGitBash: invoke(RPC_CHANNELS.gitbash.CHECK),
   browseForGitBash: invoke(RPC_CHANNELS.gitbash.BROWSE),
   setGitBashPath: invoke(RPC_CHANNELS.gitbash.SET_PATH),
@@ -477,12 +481,20 @@ export const CHANNEL_MAP = {
   'browserPane.retryDownload': invoke(RPC_CHANNELS.browserPane.RETRY_DOWNLOAD),
   'browserPane.listPermissions': invoke(RPC_CHANNELS.browserPane.LIST_PERMISSIONS),
   'browserPane.clearPermission': invoke(RPC_CHANNELS.browserPane.CLEAR_PERMISSION),
+  'browserPane.getSettings': invoke(RPC_CHANNELS.browserPane.GET_SETTINGS),
+  'browserPane.updateSettings': invoke(RPC_CHANNELS.browserPane.UPDATE_SETTINGS),
+  'browserPane.getCacheSize': invoke(RPC_CHANNELS.browserPane.GET_CACHE_SIZE),
+  'browserPane.clearData': invoke(RPC_CHANNELS.browserPane.CLEAR_DATA),
+  'browserPane.listSiteData': invoke(RPC_CHANNELS.browserPane.LIST_SITE_DATA),
+  'browserPane.clearSiteData': invoke(RPC_CHANNELS.browserPane.CLEAR_SITE_DATA),
+  'browserPane.clearAllSiteData': invoke(RPC_CHANNELS.browserPane.CLEAR_ALL_SITE_DATA),
   'browserPane.listExtensions': invoke(RPC_CHANNELS.browserPane.LIST_EXTENSIONS),
   'browserPane.installExtension': invoke(RPC_CHANNELS.browserPane.INSTALL_EXTENSION),
   'browserPane.installExtensionFromStore': invoke(RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE),
   'browserPane.removeExtension': invoke(RPC_CHANNELS.browserPane.REMOVE_EXTENSION),
   'browserPane.openExtensionAction': invoke(RPC_CHANNELS.browserPane.OPEN_EXTENSION_ACTION),
   'browserPane.showToolbarMenu': invoke(RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU),
+  'browserPane.showTabMenu': invoke(RPC_CHANNELS.browserPane.SHOW_TAB_MENU),
   'browserPane.setExtensionPreference': invoke(RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE),
   'browserPane.emptyStateLaunch': invoke(RPC_CHANNELS.browserPane.LAUNCH),
   'browserPane.onStateChanged': listener(RPC_CHANNELS.browserPane.STATE_CHANGED),
@@ -508,6 +520,8 @@ export const CHANNEL_MAP = {
   updateProject: invoke(RPC_CHANNELS.projects.UPDATE),
   getProjectMemory: invoke(RPC_CHANNELS.projects.GET_MEMORY),
   setProjectMemory: invoke(RPC_CHANNELS.projects.SET_MEMORY),
+  restoreProjectAutomations: invoke(RPC_CHANNELS.projects.RESTORE_AUTOMATIONS),
+  listPausedProjectAutomations: invoke(RPC_CHANNELS.projects.LIST_PAUSED_AUTOMATIONS),
   deleteProject: invoke(RPC_CHANNELS.projects.DELETE),
   listProjectAssets: invoke(RPC_CHANNELS.projects.LIST_ASSETS),
   uploadProjectAsset: invoke(RPC_CHANNELS.projects.UPLOAD_ASSET),
@@ -516,6 +530,8 @@ export const CHANNEL_MAP = {
 
   // Automations
   getAutomations: invoke(RPC_CHANNELS.automations.GET),
+  createAutomation: invoke(RPC_CHANNELS.automations.CREATE),
+  inferAutomation: invoke(RPC_CHANNELS.automations.INFER),
   testAutomation: invoke(RPC_CHANNELS.automations.TEST),
   setAutomationEnabled: invoke(RPC_CHANNELS.automations.SET_ENABLED),
   duplicateAutomation: invoke(RPC_CHANNELS.automations.DUPLICATE),
@@ -524,6 +540,22 @@ export const CHANNEL_MAP = {
   getAutomationLastExecuted: invoke(RPC_CHANNELS.automations.GET_LAST_EXECUTED),
   replayAutomation: invoke(RPC_CHANNELS.automations.REPLAY),
   onAutomationsChanged: listener(RPC_CHANNELS.automations.CHANGED),
+
+  // Dynamic Center
+  createDynamicItem: invoke(RPC_CHANNELS.dynamic.CREATE),
+  getDynamicItems: invoke(RPC_CHANNELS.dynamic.LIST),
+  markDynamicRead: invoke(RPC_CHANNELS.dynamic.MARK_READ),
+  clearDynamicItem: invoke(RPC_CHANNELS.dynamic.CLEAR),
+  resolveDynamicAction: invoke(RPC_CHANNELS.dynamic.RESOLVE),
+  getDynamicMuteRules: invoke(RPC_CHANNELS.dynamic.GET_MUTE_RULES),
+  setDynamicMuteRules: invoke(RPC_CHANNELS.dynamic.SET_MUTE_RULES),
+  respondToDynamicPermission: invoke(RPC_CHANNELS.dynamic.RESPOND_PERMISSION),
+
+  // Workflows
+  listWorkflows: invoke(RPC_CHANNELS.workflows.LIST),
+  saveWorkflow: invoke(RPC_CHANNELS.workflows.SAVE),
+  deleteWorkflow: invoke(RPC_CHANNELS.workflows.DELETE),
+  runWorkflow: invoke(RPC_CHANNELS.workflows.RUN),
 
   // Resources (cross-workspace export/import)
   exportResources: invoke(RPC_CHANNELS.resources.EXPORT),

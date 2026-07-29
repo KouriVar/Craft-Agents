@@ -374,7 +374,7 @@ function TaskContextSection({ session }: { session: Session }) {
         <div className="flex items-center px-1 pb-1.5 text-xs font-semibold text-muted-foreground">
           <h3>{t('chat.taskContext', { defaultValue: 'Task context' })}</h3>
         </div>
-        <div className="grid gap-1.5 rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3 text-xs">
+        <div className="grid gap-1.5 rounded-touch border border-border/60 bg-foreground/[0.02] p-3 text-xs">
           {session.projectId && (
             <div className="flex min-w-0 items-center gap-2">
               <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -421,7 +421,7 @@ export function ContinueFromHereSection({ session }: { session: Session }) {
         <div className="flex items-center px-1 pb-1.5 text-xs font-semibold text-muted-foreground">
           <h3>{t('chat.continueFromHere', { defaultValue: 'Continue from here' })}</h3>
         </div>
-        <div className="space-y-2 rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3 text-xs leading-5">
+        <div className="space-y-2 rounded-touch border border-border/60 bg-foreground/[0.02] p-3 text-xs leading-5">
           {latestUserMessage && <p className="line-clamp-2"><span className="mr-1 font-medium">You:</span>{latestUserMessage.content}</p>}
           {latestAssistantMessage && <p className="line-clamp-4 text-muted-foreground"><span className="mr-1 font-medium text-foreground">CA:</span>{latestAssistantMessage.content}</p>}
           {session.currentStatus?.message && <p className="rounded bg-background px-2 py-1 text-muted-foreground">{session.currentStatus.message}</p>}
@@ -460,7 +460,7 @@ export function UsageSection({ session }: { session: Session }) {
         <h3 className="text-xs font-semibold text-muted-foreground">{t('resources.usageInfo')}</h3>
       </div>
 
-      <div className="rounded-[10px] border border-border/60 bg-foreground/[0.02] p-3">
+      <div className="rounded-touch border border-border/60 bg-foreground/[0.02] p-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-foreground/[0.05] text-muted-foreground">

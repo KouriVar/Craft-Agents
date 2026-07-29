@@ -15,8 +15,8 @@
  * - SessionManager uses ~30 lines instead of ~300
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, watch, type FSWatcher } from 'node:fs';
+import { join, relative } from 'node:path';
 import { resolveAutomationsConfigPath, generateShortId } from './resolve-config-path.ts';
 import { compactAutomationHistorySync } from './history-store.ts';
 import { createLogger } from '../utils/debug.ts';
@@ -26,6 +26,9 @@ import { type AutomationsConfig, type AutomationEvent, type AutomationMatcher, t
 import { validateAutomationsConfig } from './validation.ts';
 import { matcherMatchesSdk } from './utils.ts';
 import { SchedulerService, type SchedulerTickPayload } from '../scheduler/scheduler-service.ts';
+import { createDynamicItem } from '../dynamic/index.ts';
+import { WebPageMonitorService } from './web-page-monitor.ts';
+import { migrateAutomationConfigSchema } from '../migrations/v020-automation-config.ts';
 
 const log = createLogger('automation-system');
 
@@ -71,6 +74,11 @@ export class AutomationSystem implements AutomationsConfigProvider {
   private webhookHandler: WebhookHandler | null = null;
   private eventLogHandler: EventLogHandler | null = null;
   private scheduler: SchedulerService | null = null;
+  private webPageMonitor: WebPageMonitorService | null = null;
+  /** Linux does not implement fs.watch({ recursive: true }). Keep one watcher
+   * per directory there so nested workspace files remain first-class events. */
+  private readonly workspaceDirectoryWatchers = new Map<string, FSWatcher>();
+  private readonly recentFileEvents = new Map<string, number>();
   private disposed = false;
 
   // Session metadata tracking (moved from SessionManager)
@@ -90,6 +98,8 @@ export class AutomationSystem implements AutomationsConfigProvider {
     if (options.enableScheduler) {
       this.startScheduler();
     }
+    this.startWebPageMonitor();
+    this.startFileWatcher();
 
     log.debug(`[AutomationSystem] Created for workspace: ${options.workspaceId}`);
   }
@@ -103,6 +113,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
    * Returns the raw parsed JSON alongside validation results (avoids re-reading for backfillIds).
    */
   private readAndValidateConfig(configPath: string): { raw: unknown; validation: import('./types.ts').AutomationsValidationResult } {
+    migrateAutomationConfigSchema(configPath);
     const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
     const validation = validateAutomationsConfig(raw);
     return { raw, validation };
@@ -150,6 +161,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
 
     if (!existsSync(configPath)) {
       this.config = { automations: {} };
+      this.startFileWatcher();
       return { success: true, automationCount: 0, errors: [] };
     }
 
@@ -162,6 +174,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
 
       this.config = validation.config;
       this.backfillIds(configPath, raw);
+      this.startFileWatcher();
       const actionCount = this.getActionCount();
       log.debug(`[AutomationSystem] Reloaded ${actionCount} actions`);
       return { success: true, automationCount: actionCount, errors: [] };
@@ -276,6 +289,23 @@ export class AutomationSystem implements AutomationsConfigProvider {
     });
     this.eventLogHandler.subscribe(this.eventBus);
 
+    // Product-facing attention channel. This intentionally records only events
+    // that require attention; ordinary successful runs remain in Run Sessions.
+    this.eventBus.onAny((event, payload) => {
+      const data = (payload as { data?: Record<string, unknown> }).data
+      if (event === 'PermissionRequest') {
+        createDynamicItem(this.options.workspaceRootPath, {
+          kind: 'permission', title: 'Automation permission required', body: typeof data?.message === 'string' ? data.message : undefined,
+          requiresAction: true, priority: 'high', source: { sessionId: payload.sessionId, requestId: typeof data?.requestId === 'string' ? data.requestId : undefined },
+        })
+      } else if (event === 'Notification') {
+        createDynamicItem(this.options.workspaceRootPath, {
+          kind: 'cognition', title: typeof data?.title === 'string' ? data.title : 'Automation notification', body: typeof data?.message === 'string' ? data.message : undefined,
+          requiresAction: false, priority: 'normal', source: { sessionId: payload.sessionId },
+        })
+      }
+    });
+
     log.debug(`[AutomationSystem] Handlers created and subscribed`);
   }
 
@@ -300,6 +330,71 @@ export class AutomationSystem implements AutomationsConfigProvider {
 
     this.scheduler.start();
     log.debug(`[AutomationSystem] Scheduler started`);
+  }
+
+  private startWebPageMonitor(): void {
+    this.webPageMonitor = new WebPageMonitorService({
+      workspaceRoot: this.options.workspaceRootPath, workspaceId: this.options.workspaceId,
+      targets: () => Object.values(this.config?.automations ?? {}).flat().filter((matcher) => matcher.enabled !== false && matcher.webMonitor).map((matcher) => ({ id: matcher.id ?? matcher.webMonitor!.url, name: matcher.name, monitor: matcher.webMonitor! })),
+      onChanged: async (target, state) => this.eventBus.emit('WebPageChange', { workspaceId: this.options.workspaceId, timestamp: Date.now(), data: { automationId: target.id, url: target.monitor.url, rule: target.monitor.rule, summary: state.summary } }),
+    })
+    this.webPageMonitor.start()
+  }
+
+  private startFileWatcher(): void {
+    const hasFileRules = (this.config?.automations.FileChange ?? []).some((matcher) => matcher.enabled !== false)
+    if (!hasFileRules) { this.stopFileWatcher(); return }
+    if (this.workspaceDirectoryWatchers.size) return
+    const emit = (eventType: string, filename: string | Buffer | null) => {
+      const path = filename?.toString()
+      if (!path) return
+      const key = path; const now = Date.now(); const previous = this.recentFileEvents.get(key)
+      if (previous !== undefined && now - previous < 400) return
+      this.recentFileEvents.set(key, now)
+      for (const [seen, timestamp] of this.recentFileEvents) if (now - timestamp > 5_000) this.recentFileEvents.delete(seen)
+      void this.eventBus.emit('FileChange', { workspaceId: this.options.workspaceId, timestamp: Date.now(), data: { eventType, path } }).catch((error) => log.warn('[AutomationSystem] File change dispatch failed', error))
+    }
+    // Use a directory watcher tree on every platform rather than relying on
+    // Node's platform-specific `recursive` option (which is unsupported on
+    // Linux and inconsistent in embedded runtimes). Newly-created directories
+    // trigger a rescan, so nested files stay observable after startup too.
+    // Automation bookkeeping must not recursively re-trigger FileChange
+    // rules. User workspace files remain observable, including nested files.
+    const ignored = new Set(['.git', 'node_modules', 'dist', '.cache', 'dynamic', 'events.jsonl', 'automation-web-monitor.json', 'automation-webhook-replays.json'])
+    const watchDirectory = (directory: string): void => {
+      if (this.workspaceDirectoryWatchers.has(directory)) return
+      try {
+        const watcher = watch(directory, (eventType, filename) => {
+          const name = filename?.toString()
+          if (!name) return
+          const changedPath = relative(this.options.workspaceRootPath, join(directory, name))
+          if (!changedPath || changedPath.split(/[\\/]/).some((part) => ignored.has(part))) return
+          emit(eventType, changedPath)
+          if (eventType === 'rename') {
+            // Directory creation is reported as rename. Re-scan after the
+            // filesystem has materialized it, then begin watching it too.
+            setTimeout(() => scanDirectories(this.options.workspaceRootPath), 25)
+          }
+        })
+        watcher.on('error', (watchError) => log.warn('[AutomationSystem] Directory watcher failed', watchError))
+        this.workspaceDirectoryWatchers.set(directory, watcher)
+      } catch (watchError) { log.warn(`[AutomationSystem] Could not watch ${directory}`, watchError) }
+    }
+    const scanDirectories = (directory: string): void => {
+      watchDirectory(directory)
+      try {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          if (entry.isDirectory() && !ignored.has(entry.name)) scanDirectories(join(directory, entry.name))
+        }
+      } catch (scanError) { log.warn(`[AutomationSystem] Could not scan ${directory}`, scanError) }
+    }
+    scanDirectories(this.options.workspaceRootPath)
+  }
+
+  private stopFileWatcher(): void {
+    for (const watcher of this.workspaceDirectoryWatchers.values()) watcher.close()
+    this.workspaceDirectoryWatchers.clear()
+    this.recentFileEvents.clear()
   }
 
   /**
@@ -545,6 +640,9 @@ export class AutomationSystem implements AutomationsConfigProvider {
 
     // Stop scheduler
     this.stopScheduler();
+    this.webPageMonitor?.stop();
+    this.webPageMonitor = null;
+    this.stopFileWatcher();
 
     // Dispose handlers
     this.promptHandler?.dispose();

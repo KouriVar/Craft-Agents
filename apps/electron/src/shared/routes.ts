@@ -15,7 +15,7 @@
  *   navigate(routes.view.settings('shortcuts'))
  */
 
-import type { SettingsSubpage } from './settings-registry'
+import type { SettingsRouteId } from './settings-registry'
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types'
 
 // Helper to build query strings from params
@@ -187,10 +187,13 @@ export const routes = {
     automationsAgentic: (automationId?: string) =>
       automationId ? `automations/agentic/automation/${automationId}` as const : 'automations/agentic' as const,
 
-    /** Settings view (settings navigator) - uses SettingsSubpage from registry */
-    settings: (subpage?: SettingsSubpage) =>
+    /** Global notification center. */
+    dynamic: () => 'dynamic' as const,
+
+    /** Settings view (settings navigator) — accepts canonical pages or legacy aliases */
+    settings: (subpage?: SettingsRouteId, section?: string) =>
       subpage
-        ? `settings/${subpage}` as const
+        ? `settings/${subpage}${section ? `#${section}` : ''}` as const
         : 'settings' as const,
 
     /** Projects view (projects navigator) */

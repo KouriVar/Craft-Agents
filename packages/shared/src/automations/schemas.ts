@@ -140,12 +140,15 @@ export const AutomationConditionSchema: z.ZodType = z.lazy(() =>
 export const AutomationMatcherSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
+  projectId: z.string().min(1).optional(),
   matcher: z.string().optional(),
   cron: z.string().optional(),
   timezone: z.string().optional(),
   permissionMode: z.enum(['safe', 'ask', 'allow-all']).optional(),
   labels: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
+  webMonitor: z.object({ url: z.string().url(), rule: z.string().min(1), frequencyMinutes: z.number().int().min(1) }).optional(),
+  inboundWebhook: z.object({ secret: z.string().min(16), signatureHeader: z.string().min(1).optional() }).optional(),
   conditions: z.array(AutomationConditionSchema).optional(),
   actions: z.array(ActionDefinitionSchema).min(1, 'At least one action required'),
 });
@@ -167,6 +170,7 @@ export const VALID_EVENTS: readonly string[] = [
 ];
 
 export const AutomationsConfigSchema = z.object({
+  schemaVersion: z.literal(1).optional(),
   version: z.number().optional(),
   automations: z.record(z.string(), z.array(AutomationMatcherSchema)).optional(),
 }).transform((data) => {
@@ -195,7 +199,7 @@ export const AutomationsConfigSchema = z.object({
     console.warn(`[automations] Unknown event types ignored: ${invalidEvents.join(', ')}`);
   }
 
-  return { version: data.version, automations: validAutomations };
+  return { schemaVersion: data.schemaVersion ?? 1, version: data.version, automations: validAutomations };
 });
 
 // ============================================================================

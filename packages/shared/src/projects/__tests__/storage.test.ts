@@ -4,12 +4,13 @@
  * Uses real temp directories to exercise actual filesystem operations.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { estimateTokensDensityAware } from '../../utils/large-response.ts';
 import {
   createProject,
+  deleteProject,
   getProjectMemoryPath,
   loadProjectMemory,
   sanitizeAssetFilename,
@@ -85,5 +86,32 @@ describe('loadProjectMemory', () => {
     // Marker present and budget respected (marker included).
     expect(text).toContain(`truncated at ${maxTokens}-token cap`);
     expect(estimateTokensDensityAware(text)).toBeLessThanOrEqual(maxTokens);
+  });
+});
+
+describe('project deletion boundaries', () => {
+  it('removes project-managed data without touching the configured working directory', () => {
+    const workingDirectory = join(tempDir, 'external-working-directory');
+    const marker = join(workingDirectory, 'keep-me.txt');
+    mkdirSync(workingDirectory, { recursive: true });
+    writeFileSync(marker, 'user work must survive');
+
+    const project = createProject(workspaceRoot, { name: 'Safe deletion', workingDirectory });
+    deleteProject(workspaceRoot, project.slug);
+
+    expect(existsSync(marker)).toBe(true);
+  });
+});
+
+describe('expert project defaults', () => {
+  it('persists default and allowed experts with the project config', () => {
+    const project = createProject(workspaceRoot, {
+      name: 'Expert inheritance',
+      defaultExpertId: 'expert_research',
+      availableExpertIds: ['expert_research', 'expert_writer'],
+    });
+
+    expect(project.defaultExpertId).toBe('expert_research');
+    expect(project.availableExpertIds).toEqual(['expert_research', 'expert_writer']);
   });
 });

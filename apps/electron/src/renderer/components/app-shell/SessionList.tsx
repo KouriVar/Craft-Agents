@@ -100,6 +100,13 @@ interface SessionListProps {
 // Re-export SessionStatusId for use by parent components
 export type { SessionStatusId }
 
+function sortRowsByPinThenActivity(rows: SessionListRow[]): void {
+  rows.sort((a, b) => {
+    if (Boolean(a.item.isPinned) !== Boolean(b.item.isPinned)) return a.item.isPinned ? -1 : 1
+    return (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0)
+  })
+}
+
 // Note: uses date-fns format for non-today/yesterday dates; Today/Yesterday translated at render time
 function formatDateGroupLabel(date: Date, t: (key: string) => string, lang: string): string {
   if (isToday(date)) return t('common.today')
@@ -301,8 +308,8 @@ export function SessionList({
         if (row.item.hasUnread) unreadRows.push(row)
         else readRows.push(row)
       }
-      unreadRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
-      readRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
+      sortRowsByPinThenActivity(unreadRows)
+      sortRowsByPinThenActivity(readRows)
 
       const collapsedUnread = collapsedGroupsMeta.find(m => m.key === 'unread-yes')
       const collapsedRead = collapsedGroupsMeta.find(m => m.key === 'unread-no')
@@ -361,7 +368,7 @@ export function SessionList({
       for (const [key, { rows: groupRows, statusId }] of groupsByKey) {
         const state = sessionStatuses.find(s => s.id === statusId)
         if (!state) continue
-        groupRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
+        sortRowsByPinThenActivity(groupRows)
         const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
         orderedGroups.push({
           key,
@@ -417,7 +424,7 @@ export function SessionList({
 
       const orderedGroups: EntityListGroup<SessionListRow>[] = []
       for (const [key, { rows: groupRows, projectId }] of groupsByKey) {
-        groupRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
+        sortRowsByPinThenActivity(groupRows)
         const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
         const label = projectId
           ? (projectNameById.get(projectId) ?? t('sidebar.unknownProject', { defaultValue: 'Unknown project' }))
@@ -449,11 +456,13 @@ export function SessionList({
       }
     }
 
-    // Default: group by date
+    // Default: keep user-pinned sessions in a stable group above date buckets.
+    const pinnedRows = rows.filter((row) => row.item.isPinned)
+    const dateRows = rows.filter((row) => !row.item.isPinned)
     const groupsByKey = new Map<string, EntityListGroup<SessionListRow>>()
     const groupDates = new Map<string, Date>()
 
-    for (const row of rows) {
+    for (const row of dateRows) {
       const day = startOfDay(new Date(row.item.lastMessageAt || 0))
       const groupKey = day.toISOString()
 
@@ -490,6 +499,14 @@ export function SessionList({
       .map(([key]) => key)
 
     const orderedGroups = orderedKeys.map(key => groupsByKey.get(key)!)
+    if (pinnedRows.length > 0) {
+      orderedGroups.unshift({
+        key: 'pinned',
+        label: t('session.pinned', { defaultValue: 'Pinned' }),
+        items: pinnedRows,
+        collapsible: false,
+      })
+    }
 
     // If only one group exists, disable collapsing — there's nothing to collapse into
     if (orderedGroups.length === 1) {
@@ -497,7 +514,7 @@ export function SessionList({
     }
 
     return {
-      rows,
+      rows: [...pinnedRows, ...dateRows],
       groups: orderedGroups,
     }
   }, [isSearchMode, matchingFilterItems, otherResultItems, flatItems, groupingMode, sessionStatuses, projects, collapsedGroupsMeta, t])
@@ -755,7 +772,7 @@ export function SessionList({
             else if (currentFilter?.kind === 'label') params.label = currentFilter.labelId
             navigate(routes.action.newSession(Object.keys(params).length > 0 ? params : undefined))
           }}
-          className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
+          className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-surface bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
         >
           {t("session.newSession")}
         </button>

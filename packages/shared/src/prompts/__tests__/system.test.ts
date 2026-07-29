@@ -16,6 +16,14 @@ const GIT_CONVENTIONS_HEADING = '## Git Conventions'
 const CO_AUTHOR_TRAILER = 'Co-Authored-By: Craft Agent <agents-noreply@craft.do>'
 
 describe('system prompt guidance', () => {
+  it('appends a session expert instruction without replacing the base safety prompt', () => {
+    const prompt = getSystemPrompt(undefined, undefined, '/tmp/workspace', '/tmp/workspace', 'Always produce a concise research brief.')
+
+    expect(prompt).toContain('<expert_instructions>')
+    expect(prompt).toContain('Always produce a concise research brief.')
+    expect(prompt).toContain('Craft Agent')
+  })
+
   it('uses backend-neutral debug log querying guidance (rg/grep via Bash)', () => {
     const prompt = getSystemPrompt(
       undefined,

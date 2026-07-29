@@ -2606,6 +2606,17 @@ export class PiAgent extends BaseAgent {
   private parsePiError(error: Error): AgentError {
     const errorMessage = error.message.toLowerCase();
 
+    // Provider policy errors can contain "service". They are not temporary
+    // outages: retrying cannot re-enable a disabled model.
+    if (
+      errorMessage.includes('model is disabled') ||
+      errorMessage.includes('model has been disabled') ||
+      errorMessage.includes('model disabled') ||
+      errorMessage.includes('disabled model')
+    ) {
+      return parseError(error);
+    }
+
     // Auth errors
     if (
       errorMessage.includes('api key') ||

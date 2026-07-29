@@ -129,6 +129,7 @@ function makeStubSessionManager(opts: StubSessionManagerOpts = {}): ISessionMana
     acceptPlan: mock(async () => {}),
     setPendingPlanExecution: mock(async () => {}),
     clearPendingPlanExecution: mock(async () => {}),
+    emitAutomationEvent: mock(async () => {}),
     setAutomationBinder: () => {},
   } as unknown as ISessionManager
 }
@@ -206,6 +207,13 @@ function pressFor(buttonId: string, overrides: Partial<ButtonPress> = {}): Butto
 }
 
 describe('MessagingGateway — perm: button (#726)', () => {
+  it('emits a real MessagingReceived automation event before routing inbound text', async () => {
+    const h = await makeHarness()
+    await h.adapter.fireMessage({ platform: 'lark', channelId: 'chat-1', messageId: 'incoming-1', senderId: 'user-1', text: 'hello' })
+    const emit = h.sessionManager.emitAutomationEvent as unknown as ReturnType<typeof mock>
+    expect(emit).toHaveBeenCalledWith('ws-test', 'MessagingReceived', expect.objectContaining({ messageId: 'incoming-1', senderId: 'user-1', text: 'hello' }))
+  })
+
   it('happy path: clears keyboard, calls respondToPermission once, posts ✅ Allowed', async () => {
     const h = await makeHarness()
     await registerPrompt(h.gateway, { requestId: 'req-1' })

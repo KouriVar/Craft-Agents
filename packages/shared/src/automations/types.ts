@@ -19,7 +19,12 @@ export type AppEvent =
   | 'PermissionModeChange'
   | 'FlagChange'
   | 'SessionStatusChange'
-  | 'SchedulerTick';
+  | 'SchedulerTick'
+  | 'WebPageChange'
+  | 'ProjectChange'
+  | 'FileChange'
+  | 'MessagingReceived'
+  | 'WebhookReceived';
 
 /** Agent events - passed to Claude SDK */
 export type AgentEvent =
@@ -41,7 +46,7 @@ export type AutomationEvent = AppEvent | AgentEvent;
 
 export const APP_EVENTS: AppEvent[] = [
   'LabelAdd', 'LabelRemove', 'LabelConfigChange',
-  'PermissionModeChange', 'FlagChange', 'SessionStatusChange', 'SchedulerTick'
+  'PermissionModeChange', 'FlagChange', 'SessionStatusChange', 'SchedulerTick', 'WebPageChange', 'ProjectChange', 'FileChange', 'MessagingReceived', 'WebhookReceived'
 ];
 
 export const AGENT_EVENTS: AgentEvent[] = [
@@ -153,6 +158,8 @@ export interface AutomationMatcher {
   id?: string;
   /** Optional display name. If omitted, derived from the first action. */
   name?: string;
+  /** Optional project scope for this automation and its run sessions. */
+  projectId?: string;
   /** Regex pattern for matching event data (not used for SchedulerTick) */
   matcher?: string;
   /** Cron expression for SchedulerTick events (5-field format) */
@@ -161,16 +168,23 @@ export interface AutomationMatcher {
   timezone?: string;
   /** Permission mode for sessions created by prompt actions. */
   permissionMode?: PermissionMode;
+  /** Finite retry count for prompt/session execution failures. */
+  retryLimit?: number;
   /** Labels to apply to sessions created by prompt actions */
   labels?: string[];
   /** Whether this automation matcher is enabled. Defaults to true. Set to false to disable without removing. */
   enabled?: boolean;
+  /** Persisted configuration for background page-change monitoring. */
+  webMonitor?: { url: string; rule: string; frequencyMinutes: number };
+  /** Inbound webhook authentication. Secret is stored through the automation config boundary. */
+  inboundWebhook?: { secret: string; signatureHeader?: string };
   /** Optional conditions that must all pass (AND) after matcher matches, before actions fire */
   conditions?: AutomationCondition[];
   actions: AutomationAction[];
 }
 
 export interface AutomationsConfig {
+  schemaVersion?: 1;
   automations: Partial<Record<AutomationEvent, AutomationMatcher[]>>;
 }
 
@@ -238,6 +252,10 @@ export interface PendingPrompt {
   labels?: string[];
   /** Permission mode for the created session (from matcher config) */
   permissionMode?: PermissionMode;
+  /** Project scope inherited from the matcher by the created run session. */
+  projectId?: string;
+  /** Finite retry count inherited from the matcher. */
+  retryLimit?: number;
   /** LLM connection slug for the created session (falls back to default if not found) */
   llmConnection?: string;
   /** Model ID for the created session (falls back to provider default if invalid) */

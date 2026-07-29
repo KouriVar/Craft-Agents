@@ -83,7 +83,7 @@ export interface McpResourceResult {
  * Convert SdkMcpServerConfig (used by backend types) to CraftMcpClient config.
  */
 function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | null {
-  if (config.type === 'http' || config.type === 'sse') {
+  if (config.type === 'http') {
     return {
       transport: 'http',
       url: config.url,
@@ -113,8 +113,8 @@ function mcpConfigChanged(oldConfig: SdkMcpServerConfig, newConfig: SdkMcpServer
   if (oldConfig.type !== newConfig.type) return true;
 
   if (
-    (oldConfig.type === 'http' || oldConfig.type === 'sse') &&
-    (newConfig.type === 'http' || newConfig.type === 'sse')
+    oldConfig.type === 'http' &&
+    newConfig.type === 'http'
   ) {
     if (oldConfig.url !== newConfig.url) return true;
     const oldAuth = oldConfig.headers?.['Authorization'];

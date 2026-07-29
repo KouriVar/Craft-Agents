@@ -37,9 +37,9 @@ describe('Library UI consistency (pre-release minimal fix)', () => {
 
   it('list row menu uses CA context menu with destructive delete item', () => {
     const list = read('LibraryListPanel.tsx')
-    expect(list).toContain('StyledContextMenuContent')
     expect(list).toContain('StyledContextMenuItem')
     expect(list).toContain('variant="destructive"')
+    expect(list).toContain('menuContent')
     expect(list).not.toContain('absolute right-1 top-8')
   })
 

@@ -7,40 +7,34 @@
  */
 
 import {
-  Building2,
-  Compass,
-  Keyboard,
-  KeyRound,
-  MessageSquare,
+  Cable,
   Palette,
-  Server,
   Shield,
-  ShieldCheck,
   Sparkles,
-  Tag,
   ToggleRight,
   UserCircle,
   BrainCircuit,
+  Globe2,
 } from 'lucide-react'
 import type { SettingsSubpage } from '../../../shared/types'
 
 type IconProps = { className?: string }
 
 export const AppSettingsIcon = ({ className }: IconProps) => <ToggleRight className={className} />
+export const InterfaceSettingsIcon = ({ className }: IconProps) => <Palette className={className} />
+export const ProfileSettingsIcon = ({ className }: IconProps) => <UserCircle className={className} />
 export const AiSettingsIcon = ({ className }: IconProps) => <Sparkles className={className} />
-export const AccountsSettingsIcon = ({ className }: IconProps) => <KeyRound className={className} />
-export const AppearanceIcon = ({ className }: IconProps) => <Palette className={className} />
-export const ExploreSettingsIcon = ({ className }: IconProps) => <Compass className={className} />
-export const PrivacySettingsIcon = ({ className }: IconProps) => <Shield className={className} />
+export const BrowserSettingsIcon = ({ className }: IconProps) => <Globe2 className={className} />
+export const IntegrationsSettingsIcon = ({ className }: IconProps) => <Cable className={className} />
+export const SecuritySettingsIcon = ({ className }: IconProps) => <Shield className={className} />
 export const CognitionSettingsIcon = ({ className }: IconProps) => <BrainCircuit className={className} />
-export const InputIcon = ({ className }: IconProps) => <Keyboard className={className} />
-export const WorkspaceIcon = ({ className }: IconProps) => <Building2 className={className} />
-export const PermissionsIcon = ({ className }: IconProps) => <ShieldCheck className={className} />
-export const LabelsIcon = ({ className }: IconProps) => <Tag className={className} />
-export const MessagingSettingsIcon = ({ className }: IconProps) => <MessageSquare className={className} />
-export const ServerSettingsIcon = ({ className }: IconProps) => <Server className={className} />
-export const ShortcutsIcon = ({ className }: IconProps) => <Keyboard className={className} />
-export const PreferencesIcon = ({ className }: IconProps) => <UserCircle className={className} />
+
+/** @deprecated Use InterfaceSettingsIcon */
+export const AppearanceIcon = InterfaceSettingsIcon
+/** @deprecated Use SecuritySettingsIcon */
+export const PrivacySettingsIcon = SecuritySettingsIcon
+/** @deprecated Use ProfileSettingsIcon */
+export const PreferencesIcon = ProfileSettingsIcon
 
 /**
  * Map of settings subpage IDs to their icon components.
@@ -48,18 +42,11 @@ export const PreferencesIcon = ({ className }: IconProps) => <UserCircle classNa
  */
 export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconProps>> = {
   app: AppSettingsIcon,
+  interface: InterfaceSettingsIcon,
+  profile: ProfileSettingsIcon,
   ai: AiSettingsIcon,
-  accounts: AccountsSettingsIcon,
-  appearance: AppearanceIcon,
-  explore: ExploreSettingsIcon,
-  privacy: PrivacySettingsIcon,
+  browser: BrowserSettingsIcon,
+  integrations: IntegrationsSettingsIcon,
+  security: SecuritySettingsIcon,
   cognition: CognitionSettingsIcon,
-  input: InputIcon,
-  workspace: WorkspaceIcon,
-  permissions: PermissionsIcon,
-  labels: LabelsIcon,
-  messaging: MessagingSettingsIcon,
-  server: ServerSettingsIcon,
-  shortcuts: ShortcutsIcon,
-  preferences: PreferencesIcon,
 }

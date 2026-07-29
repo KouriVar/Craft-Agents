@@ -37,31 +37,7 @@ export function isDeveloperFeedbackEnabled(): boolean {
   return isDevRuntime();
 }
 
-/**
- * Runtime-evaluated check for craft-agents-cli integration.
- *
- * Defaults to disabled. Override with CRAFT_FEATURE_CRAFT_AGENTS_CLI=1|0.
- */
-export function isCraftAgentsCliEnabled(): boolean {
-  const override = parseBooleanEnv(getEnv('CRAFT_FEATURE_CRAFT_AGENTS_CLI'));
-  if (override !== undefined) return override;
-  return false;
-}
-
-/**
- * Runtime-evaluated check for embedded server settings page.
- *
- * Defaults to disabled. Override with CRAFT_FEATURE_EMBEDDED_SERVER=1|0.
- */
-export function isEmbeddedServerEnabled(): boolean {
-  const override = parseBooleanEnv(getEnv('CRAFT_FEATURE_EMBEDDED_SERVER'));
-  if (override !== undefined) return override;
-  return false;
-}
-
 export const FEATURE_FLAGS = {
-  /** Enable Opus 4.7 fast mode (speed:"fast" + beta header). 6x pricing. */
-  fastMode: false,
   /**
    * Enable agent developer feedback tool.
    *
@@ -70,21 +46,5 @@ export const FEATURE_FLAGS = {
    */
   get developerFeedback(): boolean {
     return isDeveloperFeedbackEnabled();
-  },
-  /**
-   * Enable craft-agent CLI guidance and guardrails.
-   *
-   * Defaults to disabled. Override with CRAFT_FEATURE_CRAFT_AGENTS_CLI=1|0.
-   */
-  get craftAgentsCli(): boolean {
-    return isCraftAgentsCliEnabled();
-  },
-  /**
-   * Enable embedded server settings page.
-   *
-   * Defaults to disabled. Override with CRAFT_FEATURE_EMBEDDED_SERVER=1|0.
-   */
-  get embeddedServer(): boolean {
-    return isEmbeddedServerEnabled();
   },
 } as const;

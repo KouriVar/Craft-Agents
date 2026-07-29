@@ -18,10 +18,10 @@ export function formatShortRelativeTime(timestamp: number): string {
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)
 
-  if (seconds < 60) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return `${days}d ago`
+  if (seconds < 60) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  if (hours < 24) return `${hours} 小时前`
+  return `${days} 天前`
 }
 
 /**
@@ -29,23 +29,23 @@ export function formatShortRelativeTime(timestamp: number): string {
  */
 export function describeCron(cron: string): string {
   const parts = cron.trim().split(/\s+/)
-  if (parts.length !== 5) return 'Invalid schedule'
+  if (parts.length !== 5) return '无效的定时表达式'
 
   const [minute, hour, dom, month, dow] = parts
 
-  if (cron.trim() === '* * * * *') return 'Every minute'
-  if (minute.startsWith('*/')) return `Every ${minute.slice(2)} minutes`
-  if (hour === '*' && minute !== '*') return `Every hour at :${minute.padStart(2, '0')}`
+  if (cron.trim() === '* * * * *') return '每分钟'
+  if (minute.startsWith('*/')) return `每 ${minute.slice(2)} 分钟`
+  if (hour === '*' && minute !== '*') return `每小时的 ${minute.padStart(2, '0')} 分执行`
   if (dom === '*' && month === '*') {
     const time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
-    if (dow === '*') return `Daily at ${time}`
-    if (dow === '1-5') return `Weekdays at ${time}`
-    if (dow === '0,6') return `Weekends at ${time}`
-    return `At ${time} (weekday: ${dow})`
+    if (dow === '*') return `每天 ${time}`
+    if (dow === '1-5') return `工作日 ${time}`
+    if (dow === '0,6') return `周末 ${time}`
+    return `${time}（星期：${dow}）`
   }
   if (month === '*' && dow === '*') {
     const time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
-    return `Monthly on day ${dom} at ${time}`
+    return `每月 ${dom} 日 ${time}`
   }
   return cron
 }

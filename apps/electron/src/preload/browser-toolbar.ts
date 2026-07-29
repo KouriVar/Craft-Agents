@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   stop: () => ipcRenderer.invoke(CHANNELS.STOP, instanceId),
   setRevealed: (revealed: boolean) => ipcRenderer.invoke(CHANNELS.SET_REVEALED, instanceId, revealed),
   pinEmbedded: (): Promise<boolean> => ipcRenderer.invoke(CHANNELS.PIN_EMBEDDED, instanceId),
-  showEmbeddedMenu: (kind: 'extensions' | 'permissions' | 'passwords') => ipcRenderer.invoke(CHANNELS.SHOW_EMBEDDED_MENU, instanceId, kind),
+  showEmbeddedMenu: (kind: 'extensions' | 'permissions') => ipcRenderer.invoke(CHANNELS.SHOW_EMBEDDED_MENU, instanceId, kind),
   toggleBookmark: () => ipcRenderer.invoke(CHANNELS.TOGGLE_BOOKMARK, instanceId),
   setMenuGeometry: (open: boolean, height = 0) => ipcRenderer.invoke(CHANNELS.MENU_GEOMETRY, instanceId, open, height),
   hideWindow: () => ipcRenderer.invoke(CHANNELS.HIDE, instanceId),

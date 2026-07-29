@@ -417,7 +417,7 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
 
 export interface HealthHttpServerOptions {
   port: number
-  deps: { sessionManager: { getWorkspaces(): unknown[] } }
+  deps: { sessionManager: { getWorkspaces(): unknown[]; emitAutomationEvent(workspaceId: string, event: import('@craft-agent/shared/automations').AppEvent, data: Record<string, unknown>): Promise<void> } }
   wsServer: WsRpcServer
   platform: PlatformServices
 }
@@ -438,13 +438,21 @@ export async function startHealthHttpServer(options: HealthHttpServerOptions): P
   if (typeof globalThis.Bun !== 'undefined') {
     const server = Bun.serve({
       port: options.port,
-      fetch(req: Request) {
+      async fetch(req: Request) {
         const path = new URL(req.url).pathname
         if (path === '/health') {
           const health = getHealthCheck(depsLike)
           return Response.json(health, {
             status: health.status === 'ok' ? 200 : 503,
           })
+        }
+        const webhook = path.match(/^\/webhooks\/([^/]+)\/([^/]+)$/)
+        if (webhook) {
+          const { getWorkspaceByNameOrId } = await import('@craft-agent/shared/config')
+          const workspace = getWorkspaceByNameOrId(decodeURIComponent(webhook[1]!))
+          if (!workspace) return new Response('Not Found', { status: 404 })
+          const { handleIncomingAutomationWebhook } = await import('@craft-agent/shared/automations')
+          return handleIncomingAutomationWebhook({ request: req, workspaceId: workspace.id, workspaceRoot: workspace.rootPath, automationId: decodeURIComponent(webhook[2]!), emit: (data) => options.deps.sessionManager.emitAutomationEvent(workspace.id, 'WebhookReceived', data) })
         }
         return new Response('Not Found', { status: 404 })
       },

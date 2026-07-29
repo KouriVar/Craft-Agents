@@ -97,6 +97,7 @@ interface RightSidebarTab {
   runtimeStatus?: 'loading' | 'ready' | 'error' | 'closed'
   runtimeError?: string
   restored?: boolean
+  browserInstanceId?: string
 }
 
 interface PersistedWidgetTab {
@@ -272,6 +273,10 @@ export function RightReviewSidebar() {
 
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
+      const closing = current.find((tab) => tab.id === id)
+      if (closing?.browserInstanceId) {
+        void window.electronAPI.browserPane.destroy(closing.browserInstanceId).catch(() => {})
+      }
       if (current.length <= 1) {
         setActiveTabId('')
         return []
@@ -468,7 +473,7 @@ export function RightReviewSidebar() {
                 type="button"
                 onClick={() => setActiveTabId(tab.id)}
                 className={cn(
-                  'group flex h-8 min-w-[132px] max-w-[220px] items-center gap-2 rounded-[8px] px-2.5 text-left text-sm transition-colors',
+                  'group flex h-8 min-w-[132px] max-w-[220px] items-center gap-2 rounded-surface px-2.5 text-left text-sm transition-colors',
                   isActive
                     ? 'bg-foreground/[0.08] text-foreground shadow-minimal'
                     : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
@@ -489,7 +494,7 @@ export function RightReviewSidebar() {
                     closeTab(tab.id)
                   }}
                   className={cn(
-                    'hidden h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive group-hover:flex',
+                    'hidden h-5 w-5 shrink-0 items-center justify-center rounded-menu-item text-muted-foreground hover:bg-foreground/[0.08] hover:text-destructive group-hover:flex',
                     isActive && tabs.length > 1 ? 'sm:flex sm:opacity-60 sm:hover:opacity-100' : '',
                   )}
                   aria-label="Close tab"
@@ -505,7 +510,7 @@ export function RightReviewSidebar() {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-foreground/[0.08] data-[state=open]:text-foreground"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-surface text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[state=open]:bg-foreground/[0.08] data-[state=open]:text-foreground"
               aria-label={t('rightSidebar.addTool')}
               title={t('rightSidebar.addTool')}
             >
@@ -634,7 +639,7 @@ export function RightReviewSidebar() {
                     type="button"
                     onClick={() => { void restoreWidgetTab(tab) }}
                     disabled={tab.runtimeStatus === 'loading'}
-                    className="mt-4 inline-flex h-8 items-center gap-2 rounded-[6px] border border-border px-3 text-xs font-medium hover:bg-foreground/[0.05] disabled:opacity-50"
+                    className="mt-4 inline-flex h-8 items-center gap-2 rounded-control border border-border px-3 text-xs font-medium hover:bg-foreground/[0.05] disabled:opacity-50"
                   >
                     <RotateCcw className={cn('h-3.5 w-3.5', tab.runtimeStatus === 'loading' && 'animate-spin')} />
                     {t('rightSidebar.widgetReconnect', { defaultValue: 'Reconnect' })}
@@ -651,10 +656,10 @@ export function RightReviewSidebar() {
               key={tab.id}
               className={className}
               initialUrl={tab.url}
-              guestPreload={tab.preload}
               initialTitle={tab.label}
-              showTabStrip={false}
               onTitleChange={(label) => updateTab(tab.id, { label })}
+              onInstanceReady={(browserInstanceId) => updateTab(tab.id, { browserInstanceId })}
+              onInstanceClosed={() => closeTab(tab.id)}
             />
           )
         })}

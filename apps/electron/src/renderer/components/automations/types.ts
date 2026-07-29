@@ -205,6 +205,8 @@ export interface AutomationListItem {
   matcherIndex: number
   /** Display name (user-set or auto-derived) */
   name: string
+  /** Optional project scope persisted on the matcher. */
+  projectId?: string
   /** Human-readable summary */
   summary: string
   /** Whether this automation is enabled */
@@ -298,29 +300,29 @@ export interface TestResult {
 /** Maps internal event names to user-friendly labels */
 export const EVENT_DISPLAY_NAMES: Record<AutomationTrigger, string> = {
   // App events
-  LabelAdd:             'Label Added',
-  LabelRemove:          'Label Removed',
-  LabelConfigChange:    'Label Settings Changed',
-  PermissionModeChange: 'Permission Changed',
-  FlagChange:           'Flag Changed',
-  TodoStateChange:      'Task Updated',
-  SessionStatusChange:  'Status Changed',
-  SchedulerTick:        'Scheduled',
+  LabelAdd:             '添加标签',
+  LabelRemove:          '移除标签',
+  LabelConfigChange:    '标签设置变化',
+  PermissionModeChange: '权限变化',
+  FlagChange:           '置顶变化',
+  TodoStateChange:      '会话状态更新',
+  SessionStatusChange:  '状态变化',
+  SchedulerTick:        '定时触发',
 
   // Agent events
-  PreToolUse:           'Before Tool Runs',
-  PostToolUse:          'After Tool Runs',
-  PostToolUseFailure:   'When Tool Fails',
-  Notification:         'Notification',
-  UserPromptSubmit:     'Message Sent',
-  SessionStart:         'Session Started',
-  SessionEnd:           'Session Ended',
-  Stop:                 'Agent Stopped',
-  SubagentStart:        'Sub-agent Started',
-  SubagentStop:         'Sub-agent Stopped',
-  PreCompact:           'Before Memory Cleanup',
-  PermissionRequest:    'Permission Requested',
-  Setup:                'Initial Setup',
+  PreToolUse:           '工具执行前',
+  PostToolUse:          '工具执行后',
+  PostToolUseFailure:   '工具执行失败',
+  Notification:         '通知',
+  UserPromptSubmit:     '消息已发送',
+  SessionStart:         '会话开始',
+  SessionEnd:           '会话结束',
+  Stop:                 '执行停止',
+  SubagentStart:        '子会话开始',
+  SubagentStop:         '子会话停止',
+  PreCompact:           '记忆整理前',
+  PermissionRequest:    '请求权限',
+  Setup:                '初始化',
 }
 
 export function getEventDisplayName(event: AutomationTrigger): string {
@@ -329,13 +331,13 @@ export function getEventDisplayName(event: AutomationTrigger): string {
 
 /** Maps permission mode values to user-friendly labels */
 export const PERMISSION_DISPLAY_NAMES: Record<PermissionMode, string> = {
-  'safe':      'Explore',
-  'ask':       'Ask',
-  'allow-all': 'Execute',
+  'safe':      '安全模式',
+  'ask':       '敏感操作时询问',
+  'allow-all': '允许全部操作',
 }
 
 export function getPermissionDisplayName(mode?: PermissionMode): string {
-  if (!mode) return 'Explore'
+  if (!mode) return '安全模式'
   return PERMISSION_DISPLAY_NAMES[mode] ?? mode
 }
 
@@ -372,6 +374,7 @@ type RawAction =
 interface AutomationsConfigMatcher {
   id?: string
   name?: string
+  projectId?: string
   matcher?: string
   cron?: string
   timezone?: string
@@ -459,6 +462,7 @@ export function parseAutomationsConfig(json: unknown): AutomationListItem[] {
         event,
         matcherIndex: matcherIdx,
         name: deriveAutomationName(eventName, matcher),
+        projectId: matcher.projectId,
         summary: deriveAutomationSummary(eventName, matcher),
         enabled: matcher.enabled !== false,
         matcher: matcher.matcher,

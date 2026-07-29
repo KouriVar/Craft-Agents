@@ -1,10 +1,10 @@
 /**
  * PreferencesPage
  *
- * Form-based editor for stored user preferences (~/.craft-agent/preferences.json).
+ * User Memory editor backed by stored user preferences (~/.craft-agent/preferences.json).
  * Features:
  * - Fixed input fields for known preferences (name, timezone, location, language)
- * - Free-form textarea for notes
+ * - Free-form textarea for user memory (never Knowledge full text)
  * - Auto-saves on change with debouncing
  * - Always read → merge → write so explore / privacy / uiLanguage / etc. survive
  */
@@ -29,7 +29,7 @@ import {
   SettingsTextarea,
 } from '@/components/settings'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -67,7 +67,7 @@ async function writeMergedPreferences(form: PreferencesFormState): Promise<{ suc
   return window.electronAPI.writePreferences(merged)
 }
 
-export default function PreferencesPage() {
+export default function PreferencesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const [formState, setFormState] = useState<PreferencesFormState>(emptyFormState)
   const [isLoading, setIsLoading] = useState(true)
@@ -153,93 +153,111 @@ export default function PreferencesPage() {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className={embedded ? 'flex items-center justify-center py-12' : 'h-full flex items-center justify-center'}>
         <Spinner className="text-lg text-muted-foreground" />
       </div>
     )
   }
 
+  const body = (
+    <div className="space-y-8">
+      <SettingsSection
+        title={t('settings.preferences.basicInfo')}
+        description={
+          embedded
+            ? (
+              <>
+                {t('settings.preferences.basicInfoDesc')}
+                {' '}
+                {t('settings.profile.localOnlyNote')}
+              </>
+            )
+            : t('settings.preferences.basicInfoDesc')
+        }
+      >
+        <SettingsCard divided>
+          <SettingsInput
+            label={t('settings.profile.callMeName')}
+            description={t('settings.profile.callMeNameDesc')}
+            value={formState.name}
+            onChange={(v) => updateField('name', v)}
+            placeholder={t('settings.preferences.namePlaceholder')}
+            inCard
+          />
+          <SettingsInput
+            label={t('settings.preferences.timezone')}
+            description={t('settings.preferences.timezoneDesc')}
+            value={formState.timezone}
+            onChange={(v) => updateField('timezone', v)}
+            placeholder={t('settings.preferences.timezonePlaceholder')}
+            inCard
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title={t('settings.preferences.location')}
+        description={t('settings.preferences.locationDesc')}
+      >
+        <SettingsCard divided>
+          <SettingsInput
+            label={t('settings.preferences.city')}
+            description={t('settings.preferences.cityDesc')}
+            value={formState.city}
+            onChange={(v) => updateField('city', v)}
+            placeholder={t('settings.preferences.cityPlaceholder')}
+            inCard
+          />
+          <SettingsInput
+            label={t('settings.preferences.country')}
+            description={t('settings.preferences.countryDesc')}
+            value={formState.country}
+            onChange={(v) => updateField('country', v)}
+            placeholder={t('settings.preferences.countryPlaceholder')}
+            inCard
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title={t('settings.preferences.notes')}
+        description={t('settings.preferences.notesDesc')}
+        action={
+          preferencesPath ? (
+            <EditPopover
+              trigger={<EditButton />}
+              {...getEditConfig('preferences-notes', preferencesPath)}
+              secondaryAction={{
+                label: t('common.editFile'),
+                filePath: preferencesPath!,
+              }}
+            />
+          ) : null
+        }
+      >
+        <SettingsCard divided={false}>
+          <SettingsTextarea
+            value={formState.notes}
+            onChange={(v) => updateField('notes', v)}
+            placeholder={t('settings.preferences.notesPlaceholder')}
+            rows={5}
+            inCard
+          />
+        </SettingsCard>
+      </SettingsSection>
+    </div>
+  )
+
+  if (embedded) return body
+
   return (
     <div className="h-full flex flex-col">
-      <PanelHeader title={t("settings.preferences.title")} actions={<HeaderMenu route={routes.view.settings('preferences')} helpFeature="preferences" />} />
+      <PanelHeader title={t('settings.preferences.title')} actions={<HeaderMenu route={routes.view.settings('preferences')} helpFeature="preferences" />} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto space-y-8">
-          <SettingsSection
-            title={t("settings.preferences.basicInfo")}
-            description={t("settings.preferences.basicInfoDesc")}
-          >
-            <SettingsCard divided>
-              <SettingsInput
-                label={t("settings.preferences.name")}
-                description={t("settings.preferences.nameDesc")}
-                value={formState.name}
-                onChange={(v) => updateField('name', v)}
-                placeholder={t("settings.preferences.namePlaceholder")}
-                inCard
-              />
-              <SettingsInput
-                label={t("settings.preferences.timezone")}
-                description={t("settings.preferences.timezoneDesc")}
-                value={formState.timezone}
-                onChange={(v) => updateField('timezone', v)}
-                placeholder={t("settings.preferences.timezonePlaceholder")}
-                inCard
-              />
-            </SettingsCard>
-          </SettingsSection>
-
-          <SettingsSection
-            title={t("settings.preferences.location")}
-            description={t("settings.preferences.locationDesc")}
-          >
-            <SettingsCard divided>
-              <SettingsInput
-                label={t("settings.preferences.city")}
-                description={t("settings.preferences.cityDesc")}
-                value={formState.city}
-                onChange={(v) => updateField('city', v)}
-                placeholder={t("settings.preferences.cityPlaceholder")}
-                inCard
-              />
-              <SettingsInput
-                label={t("settings.preferences.country")}
-                description={t("settings.preferences.countryDesc")}
-                value={formState.country}
-                onChange={(v) => updateField('country', v)}
-                placeholder={t("settings.preferences.countryPlaceholder")}
-                inCard
-              />
-            </SettingsCard>
-          </SettingsSection>
-
-          <SettingsSection
-            title={t("settings.preferences.notes")}
-            description={t("settings.preferences.notesDesc")}
-            action={
-              preferencesPath ? (
-                <EditPopover
-                  trigger={<EditButton />}
-                  {...getEditConfig('preferences-notes', preferencesPath)}
-                  secondaryAction={{
-                    label: t("common.editFile"),
-                    filePath: preferencesPath!,
-                  }}
-                />
-              ) : null
-            }
-          >
-            <SettingsCard divided={false}>
-              <SettingsTextarea
-                value={formState.notes}
-                onChange={(v) => updateField('notes', v)}
-                placeholder={t("settings.preferences.notesPlaceholder")}
-                rows={5}
-                inCard
-              />
-            </SettingsCard>
-          </SettingsSection>
-        </div>
+          <div className="px-5 py-7 max-w-3xl mx-auto">
+            {body}
+          </div>
         </ScrollArea>
       </div>
     </div>

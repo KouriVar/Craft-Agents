@@ -316,6 +316,13 @@ export class MessagingGateway {
 
   private wireAdapter(adapter: PlatformAdapter): void {
     adapter.onMessage(async (msg: IncomingMessage) => {
+      // Deliver inbound platform traffic to workspace automations before the
+      // normal router consumes it. This is an event only; it cannot create an
+      // automation without a separately confirmed rule.
+      await this.sessionManager.emitAutomationEvent(this.workspaceId, 'MessagingReceived', {
+        platform: msg.platform, channelId: msg.channelId, threadId: msg.threadId,
+        messageId: msg.messageId, senderId: msg.senderId, senderName: msg.senderName, text: msg.text,
+      }).catch((error: unknown) => this.log.warn('messaging automation event delivery failed', { error }))
       const isCommand = msg.text.trim().startsWith('/')
       if (isCommand) {
         const handled = await this.commands.handleCommand(adapter, msg)

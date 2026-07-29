@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'path'
 import { existsSync } from 'fs'
 import { release } from 'os'
 import { fileURLToPath } from 'url'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { getDoubleCommandScreenshotEnabled, getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { classifyExternalUrl, formatBlockedUrlError } from '@craft-agent/shared/utils/url-safety'
 import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
 import type { SavedWindow } from './window-state'
@@ -13,30 +13,207 @@ import { recordStartupMilestone } from './resource-diagnostics'
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-/**
- * Get the appropriate background material for Windows transparency effects
- * - Windows 11 (build 22000+): Mica effect
- * - Windows 10 1809+ (build 17763+): Acrylic effect
- * - Older versions: No transparency
- */
-function getWindowsBackgroundMaterial(): 'mica' | 'acrylic' | undefined {
-  if (process.platform !== 'win32') return undefined
+type MacVibrancyMaterial = 'under-window' | 'sidebar'
+type WindowsBackgroundMaterial = 'acrylic' | 'none'
 
-  // os.release() returns "10.0.xxxxx" where xxxxx is the build number
-  const buildNumber = parseInt(release().split('.')[2] || '0', 10)
-
-  if (buildNumber >= 22000) {
-    windowLog.info('Windows 11 detected (build ' + buildNumber + '), using Mica')
-    return 'mica'
-  } else if (buildNumber >= 17763) {
-    windowLog.info('Windows 10 1809+ detected (build ' + buildNumber + '), using Acrylic')
-    return 'acrylic'
-  }
-
-  windowLog.info('Older Windows detected (build ' + buildNumber + '), no transparency')
-  return undefined
+interface MainWindowMaterialProfile {
+  platform: NodeJS.Platform
+  options: Electron.BrowserWindowConstructorOptions
+  macVibrancy?: MacVibrancyMaterial
+  windowsMaterial?: WindowsBackgroundMaterial
+  windowsBuild?: number
+  windowsAcrylicSupported?: boolean
+  probe: boolean
 }
 
+function isMaterialProbeEnabled(): boolean {
+  return !app.isPackaged && process.env.CA_MATERIAL_PROBE === '1'
+}
+
+function getWindowsBuildNumber(): number | undefined {
+  if (process.platform !== 'win32') return undefined
+  const build = Number.parseInt(release().split('.')[2] || '0', 10)
+  return Number.isFinite(build) ? build : undefined
+}
+
+function getMaterialProbeMacVibrancy(): MacVibrancyMaterial {
+  return process.env.CA_MATERIAL_PROBE_VIBRANCY === 'sidebar' ? 'sidebar' : 'under-window'
+}
+
+function getMainWindowMaterialProfile(isMac: boolean, isWindows: boolean): MainWindowMaterialProfile {
+  const probe = isMaterialProbeEnabled()
+  if (isMac) {
+    const macVibrancy = probe ? getMaterialProbeMacVibrancy() : 'under-window'
+    return {
+      platform: process.platform,
+      probe,
+      macVibrancy,
+      options: {
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 18, y: 16 },
+        transparent: true,
+        backgroundColor: '#00000000',
+        vibrancy: macVibrancy,
+        visualEffectState: 'active',
+        roundedCorners: true,
+      },
+    }
+  }
+
+  if (isWindows) {
+    const windowsBuild = getWindowsBuildNumber()
+    const windowsAcrylicSupported = process.env.CA_FORCE_WINDOWS_ACRYLIC === '1'
+      || (typeof windowsBuild === 'number' && windowsBuild >= 17763)
+
+    if (windowsAcrylicSupported) {
+      return {
+        platform: process.platform,
+        probe,
+        windowsBuild,
+        windowsAcrylicSupported,
+        windowsMaterial: 'acrylic',
+        options: {
+          frame: false,
+          autoHideMenuBar: true,
+          backgroundColor: '#f4f6f8',
+          backgroundMaterial: 'acrylic',
+          roundedCorners: true,
+          thickFrame: true,
+          hasShadow: true,
+        },
+      }
+    }
+
+    return {
+      platform: process.platform,
+      probe,
+      windowsBuild,
+      windowsAcrylicSupported,
+      windowsMaterial: 'none',
+      options: {
+        frame: false,
+        autoHideMenuBar: true,
+        backgroundColor: '#f4f6f8',
+        roundedCorners: true,
+        thickFrame: true,
+        hasShadow: true,
+      },
+    }
+  }
+
+  return {
+    platform: process.platform,
+    probe,
+    options: {
+      frame: true,
+      autoHideMenuBar: true,
+    },
+  }
+}
+
+function reapplyNativeWindowMaterial(window: BrowserWindow, profile: MainWindowMaterialProfile): void {
+  if (window.isDestroyed()) return
+  if (profile.macVibrancy && process.platform === 'darwin') {
+    window.setVibrancy(profile.macVibrancy)
+    window.setWindowButtonVisibility(true)
+    window.setWindowButtonPosition({ x: 18, y: 19 })
+  }
+  if (profile.windowsMaterial === 'acrylic' && process.platform === 'win32') {
+    window.setBackgroundMaterial('acrylic')
+  } else if (profile.windowsMaterial === 'none' && process.platform === 'win32') {
+    window.setBackgroundMaterial('none')
+  }
+}
+
+function getMaterialProbeUrl(profile: MainWindowMaterialProfile): string {
+  const system = {
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform,
+    osRelease: release(),
+    profile,
+  }
+  const safeJson = JSON.stringify(system, null, 2)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>CraftAgent Material Probe</title>
+  <style>
+    html, body, #root {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f2328;
+    }
+    body {
+      -webkit-app-region: drag;
+    }
+    .shell {
+      position: fixed;
+      inset: 0;
+      border-radius: 18px;
+      background: rgba(220, 232, 238, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(30, 40, 50, 0.08);
+    }
+    .card {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(640px, calc(100vw - 160px));
+      min-height: 340px;
+      transform: translate(-50%, -50%);
+      border-radius: 16px;
+      background: #f7f8fa;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(0,0,0,0.08);
+      padding: 28px;
+      box-sizing: border-box;
+      -webkit-app-region: no-drag;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+    }
+    p {
+      margin: 0 0 18px;
+      color: #68707a;
+      line-height: 1.45;
+    }
+    pre {
+      margin: 0;
+      max-height: 210px;
+      overflow: auto;
+      border-radius: 10px;
+      background: #111827;
+      color: #dbeafe;
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="shell"></div>
+    <main class="card">
+      <h1>CraftAgent Material Probe</h1>
+      <p>The outer area is transparent plus a low-opacity tint. The center rectangle is intentionally opaque. Move this window over wallpaper or other apps: the outer area must show native blurred background, not CSS backdrop-filter.</p>
+      <pre>${safeJson}</pre>
+    </main>
+  </div>
+</body>
+</html>`
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+}
 
 interface ManagedWindow {
   window: BrowserWindow
@@ -223,7 +400,7 @@ export class WindowManager {
     // Platform-specific window options
     const isMac = process.platform === 'darwin'
     const isWindows = process.platform === 'win32'
-    const windowsBackgroundMaterial = getWindowsBackgroundMaterial()
+    const materialProfile = getMainWindowMaterialProfile(isMac, isWindows)
 
     const window = new BrowserWindow({
       width: windowWidth,
@@ -233,27 +410,7 @@ export class WindowManager {
       show: false, // Don't show until ready-to-show event (faster perceived startup)
       title: '',
       icon: iconExists ? iconPath : undefined,
-      // macOS-specific: hidden title bar with inset traffic lights
-      ...(isMac && {
-        titleBarStyle: 'hiddenInset',
-        trafficLightPosition: { x: 18, y: 16 },
-        vibrancy: 'under-window',
-        visualEffectState: 'active',
-      }),
-      // Windows: use native frame with Mica/Acrylic transparency (Windows 10/11)
-      ...(isWindows && {
-        frame: true, // Keep native frame for better UX
-        autoHideMenuBar: true, // Menu is null on Windows, this is just for safety
-        // Note: Don't use transparent:true with backgroundMaterial - it hides the window frame
-        ...(windowsBackgroundMaterial && {
-          backgroundMaterial: windowsBackgroundMaterial,
-        }),
-      }),
-      // Linux: use native frame
-      ...(!isMac && !isWindows && {
-        frame: true,
-        autoHideMenuBar: true,
-      }),
+      ...materialProfile.options,
       webPreferences: {
         preload: join(__dirname, 'bootstrap-preload.cjs'),
         contextIsolation: true,
@@ -266,8 +423,23 @@ export class WindowManager {
     // Show window when first paint is ready (faster perceived startup)
     window.once('ready-to-show', () => {
       recordStartupMilestone('first-window-ready-to-show')
+      reapplyNativeWindowMaterial(window, materialProfile)
       window.show()
     })
+    const scheduleMaterialReapply = () => {
+      reapplyNativeWindowMaterial(window, materialProfile)
+      setTimeout(() => reapplyNativeWindowMaterial(window, materialProfile), 120)
+    }
+    window.on('show', scheduleMaterialReapply)
+    window.on('restore', scheduleMaterialReapply)
+    window.on('maximize', scheduleMaterialReapply)
+    window.on('unmaximize', scheduleMaterialReapply)
+    const pushMaximizedState = () => {
+      this.pushToWindow(window, RPC_CHANNELS.window.MAXIMIZED_STATE, window.isMaximized())
+    }
+    window.on('maximize', pushMaximizedState)
+    window.on('unmaximize', pushMaximizedState)
+    window.on('restore', pushMaximizedState)
 
     // Open external links in default browser, but never hand known-dangerous
     // schemes directly to shell.openExternal. Markdown normal-clicks go through
@@ -324,8 +496,13 @@ export class WindowManager {
       this.focusedModeWindows.add(webContentsId)
     }
 
-    // Load the renderer - use restoreUrl if provided, otherwise build from options
-    if (restoreUrl) {
+    // Development-only native material probe. This deliberately bypasses the
+    // full CraftAgent UI so platform material behavior can be verified without
+    // business-layout backgrounds masking the result.
+    if (materialProfile.probe) {
+      window.loadURL(getMaterialProbeUrl(materialProfile))
+    } else if (restoreUrl) {
+      // Load the renderer - use restoreUrl if provided, otherwise build from options
       // Restore from saved URL - need to adapt for dev vs prod
       if (VITE_DEV_SERVER_URL) {
         // In dev mode, replace the base URL but keep the path and query
@@ -435,9 +612,38 @@ export class WindowManager {
       this.pushToWindow(window, RPC_CHANNELS.window.FOCUS_STATE, false)
     })
 
+    let leftShortcutDown = false
+    let rightShortcutDown = false
+    let screenCaptureTriggered = false
+
     // Detect Cmd/Ctrl+W before close events so renderer can distinguish close source.
     // Intent is short-lived to avoid stale classification.
     window.webContents.on('before-input-event', (_event, input) => {
+      // Electron reports physical modifier sides here, which keeps the
+      // screenshot gesture functional whenever a CraftAgent window is focused.
+      // The preload turns the request into the draft-only screen capture IPC.
+      const code = input.code
+      if (process.platform === 'darwin') {
+        if (code === 'MetaLeft') leftShortcutDown = input.type === 'keyDown'
+        if (code === 'MetaRight') rightShortcutDown = input.type === 'keyDown'
+      }
+      else if (process.platform === 'win32') {
+        if (code === 'AltLeft') leftShortcutDown = input.type === 'keyDown'
+        if (code === 'AltRight') rightShortcutDown = input.type === 'keyDown'
+      }
+      if (
+        (process.platform === 'darwin' || process.platform === 'win32')
+        && getDoubleCommandScreenshotEnabled()
+        && leftShortcutDown
+        && rightShortcutDown
+        && input.type === 'keyDown'
+        && !screenCaptureTriggered
+      ) {
+        screenCaptureTriggered = true
+        this.pushToWindow(window, RPC_CHANNELS.screenCapture.REQUESTED)
+      }
+      if (!leftShortcutDown || !rightShortcutDown) screenCaptureTriggered = false
+
       if (!input || input.type !== 'keyDown') return
       const key = input.key?.toLowerCase?.()
       if (key !== 'w') return

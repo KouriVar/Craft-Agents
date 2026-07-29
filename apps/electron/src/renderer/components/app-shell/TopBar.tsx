@@ -14,7 +14,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
 import { PanelLeftRounded } from "../icons/PanelLeftRounded"
 import { TopBarButton } from "../ui/TopBarButton"
 import { cn } from "@/lib/utils"
-import { isMac, isWebUI } from "@/lib/platform"
+import { isMac, isWebUI, isWindows } from "@/lib/platform"
 import { useActionLabel } from "@/actions"
 import {
   DropdownMenu,
@@ -29,6 +29,7 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
 import { CompactWorkspaceSwitcher } from "./CompactWorkspaceSwitcher"
 import { getDocUrl } from "@craft-agent/shared/docs/doc-links"
 import { AppMenu } from "../AppMenu"
+import { PANEL_EDGE_INSET } from "./panel-constants"
 
 interface TopBarProps {
   workspaces: Workspace[]
@@ -100,12 +101,17 @@ export function TopBar({
   }, [isFocusModeActive])
 
   useEffect(() => {
+    const expandedInset = isCompact
+      ? 'var(--topbar-height)'
+      : `calc(var(--topbar-height) + ${PANEL_EDGE_INSET}px)`
     document.documentElement.style.setProperty(
       '--app-topbar-inset',
-      topBarCollapsed ? '8px' : 'var(--topbar-height)',
+      topBarCollapsed ? `${PANEL_EDGE_INSET}px` : expandedInset,
     )
-    return () => document.documentElement.style.setProperty('--app-topbar-inset', 'var(--topbar-height)')
-  }, [topBarCollapsed])
+    return () => {
+      document.documentElement.style.removeProperty('--app-topbar-inset')
+    }
+  }, [isCompact, topBarCollapsed])
 
   useEffect(() => () => cancelCollapse(), [])
 
@@ -131,10 +137,12 @@ export function TopBar({
   return (
     <div
       ref={rootRef}
-      className="fixed top-0 left-0 right-0 z-panel titlebar-drag-region"
+      className="ca-topbar-surface fixed top-0 left-0 right-0 z-panel titlebar-drag-region"
       style={{
         height: 'var(--topbar-height)',
-        transform: topBarCollapsed ? 'translateY(calc(-100% + 8px))' : 'translateY(0)',
+        transform: topBarCollapsed
+          ? `translateY(calc(-100% + ${PANEL_EDGE_INSET}px))`
+          : 'translateY(0)',
         transition: 'transform 160ms ease',
       }}
       onMouseEnter={() => {
@@ -260,7 +268,7 @@ export function TopBar({
       </div>
 
       {!isCompact && (
-      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1" style={{ paddingRight: 12 }}>
+      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1" style={{ paddingRight: isWindows ? 8 : 12 }}>
         {/* Help button */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -306,9 +314,61 @@ export function TopBar({
             </StyledDropdownMenuItem>
           </StyledDropdownMenuContent>
         </DropdownMenu>
+        {isWindows && <WindowsWindowControls />}
       </div>
       )}
       </div>
+    </div>
+  )
+}
+
+function WindowsWindowControls() {
+  const [isMaximized, setIsMaximized] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    void window.electronAPI.getWindowMaximizedState()
+      .then((value) => {
+        if (mounted) setIsMaximized(value)
+      })
+      .catch(() => {})
+    const dispose = window.electronAPI.onWindowMaximizedChange(setIsMaximized)
+    return () => {
+      mounted = false
+      dispose()
+    }
+  }, [])
+
+  return (
+    <div className="titlebar-no-drag ml-1 flex h-[30px] shrink-0 items-center overflow-hidden">
+      <button
+        type="button"
+        aria-label="Minimize"
+        className="flex h-[30px] w-11 items-center justify-center text-foreground/55 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
+        onClick={() => void window.electronAPI.menuMinimize()}
+      >
+        <Icons.Minus className="h-4 w-4" strokeWidth={1.5} />
+      </button>
+      <button
+        type="button"
+        aria-label={isMaximized ? "Restore" : "Maximize"}
+        className="flex h-[30px] w-11 items-center justify-center text-foreground/55 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
+        onClick={() => void window.electronAPI.menuMaximize()}
+      >
+        {isMaximized ? (
+          <Icons.Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+        ) : (
+          <Icons.Square className="h-3.5 w-3.5" strokeWidth={1.5} />
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label="Close"
+        className="flex h-[30px] w-11 items-center justify-center text-foreground/55 transition-colors hover:bg-destructive hover:text-white"
+        onClick={() => void window.electronAPI.closeWindow()}
+      >
+        <Icons.X className="h-4 w-4" strokeWidth={1.5} />
+      </button>
     </div>
   )
 }

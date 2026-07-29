@@ -83,7 +83,7 @@ export interface MessageAttachment {
  */
 export interface ContentBadge {
   /** Badge type - used for fallback icon if iconBase64 not available */
-  type: 'source' | 'skill' | 'plugin' | 'context' | 'command' | 'file' | 'folder';
+  type: 'source' | 'skill' | 'plugin' | 'context' | 'command' | 'file' | 'folder' | 'knowledge' | 'project-file';
   /** Display label (e.g., "Linear", "Commit") */
   label: string;
   /** Original text pattern (e.g., "@linear", "@commit") */
@@ -469,6 +469,7 @@ export type ErrorCode =
   | 'mcp_unreachable'
   | 'billing_error'
   | 'model_no_tool_support'  // Model doesn't support tool/function calling
+  | 'model_disabled'         // Provider or account policy disabled this model
   | 'invalid_model'          // Model ID not found
   | 'data_policy_error'      // OpenRouter data policy restriction
   | 'invalid_request'        // API rejected the request (e.g., bad image, invalid content)

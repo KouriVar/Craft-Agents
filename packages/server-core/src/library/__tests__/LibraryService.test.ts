@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { LibraryService } from '../LibraryService'
+import { KNOWLEDGE_TRASH_RETENTION_MS, LibraryService } from '../LibraryService'
 import {
   getPrivacyService,
   _resetPrivacyServiceRegistryForTests,
@@ -177,7 +177,7 @@ describe('LibraryService', () => {
     }
   })
 
-  it('archives, unarchives, deletes, and searches', () => {
+  it('archives, unarchives, trashes, restores, and searches', () => {
     const root = makeRoot()
     try {
       const svc = new LibraryService(root, 'ws_a')
@@ -189,6 +189,27 @@ describe('LibraryService', () => {
       expect(svc.list({ workspaceId: 'ws_a', filter: 'all' })).toHaveLength(1)
       expect(svc.list({ workspaceId: 'ws_a', search: '可归档' })).toHaveLength(1)
       expect(svc.delete(doc.meta.id).ok).toBe(true)
+      expect(svc.list({ workspaceId: 'ws_a', filter: 'all' })).toHaveLength(0)
+      expect(svc.list({ workspaceId: 'ws_a', filter: 'trash' })).toHaveLength(1)
+      expect(svc.get(doc.meta.id)?.meta.status).toBe('trashed')
+      expect(svc.restoreFromTrash(doc.meta.id)?.status).toBe('active')
+      expect(svc.list({ workspaceId: 'ws_a', filter: 'all' })).toHaveLength(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('permanently purges only trash beyond the 30-day retention window', () => {
+    const root = makeRoot()
+    try {
+      const svc = new LibraryService(root, 'ws_a')
+      const doc = svc.createBlank({ workspaceId: 'ws_a', title: '可恢复文档' })
+      expect(svc.delete(doc.meta.id).ok).toBe(true)
+      const trashedAt = svc.get(doc.meta.id)!.meta.trashedAt!
+
+      expect(svc.purgeExpiredTrash(trashedAt + KNOWLEDGE_TRASH_RETENTION_MS - 1)).toBe(0)
+      expect(svc.get(doc.meta.id)).not.toBeNull()
+      expect(svc.purgeExpiredTrash(trashedAt + KNOWLEDGE_TRASH_RETENTION_MS)).toBe(1)
       expect(svc.get(doc.meta.id)).toBeNull()
     } finally {
       rmSync(root, { recursive: true, force: true })

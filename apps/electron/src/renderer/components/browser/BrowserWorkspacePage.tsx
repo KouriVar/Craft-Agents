@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAtomValue } from 'jotai'
-import { KeyRound, Pin, Puzzle, RotateCw, ShieldCheck, Star } from 'lucide-react'
+import { Pin, Puzzle, RotateCw, ShieldCheck, Star } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { BrowserExtensionEntry } from '../../../shared/types'
 import { BrowserToolbar } from './BrowserToolbar'
@@ -90,6 +90,10 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
       width: rect.width,
       height: Math.max(1, rect.height - notificationInset),
     })
+    // A route change can unmount this page while setEmbeddedBounds is in
+    // flight. Do not resurrect a native BrowserView over the next product
+    // surface after React has already cleared the ref.
+    if (surfaceRef.current !== surface || !surface.isConnected) return
     await api.setEmbeddedVisible(activeId, true)
   }, [activeId, notificationBottom])
 
@@ -204,20 +208,7 @@ export function BrowserWorkspacePage({ activeTabId }: BrowserWorkspacePageProps)
                 size="icon"
                 disabled={!activeOrigin || activeOrigin === 'null'}
                 onClick={() => {
-                  if (activeOrigin) void window.electronAPI.browserPane.showToolbarMenu('passwords', activeId, activeOrigin)
-                }}
-                className="size-control-compact rounded-control text-muted-foreground hover:text-foreground"
-                title={t('browser.passwords', { defaultValue: 'Passwords' })}
-              >
-                <KeyRound className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={!activeOrigin || activeOrigin === 'null'}
-                onClick={() => {
-                  if (activeOrigin) void window.electronAPI.browserPane.showToolbarMenu('permissions', activeId, activeOrigin)
+                  if (activeOrigin) void window.electronAPI.browserPane.showToolbarMenu('permissions', activeId)
                 }}
                 className="size-control-compact rounded-control text-muted-foreground hover:text-foreground"
                 title={t('browser.sitePermissions', { defaultValue: 'Site permissions' })}

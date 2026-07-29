@@ -32,6 +32,8 @@ import {
   FolderKanban,
   Check,
   FileText,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { getStateColor, getStateIcon, type SessionStatusId } from '@/config/session-status-config'
@@ -109,6 +111,7 @@ export function SessionMenu({
 
   const sessionId = item.id
   const isFlagged = item.isFlagged ?? false
+  const isPinned = item.isPinned ?? false
   const isArchived = item.isArchived ?? false
   const sharedUrl = item.sharedUrl
   const currentSessionStatus = getSessionStatus(item)
@@ -166,6 +169,15 @@ export function SessionMenu({
       <MenuItem onClick={() => { void handleCreateDocument() }}>
         <FileText className="h-3.5 w-3.5" />
         <span className="flex-1">{t('library.createFromSession')}</span>
+      </MenuItem>
+
+      <MenuItem onClick={() => void window.electronAPI.sessionCommand(sessionId, { type: 'setPinned', pinned: !isPinned })}>
+        {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+        <span className="flex-1">
+          {isPinned
+            ? t('sessionMenu.unpin', { defaultValue: '取消置顶' })
+            : t('sessionMenu.pin', { defaultValue: '置顶会话' })}
+        </span>
       </MenuItem>
 
       <Separator />

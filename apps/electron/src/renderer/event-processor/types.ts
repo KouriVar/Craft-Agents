@@ -168,12 +168,12 @@ export interface SessionStatusChangedEvent {
 
 /**
  * Session metadata changed event — generic live push for programmatic metadata writes
- * (taskNodeCount, kanbanColumn) that don't ride the header-signature file-watch path.
+ * (kanbanColumn) that don't ride the header-signature file-watch path.
  */
 export interface SessionMetadataChangedEvent {
   type: 'session_metadata_changed'
   sessionId: string
-  changes: Partial<Pick<Session, 'taskNodeCount' | 'kanbanColumn' | 'taskDraft' | 'taskSlug' | 'projectId' | 'taskGoal' | 'taskPriority' | 'taskDueAt' | 'taskReminderAt' | 'taskReminderAcknowledgedAt' | 'taskReminderLastNotifiedAt' | 'taskCheckpoints'>>
+  changes: Partial<Pick<Session, 'kanbanColumn' | 'projectId' | 'isPinned' | 'taskGoal' | 'taskPriority' | 'taskDueAt' | 'taskReminderAt' | 'taskReminderAcknowledgedAt' | 'taskReminderLastNotifiedAt' | 'taskCheckpoints'>>
 }
 
 /**

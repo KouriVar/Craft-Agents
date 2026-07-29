@@ -308,7 +308,7 @@ export interface ChatOptions {
  */
 export type SdkMcpServerConfig =
   | {
-      type: 'http' | 'sse';
+      type: 'http';
       url: string;
       headers?: Record<string, string>;
       /** Environment variable name containing bearer token (Codex-specific) */

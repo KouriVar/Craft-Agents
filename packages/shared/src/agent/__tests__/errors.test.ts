@@ -36,6 +36,19 @@ describe('parseError proxy interception handling', () => {
   })
 })
 
+describe('parseError disabled-model classification', () => {
+  it('returns a non-retryable settings error instead of a transient service error', () => {
+    const parsed = parseError(
+      new Error('Service API error: Model is disabled by this service'),
+    )
+
+    expect(parsed.code).toBe('model_disabled')
+    expect(parsed.title).toBe('模型不可用')
+    expect(parsed.canRetry).toBe(false)
+    expect(parsed.actions[0]?.action).toBe('settings')
+  })
+})
+
 describe('parseError tool-support classification', () => {
   // Regression for the misclassification in the screenshot: an Anthropic
   // cache_control TTL ordering error mentioning `tools` in its hint string

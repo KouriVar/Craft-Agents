@@ -8,10 +8,11 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { SettingsSection, SettingsCard, SettingsRow } from '@/components/settings'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-import { isMac } from '@/lib/platform'
+import { SettingsSection, SettingsCard, SettingsRow, SettingsToggle } from '@/components/settings'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
+import { isMac, isWindows } from '@/lib/platform'
 import { actionsByCategory, useActionLabel, type ActionId } from '@/actions'
+import { Button } from '@/components/ui/button'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -124,8 +125,9 @@ function ActionShortcutRow({ actionId }: { actionId: ActionId }) {
   )
 }
 
-export default function ShortcutsPage() {
+export default function ShortcutsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
+  if (embedded) return <ShortcutsContent embedded />
   return (
     <div className="h-full flex flex-col">
       <PanelHeader title={t("settings.shortcuts.title")} />
@@ -138,12 +140,144 @@ export default function ShortcutsPage() {
   )
 }
 
-export function ShortcutsContent({ compact = false }: { compact?: boolean }) {
+export function ShortcutsContent({ compact = false, embedded = false }: { compact?: boolean; embedded?: boolean }) {
   const { t } = useTranslation()
   const componentSpecificSections = useComponentSpecificSections()
+  const [doubleCommandEnabled, setDoubleCommandEnabled] = React.useState(false)
+  const [hideAppOnScreenshot, setHideAppOnScreenshot] = React.useState(false)
+  const [doubleCommandStatus, setDoubleCommandStatus] = React.useState<string>('starting')
+  const [permissions, setPermissions] = React.useState<{
+    accessibility: string
+    screenRecording: string
+  } | null>(null)
+  const supportsDoubleModifierScreenshot = isMac || isWindows
+  const shortcutModifierName = isMac ? 'Command' : 'Alt'
+
+  React.useEffect(() => {
+    if (!supportsDoubleModifierScreenshot) return
+    void Promise.all([
+      window.electronAPI.getDoubleCommandScreenshotEnabled(),
+      window.electronAPI.getDoubleCommandScreenshotHideApp(),
+      window.electronAPI.getDoubleCommandScreenshotStatus(),
+      window.electronAPI.getScreenCapturePermissionStatus(),
+    ]).then(([enabled, hideApp, status, nextPermissions]) => {
+      setDoubleCommandEnabled(enabled)
+      setHideAppOnScreenshot(hideApp)
+      setDoubleCommandStatus(status)
+      setPermissions(nextPermissions)
+    })
+    const onStatus = (event: Event) => setDoubleCommandStatus((event as CustomEvent<string>).detail)
+    window.addEventListener('craft:screen-capture-shortcut-status', onStatus)
+    return () => window.removeEventListener('craft:screen-capture-shortcut-status', onStatus)
+  }, [supportsDoubleModifierScreenshot])
+
+  const shortcutStatusLabel = doubleCommandStatus === 'ready' ? '已就绪'
+    : doubleCommandStatus === 'accessibility-denied' ? '需要在系统设置中允许辅助功能权限'
+      : doubleCommandStatus === 'unavailable' ? '当前不可用，请检查安装与系统权限'
+        : doubleCommandStatus === 'disabled' ? '已关闭'
+          : '正在启动'
+
+  const containerClass = embedded
+    ? 'space-y-8'
+    : compact
+      ? 'space-y-6 px-4 py-4'
+      : 'mx-auto max-w-3xl space-y-8 px-5 py-7'
 
   return (
-    <div className={compact ? 'space-y-6 px-4 py-4' : 'mx-auto max-w-3xl space-y-8 px-5 py-7'}>
+    <div className={containerClass}>
+      {supportsDoubleModifierScreenshot && (
+        <SettingsSection title="屏幕截图">
+          <SettingsCard>
+            <SettingsToggle
+              label={`双 ${shortcutModifierName} 截图`}
+              description={`同时按下左右 ${shortcutModifierName}，将当前屏幕截图添加到当前会话输入框（不会自动发送）。${shortcutStatusLabel}`}
+              checked={doubleCommandEnabled}
+              onCheckedChange={async enabled => {
+                setDoubleCommandEnabled(enabled)
+                await window.electronAPI.setDoubleCommandScreenshotEnabled(enabled)
+                setDoubleCommandStatus(await window.electronAPI.getDoubleCommandScreenshotStatus())
+              }}
+            />
+            <SettingsToggle
+              label="截图时隐藏 Craft Agent"
+              description="截图前临时隐藏 Craft Agent 窗口，避免把当前应用本身截进图片。"
+              checked={hideAppOnScreenshot}
+              onCheckedChange={async enabled => {
+                setHideAppOnScreenshot(enabled)
+                await window.electronAPI.setDoubleCommandScreenshotHideApp(enabled)
+              }}
+            />
+            {isMac ? (
+              <>
+                <SettingsRow
+                  label="辅助功能权限"
+                  description="用于在 Craft 不处于前台时监听左右 Command 同时按下。"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {permissions?.accessibility === 'granted' ? '已授权' : '未授权'}
+                  </span>
+                  {permissions?.accessibility !== 'granted' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void window.electronAPI.openScreenCapturePermissionSettings('accessibility')}
+                    >
+                      去授权
+                    </Button>
+                  )}
+                </SettingsRow>
+                <SettingsRow
+                  label="屏幕录制权限"
+                  description="用于读取当前屏幕并把截图放入会话输入框。"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {permissions?.screenRecording === 'granted' ? '已授权' : '未授权'}
+                  </span>
+                  {permissions?.screenRecording !== 'granted' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void window.electronAPI.openScreenCapturePermissionSettings('screen-recording')}
+                    >
+                      去授权
+                    </Button>
+                  )}
+                </SettingsRow>
+              </>
+            ) : (
+              <SettingsRow
+                label="Windows 权限"
+                description="Windows 截图不需要额外系统授权；后台双 Alt 使用本地键盘监听。若要截取管理员权限窗口，请用相同权限运行 Craft Agent。"
+              >
+                <span className="text-xs text-muted-foreground">无需授权</span>
+              </SettingsRow>
+            )}
+            <SettingsRow
+              label="重新检测"
+              description={isMac ? '授权后返回 Craft，点击此处重新启动快捷键监听。' : '点击此处重新启动双 Alt 快捷键监听。'}
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (doubleCommandEnabled) {
+                    await window.electronAPI.setDoubleCommandScreenshotEnabled(false)
+                    await window.electronAPI.setDoubleCommandScreenshotEnabled(true)
+                  }
+                  const [status, nextPermissions] = await Promise.all([
+                    window.electronAPI.getDoubleCommandScreenshotStatus(),
+                    window.electronAPI.getScreenCapturePermissionStatus(),
+                  ])
+                  setDoubleCommandStatus(status)
+                  setPermissions(nextPermissions)
+                }}
+              >
+                重新检测
+              </Button>
+            </SettingsRow>
+          </SettingsCard>
+        </SettingsSection>
+      )}
       {Object.entries(actionsByCategory).map(([category, actions]) => (
         <SettingsSection key={category} title={t(`shortcuts.category.${category.toLowerCase()}`)}>
           <SettingsCard>

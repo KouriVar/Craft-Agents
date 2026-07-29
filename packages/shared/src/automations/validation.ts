@@ -144,6 +144,20 @@ function runMatcherSemanticValidations(
         }
       }
 
+      if (matcher.retryLimit !== undefined && (
+        !Number.isInteger(matcher.retryLimit)
+        || matcher.retryLimit < 0
+        || matcher.retryLimit > 5
+      )) {
+        errors.push({
+          file,
+          path: `automations.${event}[${i}].retryLimit`,
+          message: 'Retry limit must be an integer from 0 to 5',
+          severity: 'error',
+          suggestion: 'Use a finite retry count between 0 and 5',
+        });
+      }
+
       // Warn about webhook URLs with $VAR templates (can't validate until runtime)
       if (matcher.actions) {
         for (let j = 0; j < matcher.actions.length; j++) {

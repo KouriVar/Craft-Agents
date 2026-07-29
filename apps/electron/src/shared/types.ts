@@ -124,6 +124,8 @@ export interface BrowserPaneCreateOptions {
   embedded?: boolean
   /** Navigate after the runtime's internal new-tab page has initialized. */
   initialUrl?: string
+  /** Resolved app appearance used by the native new-tab surface. */
+  appearance?: 'light' | 'dark'
 }
 
 export interface BrowserPaneBounds {
@@ -131,6 +133,36 @@ export interface BrowserPaneBounds {
   y: number
   width: number
   height: number
+}
+
+export type BrowserTabMenuAction =
+  | 'back'
+  | 'forward'
+  | 'reload-or-stop'
+  | 'copy-link'
+  | 'toggle-bookmark'
+  | 'toggle-pinned'
+  | 'toggle-muted'
+  | 'toggle-assistant'
+  | 'site-permissions'
+  | 'close'
+  | 'close-other-tabs'
+  | 'close-tabs-below'
+  | `extension:${string}`
+
+export interface BrowserTabMenuRequest {
+  tabId: string
+  pinned: boolean
+  hasWebUrl: boolean
+  isBookmarked: boolean
+  hasClosableOtherTabs: boolean
+  hasClosableTabsBelow: boolean
+  rightSidebarOpen: boolean
+  extensions: Array<{
+    id: string
+    name: string
+    hasAction: boolean
+  }>
 }
 
 /**
@@ -219,16 +251,6 @@ import type {
   Session,
   UnreadSummary,
   CreateSessionOptions,
-  TaskValidationResultDto,
-  TaskCreateRequest,
-  TaskCreateResult,
-  TaskGenerateRequest,
-  TaskGenerateAck,
-  TaskGenerateResult,
-  TaskRunRequest,
-  TaskRunSnapshotDto,
-  TaskGetResult,
-  TaskResultsDto,
   FileAttachment,
   SendMessageOptions,
   SessionEvent,
@@ -286,6 +308,9 @@ import type {
   BrowserDownloadRecord,
   BrowserExtensionEntry,
   BrowserPermissionEntry,
+  BrowserSettings,
+  BrowserClearDataRequest,
+  BrowserSiteDataSummary,
   BrowserWorkspaceSnapshot,
   DeepLinkNavigation,
   TestAutomationPayload,
@@ -311,30 +336,8 @@ export interface ElectronAPI {
     storedAttachments?: StoredAttachmentType[],
     options?: SendMessageOptions,
   ): Promise<void>
-  generateExploreBrief(
-    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
-  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult>
-  completeAndArchiveSession(
-    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
-  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
-  getTaskOutput(taskId: string): Promise<string | null>
-
-  // Tasks (Conductor)
-  validateTask(workspaceId: string, yaml: string): Promise<TaskValidationResultDto>
-  createTask(workspaceId: string, req: TaskCreateRequest): Promise<TaskCreateResult>
-  generateTask(workspaceId: string, req: TaskGenerateRequest): Promise<TaskGenerateAck>
-  /** Async generate result (or error), keyed by orchestratorSessionId. Subscribe before/after generateTask. */
-  onTaskGenerated(callback: (workspaceId: string, result: TaskGenerateResult) => void): () => void
-  runTask(workspaceId: string, req: TaskRunRequest): Promise<TaskRunSnapshotDto>
-  pauseTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  resumeTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  stopTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  getTask(workspaceId: string, slug: string, runId?: string): Promise<TaskGetResult>
-  listTasks(workspaceId: string): Promise<string[]>
-  getTaskResults(workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto>
-
   respondToPermission(
     sessionId: string,
     requestId: string,
@@ -345,7 +348,7 @@ export interface ElectronAPI {
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
 
   // Consolidated session command handler
-  sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | { count: number }>
+  sessionCommand(sessionId: string, command: SessionCommand): Promise<void | Session | ShareResult | RefreshTitleResult | { count: number }>
 
   // Server info (REMOTE_ELIGIBLE — returns data from whichever server owns the workspace)
   getServerHomeDir(): Promise<string>
@@ -435,6 +438,19 @@ export interface ElectronAPI {
   // Event listeners
   onSessionEvent(callback: (event: SessionEvent) => void): () => void
   onUnreadSummaryChanged(callback: (summary: UnreadSummary) => void): () => void
+  /** A screen image captured by the desktop process; it is a composer draft only. */
+  onScreenCapture(callback: (result: { ok: true; attachment: FileAttachment } | { ok: false; error: string }) => void): () => void
+  captureCurrentScreen(): Promise<{ ok: true; attachment: FileAttachment } | { ok: false; error: string }>
+  getDoubleCommandScreenshotEnabled(): Promise<boolean>
+  setDoubleCommandScreenshotEnabled(enabled: boolean): Promise<void>
+  getDoubleCommandScreenshotHideApp(): Promise<boolean>
+  setDoubleCommandScreenshotHideApp(enabled: boolean): Promise<void>
+  getDoubleCommandScreenshotStatus(): Promise<'unsupported' | 'starting' | 'ready' | 'accessibility-denied' | 'unavailable' | 'disabled'>
+  getScreenCapturePermissionStatus(): Promise<{
+    accessibility: 'granted' | 'denied' | 'not-required'
+    screenRecording: 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown' | 'not-required'
+  }>
+  openScreenCapturePermissionSettings(permission: 'accessibility' | 'screen-recording'): Promise<void>
 
   // File operations
   readFile(path: string): Promise<string>
@@ -616,6 +632,8 @@ export interface ElectronAPI {
     path: string
   }>
   writePreferences(content: string): Promise<{ success: boolean; error?: string }>
+  searchWorkspace(request: { workspaceId: string; query: string; projectId?: string; limit?: number }): Promise<{ entries: import('@craft-agent/shared/search-index').SearchIndexEntry[]; groups: Array<{ kind: import('@craft-agent/shared/search-index').SearchKind; entries: import('@craft-agent/shared/search-index').SearchIndexEntry[] }> }>
+  repairSearchIndex(workspaceId: string): Promise<import('@craft-agent/shared/search-index').SearchRepairResult>
 
   // Session Drafts (persisted composer state — text + attachment refs)
   getDraft(sessionId: string): Promise<import('@craft-agent/shared/config').SessionDraft | null>
@@ -625,8 +643,6 @@ export interface ElectronAPI {
 
   // Session Info Panel
   getSessionFiles(sessionId: string): Promise<SessionFile[]>
-  getSessionNotes(sessionId: string): Promise<string>
-  setSessionNotes(sessionId: string, content: string): Promise<void>
   watchSessionFiles(sessionId: string): Promise<void>
   unwatchSessionFiles(): Promise<void>
   onSessionFilesChanged(callback: (sessionId: string) => void): () => void
@@ -647,6 +663,22 @@ export interface ElectronAPI {
     path: string
   }>
   getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
+
+  // Capability center (Source remains an internal compatibility backend).
+  listExperts(workspaceId: string): Promise<import('@craft-agent/shared/experts').ExpertProfile[]>
+  getExpert(workspaceId: string, expertId: string): Promise<import('@craft-agent/shared/experts').ExpertProfile | null>
+  createExpert(workspaceId: string, input: import('@craft-agent/shared/experts').ExpertInput): Promise<import('@craft-agent/shared/experts').ExpertProfile>
+  updateExpert(workspaceId: string, expertId: string, patch: Partial<import('@craft-agent/shared/experts').ExpertInput>): Promise<import('@craft-agent/shared/experts').ExpertProfile | null>
+  duplicateExpert(workspaceId: string, expertId: string, name?: string): Promise<import('@craft-agent/shared/experts').ExpertProfile | null>
+  deleteExpert(workspaceId: string, expertId: string): Promise<boolean>
+  getCapabilityAssignment(workspaceId: string, scope: import('@craft-agent/shared/experts').CapabilityAssignment['scope'], scopeId?: string): Promise<import('@craft-agent/shared/experts').CapabilityAssignment>
+  setCapabilityAssignment(workspaceId: string, assignment: import('@craft-agent/shared/experts').CapabilityAssignment): Promise<void>
+  resolveExpertCapabilities(workspaceId: string, projectId?: string, expertId?: string): Promise<import('@craft-agent/shared/experts').CapabilityAssignment>
+  listConnectors(workspaceId: string): Promise<import('@craft-agent/shared/connectors').Connector[]>
+  getConnector(workspaceId: string, slug: string): Promise<import('@craft-agent/shared/connectors').Connector | null>
+  createConnector(workspaceId: string, input: import('@craft-agent/shared/connectors').CreateConnectorInput): Promise<import('@craft-agent/shared/connectors').Connector>
+  updateConnector(workspaceId: string, slug: string, patch: import('@craft-agent/shared/connectors').UpdateConnectorInput): Promise<import('@craft-agent/shared/connectors').Connector | null>
+  deleteConnector(workspaceId: string, slug: string): Promise<boolean>
 
   // OAuth (server-owned credentials, client-orchestrated flow)
   performOAuth(args: {
@@ -715,6 +747,14 @@ export interface ElectronAPI {
     sourceId: string,
     options?: { refresh?: boolean },
   ): Promise<import('@craft-agent/shared/plugins').PluginMarketplaceCatalog>
+  previewPluginUpdate(workspaceId: string, pluginName: string): Promise<{
+    marketplaceId: string
+    pluginName: string
+    currentVersion?: string
+    nextVersion?: string
+    hasUpdate: boolean
+    compatibility?: import('@craft-agent/shared/plugins').PluginCompatibilityReport
+  } | null>
   installMarketplacePlugin(
     workspaceId: string,
     marketplaceId: string,
@@ -787,7 +827,6 @@ export interface ElectronAPI {
   getLogoUrl(serviceUrl: string, provider?: string): Promise<string | null>
 
   // Notifications
-  showNotification(title: string, body: string, workspaceId: string, sessionId: string): Promise<void>
   getNotificationsEnabled(): Promise<boolean>
   setNotificationsEnabled(enabled: boolean): Promise<void>
 
@@ -860,7 +899,8 @@ export interface ElectronAPI {
   onBadgeDrawWindows(callback: (data: { count: number }) => void): () => void
   getWindowFocusState(): Promise<boolean>
   onWindowFocusChange(callback: (isFocused: boolean) => void): () => void
-  onNotificationNavigate(callback: (data: { workspaceId: string; sessionId: string }) => void): () => void
+  getWindowMaximizedState(): Promise<boolean>
+  onWindowMaximizedChange(callback: (isMaximized: boolean) => void): () => void
 
   // Theme preferences sync across windows
   broadcastThemePreferences(preferences: { mode: string; colorTheme: string; font: string }): Promise<void>
@@ -899,9 +939,6 @@ export interface ElectronAPI {
   getPrivacyStorageUsage(workspaceId: string): Promise<PrivacyStorageUsageDto>
 
   // Explore Today product state
-  getTodayState(request: import('@craft-agent/shared/protocol').TodayGetStateRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
-  snoozeTodayItem(request: import('@craft-agent/shared/protocol').TodaySnoozeRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
-  clearTodaySnooze(request: import('@craft-agent/shared/protocol').TodayClearSnoozeRequest): Promise<import('@craft-agent/shared/protocol').TodayStateDto>
 
   // Library (资源库)
   listLibraryDocuments(query: import('@craft-agent/shared/protocol').LibraryListQuery): Promise<import('@craft-agent/shared/protocol').LibraryIndexEntry[]>
@@ -916,8 +953,13 @@ export interface ElectronAPI {
   getLibraryVersion(request: import('@craft-agent/shared/protocol').LibraryGetVersionRequest): Promise<{ meta: import('@craft-agent/shared/protocol').DocumentVersionMeta; body: string } | null>
   restoreLibraryVersion(request: import('@craft-agent/shared/protocol').LibraryGetVersionRequest): Promise<import('@craft-agent/shared/protocol').LibraryDocumentDto | null>
   exportLibraryDocument(request: import('@craft-agent/shared/protocol').LibraryExportRequest): Promise<import('@craft-agent/shared/protocol').LibraryExportResult>
-  repairLibrary(workspaceId: string): Promise<{ ok: boolean; rebuiltIndex: number; orphanBodies: string[]; missingBodies: string[] }>
+  repairLibrary(workspaceId: string): Promise<{ ok: boolean; rebuiltIndex: number; rebuiltSearchIndex: number; orphanBodies: string[]; missingBodies: string[] }>
   unlinkLibrarySession(request: import('@craft-agent/shared/protocol').LibraryUnlinkSessionRequest): Promise<import('@craft-agent/shared/protocol').DocumentMeta | null>
+  importKnowledgeFile(input: { workspaceId: string; sourcePath: string; projectId?: string; mimeType?: string; sourceSessionId?: string }): Promise<import('@craft-agent/shared/knowledge').KnowledgeFileMeta>
+  createKnowledgeMindMap(input: { workspaceId: string; title?: string; projectId?: string; sourceSessionId?: string }): Promise<import('@craft-agent/shared/knowledge').MindMapDocument>
+  updateKnowledgeMindMap(input: import('@craft-agent/shared/knowledge').MindMapDocument): Promise<import('@craft-agent/shared/knowledge').MindMapDocument>
+  listKnowledgeMindMaps(input: { workspaceId: string; projectId?: string }): Promise<import('@craft-agent/shared/knowledge').MindMapDocument[]>
+  getKnowledgeMindMap(input: { workspaceId: string; id: string }): Promise<import('@craft-agent/shared/knowledge').MindMapDocument | null>
 
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>
@@ -958,7 +1000,7 @@ export interface ElectronAPI {
     loadWorkspaceState(): Promise<BrowserWorkspaceSnapshot>
     saveWorkspaceState(snapshot: BrowserWorkspaceSnapshot): Promise<void>
     listBookmarks(): Promise<BrowserBookmarkEntry[]>
-    addBookmark(entry: { url: string; title: string; favicon?: string | null; folderId?: string | null }): Promise<BrowserBookmarkEntry>
+    addBookmark(entry: { url: string; title?: string; favicon?: string | null; folderId?: string | null }): Promise<BrowserBookmarkEntry>
     updateBookmark(id: string, changes: { title?: string; folderId?: string | null }): Promise<BrowserBookmarkEntry>
     removeBookmark(idOrUrl: string): Promise<void>
     listBookmarkFolders(): Promise<BrowserBookmarkFolder[]>
@@ -988,12 +1030,20 @@ export interface ElectronAPI {
     retryDownload(id: string): Promise<void>
     listPermissions(origin?: string): Promise<BrowserPermissionEntry[]>
     clearPermission(origin: string, permission?: string): Promise<void>
+    getSettings(): Promise<BrowserSettings>
+    updateSettings(changes: Partial<BrowserSettings>): Promise<BrowserSettings>
+    getCacheSize(): Promise<number>
+    clearData(request: BrowserClearDataRequest): Promise<void>
+    listSiteData(): Promise<BrowserSiteDataSummary[]>
+    clearSiteData(origin: string): Promise<void>
+    clearAllSiteData(): Promise<void>
     listExtensions(): Promise<BrowserExtensionEntry[]>
     installExtension(path: string): Promise<BrowserExtensionEntry>
     installExtensionFromStore(urlOrId: string): Promise<BrowserExtensionEntry>
     removeExtension(id: string): Promise<void>
     openExtensionAction(extensionId: string, tabId?: string | null): Promise<void>
-    showToolbarMenu(kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null): Promise<void>
+    showToolbarMenu(kind: 'extensions' | 'permissions', tabId?: string | null): Promise<void>
+    showTabMenu(request: BrowserTabMenuRequest): Promise<BrowserTabMenuAction | null>
     setExtensionPreference(extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }): Promise<void>
     emptyStateLaunch(payload: BrowserEmptyStateLaunchPayload): Promise<BrowserEmptyStateLaunchResult>
     onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
@@ -1027,6 +1077,8 @@ export interface ElectronAPI {
     projectSlug: string,
     patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>,
   ): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  listPausedProjectAutomations(workspaceId: string, projectSlug: string): Promise<import('@craft-agent/shared/automations').PausedProjectAutomation[]>
+  restoreProjectAutomations(workspaceId: string, projectSlug: string, ids?: string[]): Promise<number>
   getProjectMemory(workspaceId: string, projectSlug: string): Promise<string>
   setProjectMemory(workspaceId: string, projectSlug: string, content: string): Promise<void>
   deleteProject(workspaceId: string, projectSlug: string): Promise<void>
@@ -1046,6 +1098,8 @@ export interface ElectronAPI {
 
   // Automations
   getAutomations(workspaceId: string): Promise<unknown>
+  inferAutomation(workspaceId: string, description: string): Promise<{ draft: import('@craft-agent/shared/automations').AutomationDraft; mode: 'llm' | 'fallback'; reason?: string; model?: string }>
+  createAutomation(workspaceId: string, draft: import('@craft-agent/shared/automations').AutomationDraft): Promise<{ id: string; event: string; inboundWebhook?: { secret: string; path: string } }>
 
   // Automation testing (manual trigger)
   testAutomation(payload: TestAutomationPayload): Promise<TestAutomationResult>
@@ -1095,6 +1149,22 @@ export interface ElectronAPI {
 
   // Automations change listener
   onAutomationsChanged(callback: (workspaceId: string) => void): () => void
+
+  // Dynamic Center
+  createDynamicItem(workspaceId: string, input: Omit<import('@craft-agent/shared/dynamic').DynamicItem, 'id' | 'createdAt'>): Promise<import('@craft-agent/shared/dynamic').DynamicItem | null>
+  getDynamicItems(workspaceId: string, filter?: 'all' | 'actionable' | 'automation' | 'system'): Promise<import('@craft-agent/shared/dynamic').DynamicItem[]>
+  markDynamicRead(workspaceId: string, id: string): Promise<boolean>
+  clearDynamicItem(workspaceId: string, id: string): Promise<boolean>
+  resolveDynamicAction(workspaceId: string, id: string): Promise<boolean>
+  getDynamicMuteRules(workspaceId: string): Promise<import('@craft-agent/shared/dynamic').DynamicMuteRules>
+  setDynamicMuteRules(workspaceId: string, rules: import('@craft-agent/shared/dynamic').DynamicMuteRules): Promise<void>
+  respondToDynamicPermission(workspaceId: string, id: string, allowed: boolean, alwaysAllow?: boolean): Promise<boolean>
+
+  // Executable workflow definitions
+  listWorkflows(workspaceId: string): Promise<import('@craft-agent/shared/automations').StoredWorkflow[]>
+  saveWorkflow(workspaceId: string, workflow: Omit<import('@craft-agent/shared/automations').StoredWorkflow, 'updatedAt'>): Promise<import('@craft-agent/shared/automations').StoredWorkflow>
+  deleteWorkflow(workspaceId: string, id: string): Promise<boolean>
+  runWorkflow(workspaceId: string, id: string, projectId?: string): Promise<import('@craft-agent/shared/automations').WorkflowRunResult & { suspended?: boolean; approvalRunId?: string }>
 
   // Language
   changeLanguage(lang: string): Promise<void>
@@ -1244,8 +1314,8 @@ export type SessionFilter =
 /**
  * Settings subpage options - re-exported from settings-registry (single source of truth)
  */
-export type { SettingsSubpage } from './settings-registry'
-import { isValidSettingsSubpage, type SettingsSubpage } from './settings-registry'
+export type { SettingsSubpage, SettingsRouteId } from './settings-registry'
+import { resolveSettingsRoute, type SettingsSubpage } from './settings-registry'
 
 /**
  * Sessions navigation state
@@ -1299,6 +1369,8 @@ export interface SourcesNavigationState {
 export interface SettingsNavigationState {
   navigator: 'settings'
   subpage: SettingsSubpage | null
+  /** In-page section anchor for consolidated settings pages */
+  section?: string
   rightSidebar?: RightSidebarPanel
 }
 
@@ -1333,6 +1405,12 @@ export interface AutomationsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface DynamicNavigationState {
+  navigator: 'dynamic'
+  details: null
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Projects navigation state
  */
@@ -1363,6 +1441,7 @@ export type NavigationState =
   | PluginsNavigationState
   | BrowserNavigationState
   | AutomationsNavigationState
+  | DynamicNavigationState
   | ProjectsNavigationState
   | LibraryNavigationState
 
@@ -1379,13 +1458,15 @@ export const isPluginsNavigation = (state: NavigationState): state is PluginsNav
 export const isBrowserNavigation = (state: NavigationState): state is BrowserNavigationState => state.navigator === 'browser'
 
 export const isAutomationsNavigation = (state: NavigationState): state is AutomationsNavigationState => state.navigator === 'automations'
+export const isDynamicNavigation = (state: NavigationState): state is DynamicNavigationState => state.navigator === 'dynamic'
 
 export const isProjectsNavigation = (state: NavigationState): state is ProjectsNavigationState => state.navigator === 'projects'
 
 export const isLibraryNavigation = (state: NavigationState): state is LibraryNavigationState => state.navigator === 'library'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
-  navigator: 'browser',
+  navigator: 'sessions',
+  filter: { kind: 'allSessions' },
   details: null,
 }
 
@@ -1420,6 +1501,7 @@ export const getNavigationStateKey = (state: NavigationState): string => {
     }
     return 'automations'
   }
+  if (state.navigator === 'dynamic') return 'dynamic'
   if (state.navigator === 'projects') {
     if (state.details?.type === 'project') {
       return `projects/project/${state.details.projectSlug}`
@@ -1436,7 +1518,9 @@ export const getNavigationStateKey = (state: NavigationState): string => {
   }
   if (state.navigator === 'settings') {
     if (state.subpage === null) return 'settings'
-    return `settings:${state.subpage}`
+    return state.section
+      ? `settings:${state.subpage}#${state.section}`
+      : `settings:${state.subpage}`
   }
   // Chats
   const f = state.filter
@@ -1529,9 +1613,17 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   // Handle settings
   if (key === 'settings') return { navigator: 'settings', subpage: null }
   if (key.startsWith('settings:')) {
-    const subpage = key.slice(9)
-    if (isValidSettingsSubpage(subpage)) {
-      return { navigator: 'settings', subpage }
+    const rest = key.slice(9)
+    const [subpagePart, section] = rest.split('#')
+    const resolved = resolveSettingsRoute(subpagePart)
+    if (resolved) {
+      return {
+        navigator: 'settings',
+        subpage: resolved.page,
+        ...(section || resolved.section
+          ? { section: section || resolved.section }
+          : {}),
+      }
     }
   }
 

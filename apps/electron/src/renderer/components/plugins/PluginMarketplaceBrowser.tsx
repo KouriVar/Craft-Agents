@@ -23,6 +23,8 @@ interface PluginMarketplaceBrowserProps {
   installedPluginNames: string[]
   onOpenChange: (open: boolean) => void
   onInstalled: (plugin: WorkspacePluginEntry) => void
+  /** Normal capability surfaces must not require users to understand packages. */
+  presentation?: 'plugins' | 'capabilities'
 }
 
 function packageSourceLabel(plugin: PluginMarketplaceEntry): string {
@@ -47,6 +49,7 @@ export function PluginMarketplaceBrowser({
   installedPluginNames,
   onOpenChange,
   onInstalled,
+  presentation = 'plugins',
 }: PluginMarketplaceBrowserProps) {
   const { t } = useTranslation()
   const [sources, setSources] = React.useState<PluginMarketplaceSource[]>([])
@@ -56,6 +59,7 @@ export function PluginMarketplaceBrowser({
   const [query, setQuery] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [installing, setInstalling] = React.useState(false)
+  const [confirmInstall, setConfirmInstall] = React.useState(false)
   const [sourceDialogOpen, setSourceDialogOpen] = React.useState(false)
   const [sourceForm, setSourceForm] = React.useState({ name: '', source: '', ref: '', sparsePath: '' })
   const [savingSource, setSavingSource] = React.useState(false)
@@ -158,6 +162,13 @@ export function PluginMarketplaceBrowser({
 
   const activeSource = sources.find(source => source.id === sourceId)
   const installed = selected ? installedPluginNames.includes(selected.name) : false
+  const capabilityPresentation = presentation === 'capabilities'
+  const requestedPermissions = [
+    { label: '命令', detail: selected?.compatibilityReport?.capabilities.some(item => item.kind === 'hooks') ? '检测到生命周期 Hook；安装后按运行时授权执行。' : '未从清单检测到命令声明。' },
+    { label: '网络', detail: selected?.compatibilityReport?.capabilities.some(item => item.kind === 'mcp') ? 'MCP 工具可能访问其已配置的远程服务。' : '未从清单检测到网络能力。' },
+    { label: '文件', detail: '安装包文件将写入工作区管理目录；运行时文件访问仍受权限模式约束。' },
+    { label: '凭据', detail: selected?.compatibilityReport?.authRequirements?.length ? selected.compatibilityReport.authRequirements.map(item => item.name).join('；') : '未声明额外凭据要求。' },
+  ]
 
   return (
     <>
@@ -166,9 +177,9 @@ export function PluginMarketplaceBrowser({
           <DialogHeader className="border-b border-border/60 px-5 py-4">
             <div className="flex items-center justify-between gap-4 pr-8">
               <div>
-                <DialogTitle>{t('plugins.marketplace.title', { defaultValue: 'Plugin marketplaces' })}</DialogTitle>
+                <DialogTitle>{capabilityPresentation ? '能力市场' : t('plugins.marketplace.title', { defaultValue: 'Plugin marketplaces' })}</DialogTitle>
                 <DialogDescription className="mt-1">
-                  {t('plugins.marketplace.description', { defaultValue: 'Browse compatible plugins from OpenAI and other Git marketplaces.' })}
+                  {capabilityPresentation ? '浏览可安装的专家、技能和连接器。' : t('plugins.marketplace.description', { defaultValue: 'Browse compatible plugins from OpenAI and other Git marketplaces.' })}
                 </DialogDescription>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -198,21 +209,21 @@ export function PluginMarketplaceBrowser({
                 </Select>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input className="h-9 pl-8" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('plugins.marketplace.search', { defaultValue: 'Search plugins' })} />
+                  <Input className="h-9 pl-8" value={query} onChange={event => setQuery(event.target.value)} placeholder={capabilityPresentation ? '搜索能力' : t('plugins.marketplace.search', { defaultValue: 'Search plugins' })} />
                 </div>
               </div>
               <ScrollArea className="min-h-0 flex-1">
                 {loading && !catalog ? (
                   <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">{t('common.loading')}</div>
                 ) : filteredPlugins.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">{t('plugins.marketplace.empty', { defaultValue: 'No plugins found' })}</div>
+                  <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">{capabilityPresentation ? '未找到可用能力' : t('plugins.marketplace.empty', { defaultValue: 'No plugins found' })}</div>
                 ) : (
                   <div className="p-2">
                     {filteredPlugins.map(plugin => (
                       <button
                         key={plugin.name}
                         type="button"
-                        className={cn('flex w-full items-start gap-3 rounded-[6px] px-3 py-2.5 text-left hover:bg-muted/60', selected?.name === plugin.name && 'bg-muted')}
+                        className={cn('flex w-full items-start gap-3 rounded-control px-3 py-2.5 text-left hover:bg-muted/60', selected?.name === plugin.name && 'bg-muted')}
                         onClick={() => setSelected(plugin)}
                       >
                         <PluginAvatar
@@ -275,7 +286,7 @@ export function PluginMarketplaceBrowser({
                     <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">{t('plugins.marketplace.installation', { defaultValue: 'Availability' })}</dt><dd>{selected.installation || t('plugins.marketplace.available', { defaultValue: 'Available' })}</dd></div>
                   </dl>
                   {selected.authentication && selected.authentication !== 'NONE' && (
-                    <div className="mt-5 flex gap-3 rounded-[6px] border border-warning/30 bg-warning/5 p-3 text-xs leading-5 text-muted-foreground">
+                    <div className="mt-5 flex gap-3 rounded-control border border-warning/30 bg-warning/5 p-3 text-xs leading-5 text-muted-foreground">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                       <span>{t('plugins.marketplace.authWarning', { defaultValue: 'This plugin may require an OpenAI connector or external account. Skills can still work, but account-backed tools may need additional CA support.' })}</span>
                     </div>
@@ -285,7 +296,7 @@ export function PluginMarketplaceBrowser({
                   ))}
                   {selected.compatibility === 'unsupported' && <p className="mt-5 text-sm text-destructive">{selected.compatibilityReason}</p>}
                   <div className="mt-6 flex flex-wrap gap-2">
-                    <Button onClick={() => { void install() }} disabled={installing || installed || selected.compatibility === 'unsupported'}>
+                    <Button onClick={() => setConfirmInstall(true)} disabled={installing || installed || selected.compatibility === 'unsupported'}>
                       {installed ? t('plugins.marketplace.installed', { defaultValue: 'Installed' }) : installing ? t('common.loading') : t('plugins.install.install', { defaultValue: 'Install' })}
                     </Button>
                     {activeSource && /^https?:|^[\w.-]+\/[\w.-]+$/.test(activeSource.source) && (
@@ -298,8 +309,15 @@ export function PluginMarketplaceBrowser({
               ) : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('plugins.marketplace.select', { defaultValue: 'Select a plugin' })}</div>}
             </ScrollArea>
           </div>
+      </DialogContent>
+      <Dialog open={confirmInstall} onOpenChange={setConfirmInstall}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{t('plugins.install.confirmTitle', { defaultValue: 'Confirm capability installation' })}</DialogTitle><DialogDescription>{t('plugins.install.confirmDescription', { defaultValue: 'Review the capabilities and permissions before enabling this package.' })}</DialogDescription></DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground"><div className="rounded-md border border-warning/30 bg-warning/5 p-3">安装并启用前，请确认以下权限清单。实际操作仍会受当前会话权限模式控制。</div><div className="divide-y rounded-md border">{requestedPermissions.map(item => <div key={item.label} className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 p-3"><strong className="text-foreground">{item.label}</strong><span>{item.detail}</span></div>)}</div>{selected?.compatibilityReport?.capabilities.map(item => <p key={`${item.kind}-${item.label}`}>• {item.label}: {item.detail}</p>)}</div>
+          <DialogFooter><Button variant="outline" onClick={() => setConfirmInstall(false)}>{t('common.cancel')}</Button><Button onClick={() => { setConfirmInstall(false); void install() }} disabled={installing}>{t('plugins.install.install', { defaultValue: 'Install' })}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+    </Dialog>
 
       <Dialog open={sourceDialogOpen} onOpenChange={open => { if (!savingSource) setSourceDialogOpen(open) }}>
         <DialogContent className="sm:max-w-md">

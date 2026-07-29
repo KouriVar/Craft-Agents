@@ -42,6 +42,12 @@ describe('project.open + library.export', () => {
   }))
   const dispatched: string[] = []
 
+  // Save originals for cleanup
+  const savedDocument = globalThis.document
+  const savedURL = globalThis.URL
+  const savedBlob = globalThis.Blob
+  const savedWindow = (globalThis as { window?: unknown }).window
+
   beforeEach(() => {
     resetDefaultContextActionsForTests()
     registerDefaultContextActions()
@@ -102,6 +108,19 @@ describe('project.open + library.export', () => {
   afterEach(() => {
     bindContextActionHost(null)
     resetDefaultContextActionsForTests()
+    // Restore globals to prevent test isolation issues
+    try {
+      Object.defineProperty(globalThis, 'document', { value: savedDocument, writable: true, configurable: true })
+      Object.defineProperty(globalThis, 'URL', { value: savedURL, writable: true, configurable: true })
+      Object.defineProperty(globalThis, 'Blob', { value: savedBlob, writable: true, configurable: true })
+      if (savedWindow === undefined) {
+        Reflect.deleteProperty(globalThis, 'window')
+      } else {
+        ;(globalThis as { window?: unknown }).window = savedWindow
+      }
+    } catch {
+      // best effort cleanup
+    }
   })
 
   it('shows project.open only when projectId is present', () => {

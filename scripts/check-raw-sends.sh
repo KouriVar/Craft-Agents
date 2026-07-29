@@ -22,6 +22,7 @@ while IFS= read -r match; do
     *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send(TOOLBAR_CHANNELS."*) ;;
     *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send(ASK_AI_CHANNELS.STATE"*) ;;
     *"apps/electron/src/main/browser-pane-manager.ts"*"webContents.send('browser-credentials:fill'"*) ;;
+    *"apps/electron/src/main/index.ts"*"webContents.send(RPC_CHANNELS.screenCapture."*) ;;
     *) violations+=("$match") ;;
   esac
 done < <(rg -n --glob '*.ts' 'webContents\.send\(' apps/electron/src/main || true)

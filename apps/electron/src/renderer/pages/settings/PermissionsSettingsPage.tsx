@@ -29,7 +29,7 @@ import {
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -130,7 +130,7 @@ function buildCustomPermissionsData(config: PermissionsConfigFile, fallbackLabel
   return rows
 }
 
-export default function PermissionsSettingsPage() {
+export default function PermissionsSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const { activeWorkspaceId } = useAppShellContext()
   const activeWorkspace = useActiveWorkspace()
@@ -202,12 +202,7 @@ export default function PermissionsSettingsPage() {
     return unsubscribe
   }, [])
 
-  return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title={t("settings.permissions.title")} actions={<HeaderMenu route={routes.view.settings('permissions')} helpFeature="permissions" />} />
-      <div className="flex-1 min-h-0 mask-fade-y">
-        <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
+  const body = (
             <div className="space-y-8">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -321,6 +316,17 @@ export default function PermissionsSettingsPage() {
                 </>
               )}
             </div>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className="h-full flex flex-col">
+      <PanelHeader title={t("settings.permissions.title")} actions={<HeaderMenu route={routes.view.settings('permissions')} helpFeature="permissions" />} />
+      <div className="flex-1 min-h-0 mask-fade-y">
+        <ScrollArea className="h-full">
+          <div className="px-5 py-7 max-w-3xl mx-auto">
+            {body}
           </div>
         </ScrollArea>
       </div>

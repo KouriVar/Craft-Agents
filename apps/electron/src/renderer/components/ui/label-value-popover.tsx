@@ -209,7 +209,7 @@ export function LabelValuePopover({
                   }}
                   placeholder="tomorrow, next friday..."
                   className={cn(
-                    'flex-1 h-7 px-2 text-[13px]',
+                    'flex-1 h-7 px-2 text-control',
                     'bg-transparent',
                     'text-foreground placeholder:text-foreground/30',
                     'outline-none'
@@ -276,7 +276,7 @@ export function LabelValuePopover({
               onBlur={commitValue}
               placeholder={label.valueType === 'number' ? 'Enter number...' : label.valueType === 'link' ? 'Enter URL...' : 'Enter value...'}
               className={cn(
-                'w-full h-7 px-2 text-[13px]',
+                'w-full h-7 px-2 text-control',
                 'bg-transparent',
                 'text-foreground placeholder:text-foreground/30',
                 'outline-none'
@@ -295,8 +295,8 @@ export function LabelValuePopover({
                 onOpenChange(false)
               }}
               className={cn(
-                'w-full flex items-center gap-2 px-2 py-1.5 rounded-[4px]',
-                'text-[13px] text-foreground',
+                'w-full flex items-center gap-2 px-2 py-1.5 rounded-menu-item',
+                'text-control text-foreground',
                 'hover:bg-foreground/[0.03] focus:bg-foreground/[0.03]',
                 'transition-colors cursor-pointer outline-none'
               )}
@@ -313,8 +313,8 @@ export function LabelValuePopover({
               onOpenChange(false)
             }}
             className={cn(
-              'w-full flex items-center gap-2 px-2 py-1.5 rounded-[4px]',
-              'text-[13px] text-destructive',
+              'w-full flex items-center gap-2 px-2 py-1.5 rounded-menu-item',
+              'text-control text-destructive',
               'hover:bg-foreground/[0.03] focus:bg-foreground/[0.03]',
               'transition-colors cursor-pointer outline-none'
             )}

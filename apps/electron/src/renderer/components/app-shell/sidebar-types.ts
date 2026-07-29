@@ -7,6 +7,7 @@
 
 // Import shared types - single source of truth
 import type { SessionFilter, SettingsSubpage } from '../../../shared/types'
+import { resolveSettingsRoute } from '../../../shared/settings-registry'
 export type { SessionFilter, SettingsSubpage }
 
 /**
@@ -68,9 +69,11 @@ export const parseSidebarModeKey = (key: string): SidebarMode | null => {
     if (stateId) return { type: 'sessions', filter: { kind: 'state', stateId } }
   }
   if (key.startsWith('settings:')) {
-    const subpage = key.slice(9) as SettingsSubpage
-    if (['app', 'ai', 'appearance', 'input', 'workspace', 'permissions', 'labels', 'messaging', 'shortcuts', 'preferences'].includes(subpage)) {
-      return { type: 'settings', subpage }
+    const rest = key.slice(9)
+    const [pagePart] = rest.split('#')
+    const resolved = resolveSettingsRoute(pagePart)
+    if (resolved) {
+      return { type: 'settings', subpage: resolved.page }
     }
   }
   if (key === 'settings') return { type: 'settings', subpage: null }

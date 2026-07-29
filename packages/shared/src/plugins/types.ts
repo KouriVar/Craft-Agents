@@ -150,7 +150,7 @@ export interface PluginMcpServerDiagnostic {
   slug: string;
   pluginName: string;
   serverName: string;
-  transport: 'stdio' | 'http' | 'sse';
+  transport: 'stdio' | 'http';
   state: PluginMcpDiagnosticState;
   checkedAt: number;
   durationMs: number;
@@ -205,6 +205,8 @@ export type PluginMarketplacePackageSource =
 export interface PluginMarketplaceEntry {
   marketplaceId: string;
   name: string;
+  /** Resolved from the package manifest when the marketplace item is inspected. */
+  version?: string;
   displayName?: string;
   description?: string;
   category?: string;

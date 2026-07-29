@@ -138,6 +138,8 @@ export interface AccessibilitySnapshot {
 // ---------------------------------------------------------------------------
 
 export interface IBrowserPaneManager {
+  /** Optional in headless hosts; used by unified workspace search when present. */
+  listHistory?(workspaceId: string | null, limit?: number): Array<{ id: string; title: string; url: string; visitedAt: number }>
   // -- Session lifecycle ---------------------------------------------------
 
   /** Register a callback that resolves session IDs to file paths */

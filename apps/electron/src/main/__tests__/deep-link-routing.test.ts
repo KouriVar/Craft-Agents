@@ -110,32 +110,32 @@ describe('handleDeepLink routing', () => {
 })
 
 describe('sensitive deep link classification', () => {
-  const t = (action: string, actionParams?: Record<string, string>): DeepLinkTarget => ({
+  const target = (action: string, actionParams?: Record<string, string>): DeepLinkTarget => ({
     action,
     actionParams,
   })
 
   it('flags delete-session, delete-source, set-mode as sensitive', () => {
-    expect(isSensitiveDeepLinkAction(t('delete-session'))).toBe(true)
-    expect(isSensitiveDeepLinkAction(t('delete-source'))).toBe(true)
-    expect(isSensitiveDeepLinkAction(t('set-mode', { mode: 'bypassPermissions' }))).toBe(true)
+    expect(isSensitiveDeepLinkAction(target('delete-session'))).toBe(true)
+    expect(isSensitiveDeepLinkAction(target('delete-source'))).toBe(true)
+    expect(isSensitiveDeepLinkAction(target('set-mode', { mode: 'bypassPermissions' }))).toBe(true)
   })
 
   it('flags new-session / new-chat only when auto-send is requested', () => {
-    expect(isSensitiveDeepLinkAction(t('new-session', { send: 'true', input: 'hi' }))).toBe(true)
-    expect(isSensitiveDeepLinkAction(t('new-chat', { send: 'true' }))).toBe(true)
-    expect(isSensitiveDeepLinkAction(t('new-session', { input: 'hi' }))).toBe(false)
-    expect(isSensitiveDeepLinkAction(t('new-chat'))).toBe(false)
+    expect(isSensitiveDeepLinkAction(target('new-session', { send: 'true', input: 'hi' }))).toBe(true)
+    expect(isSensitiveDeepLinkAction(target('new-chat', { send: 'true' }))).toBe(true)
+    expect(isSensitiveDeepLinkAction(target('new-session', { input: 'hi' }))).toBe(false)
+    expect(isSensitiveDeepLinkAction(target('new-chat'))).toBe(false)
   })
 
   it('does not flag navigation-only or benign actions', () => {
     expect(isSensitiveDeepLinkAction({ view: 'allSessions' })).toBe(false)
-    expect(isSensitiveDeepLinkAction(t('flag-session'))).toBe(false)
+    expect(isSensitiveDeepLinkAction(target('flag-session'))).toBe(false)
   })
 
   it('only requires confirmation for untrusted sensitive actions', () => {
-    expect(deepLinkNeedsConfirmation(t('delete-session'), 'untrusted')).toBe(true)
-    expect(deepLinkNeedsConfirmation(t('delete-session'), 'trusted')).toBe(false)
+    expect(deepLinkNeedsConfirmation(target('delete-session'), 'untrusted')).toBe(true)
+    expect(deepLinkNeedsConfirmation(target('delete-session'), 'trusted')).toBe(false)
     expect(deepLinkNeedsConfirmation({ view: 'allSessions' }, 'untrusted')).toBe(false)
   })
 })

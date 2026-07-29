@@ -16,8 +16,8 @@ import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 import { getSourceIconSync, getSkillIconSync } from './icon-cache'
 
 // Import and re-export parsing functions from shared (pure string operations, no renderer deps)
-import { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
-export { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, type ParsedMentions }
+import { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, resolveFileMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
+export { parseMentions, stripAllMentions, resolveSkillMentions, resolvePluginMentions, resolveSourceMentions, resolveFileMentions, type ParsedMentions }
 
 // ============================================================================
 // Constants
@@ -126,6 +126,17 @@ export function findMentionMatches(
     })
   }
 
+  // Project knowledge and assets are explicit, project-scoped references.
+  const knowledgePattern = /(\[knowledge:([^\]]+)\])/g
+  while ((match = knowledgePattern.exec(text)) !== null) {
+    matches.push({ type: 'knowledge', id: match[2], fullMatch: match[1], startIndex: match.index })
+  }
+
+  const projectFilePattern = /(\[project-file:([^\]]+)\])/g
+  while ((match = projectFilePattern.exec(text)) !== null) {
+    matches.push({ type: 'project-file', id: match[2], fullMatch: match[1], startIndex: match.index })
+  }
+
   // Sort by position
   return matches.sort((a, b) => a.startIndex - b.startIndex)
 }
@@ -153,6 +164,12 @@ export function removeMention(text: string, type: MentionItemType, id: string): 
       break
     case 'folder':
       pattern = new RegExp(`\\[folder:${escapeRegExp(id)}\\]`, 'g')
+      break
+    case 'knowledge':
+      pattern = new RegExp(`\\[knowledge:${escapeRegExp(id)}\\]`, 'g')
+      break
+    case 'project-file':
+      pattern = new RegExp(`\\[project-file:${escapeRegExp(id)}\\]`, 'g')
       break
     case 'skill':
     default:
@@ -263,6 +280,11 @@ export function extractBadges(
       filePath = match.id
     } else if (match.type === 'folder') {
       // Show folder name as label, full relative path stored for tooltip
+      label = match.id.split('/').pop() || match.id
+      filePath = match.id
+    } else if (match.type === 'knowledge') {
+      label = match.id
+    } else if (match.type === 'project-file') {
       label = match.id.split('/').pop() || match.id
       filePath = match.id
     }

@@ -84,6 +84,11 @@ export interface EventPayloadMap {
   FlagChange: FlagChangePayload;
   SessionStatusChange: SessionStatusChangePayload;
   SchedulerTick: SchedulerTickPayload;
+  WebPageChange: GenericEventPayload;
+  ProjectChange: GenericEventPayload;
+  FileChange: GenericEventPayload;
+  MessagingReceived: GenericEventPayload;
+  WebhookReceived: GenericEventPayload;
 
   // Agent events (generic payload)
   PreToolUse: GenericEventPayload;

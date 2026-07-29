@@ -13,7 +13,6 @@
  */
 
 import { RPC_CHANNELS } from './types'
-import { FEATURE_FLAGS } from '@craft-agent/shared/feature-flags'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -390,28 +389,32 @@ export interface SettingsMenuItem {
  */
 const SETTINGS_ICONS: Record<SettingsSubpage, string> = {
   app: 'ToggleRight',
+  interface: 'Palette',
+  profile: 'UserCircle',
   ai: 'Sparkles',
-  accounts: 'KeyRound',
-  appearance: 'Palette',
-  explore: 'Compass',
-  privacy: 'Shield',
+  browser: 'Globe2',
+  integrations: 'Cable',
+  security: 'Shield',
   cognition: 'BrainCircuit',
-  input: 'Keyboard',
-  workspace: 'Building2',
-  permissions: 'ShieldCheck',
-  labels: 'Tag',
-  messaging: 'MessageSquare',
-  server: 'Server',
-  shortcuts: 'Keyboard',
-  preferences: 'UserCircle',
 }
 
 /**
- * All settings pages - derived from settings-registry (single source of truth)
- * Order is determined by SETTINGS_PAGES in settings-registry.ts
+ * Formal settings pages shown in settings navigator and app menu.
+ * Cognition remains a diagnostics-only deep link.
+ * Order follows SETTINGS_PAGES; this set only controls visibility.
  */
+const FORMAL_SETTINGS_PAGES = new Set([
+  'app',          // 通用
+  'interface',    // 界面与交互
+  'profile',      // 个人与空间
+  'ai',           // 模型
+  'browser',      // 浏览器
+  'integrations', // 集成与连接
+  'security',     // 隐私与权限
+])
+
 export const SETTINGS_ITEMS: SettingsMenuItem[] = SETTINGS_PAGES
-  .filter(page => page.id !== 'server' || FEATURE_FLAGS.embeddedServer)
+  .filter(page => FORMAL_SETTINGS_PAGES.has(page.id))
   .map(page => ({
     id: page.id,
     labelKey: page.labelKey,
@@ -419,13 +422,8 @@ export const SETTINGS_ITEMS: SettingsMenuItem[] = SETTINGS_PAGES
     descriptionKey: page.descriptionKey,
   }))
 
-/**
- * Context-owned settings stay routable but do not occupy permanent settings
- * navigation space. Their contextual entry points live in the relevant view.
- */
-export const SETTINGS_MENU_ITEMS = SETTINGS_ITEMS.filter(
-  (item) => item.id !== 'shortcuts' && item.id !== 'explore',
-)
+/** Settings pages shown in the app menu and the permanent settings navigator. */
+export const SETTINGS_MENU_ITEMS = SETTINGS_ITEMS
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

@@ -52,6 +52,10 @@ export interface ProjectConfig {
   archivedAt?: number;
   /** Per-project Kanban columns. Absent → the board uses the default 3 columns. */
   kanbanColumns?: KanbanColumnDef[];
+  /** Expert inherited by new project sessions unless they explicitly override it. */
+  defaultExpertId?: string;
+  /** Optional allow-list; absent means every installed expert is available. */
+  availableExpertIds?: string[];
 }
 
 /**
@@ -76,6 +80,10 @@ export interface CreateProjectInput {
   details?: string;
   colorTheme?: string;
   color?: string;
+  /** Project-level default for new sessions; invalid/deleted ids degrade to generic assistant at runtime. */
+  defaultExpertId?: string;
+  /** Optional expert allow-list for project creation flows. */
+  availableExpertIds?: string[];
 }
 
 /**

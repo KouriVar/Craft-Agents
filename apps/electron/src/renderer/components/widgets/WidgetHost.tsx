@@ -17,7 +17,7 @@ export function WidgetHost({ descriptor, sessionId }: WidgetHostProps) {
       return (
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-[8px] border bg-muted/10 px-3 py-3 text-left hover:bg-muted/30"
+          className="flex w-full items-center gap-3 rounded-surface border bg-muted/10 px-3 py-3 text-left hover:bg-muted/30"
           onClick={() => {
             window.dispatchEvent(new CustomEvent('craft:widget-open', {
               detail: { descriptor, sessionId },

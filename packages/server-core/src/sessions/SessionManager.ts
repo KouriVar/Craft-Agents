@@ -76,8 +76,6 @@ import {
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
-import { listTaskSlugs, parseTaskSpec, uniqueTaskSlug } from '@craft-agent/shared/tasks'
-import { createTaskFromSpec, resolveCreateTaskProjectId } from '../tasks'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
@@ -106,8 +104,8 @@ import { extractLabelId, resolveSessionLabels, findTaskItemLabelId } from '@craf
 import { ensureLabelsExist, ensureTaskItemLabel } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
+import { createDynamicItem } from '@craft-agent/shared/dynamic'
 import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
-import { buildExploreBriefPrompt, EXPLORE_BRIEF_OUTPUT_SCHEMA, parseExploreBriefResult } from './explore-brief'
 import { buildTaskCheckpointContent } from './task-checkpoint'
 import { getCognitionService, flushAllCognitionServices, maybeEmitGitChangesPresent } from '../cognition'
 
@@ -904,20 +902,18 @@ interface ManagedSession {
   labels?: string[]
   // Workspace-scoped project binding (undefined = unbound)
   projectId?: string
+  expertId?: string
+  // User-controlled list pinning
+  isPinned?: boolean
   // Parent session id — when set, this session is a subtask of the parent (undefined = top-level task)
   parentSessionId?: string
   // Kanban board column id ('todo' | 'in-progress' | 'done'); independent of sessionStatus
   kanbanColumn?: string
   // Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes)
-  taskSlug?: string
   // Tasks Conductor: id of the run that spawned this child session (child nodes only)
-  taskRunId?: string
   // Tasks Conductor: id of the DAG node this child session executes (child nodes only)
-  taskNodeId?: string
   // Tasks Conductor: total DAG node count (orchestrator only) — stable board progress denominator
-  taskNodeCount?: number
   // Tasks Conductor: hidden generate-time orchestrator awaiting validated adoption (off the board)
-  taskDraft?: boolean
   // Session-backed long-running task continuity.
   taskGoal?: string
   taskPriority?: TaskPriority
@@ -1009,6 +1005,8 @@ interface ManagedSession {
   // Whether this session is hidden from session list (e.g., mini edit sessions)
   hidden?: boolean
   branchFromMessageId?: string
+  /** Source session id retained for branch-tree traversal and audit. */
+  branchFromSessionId?: string
   // Branch context strategy:
   // - sdk-fork: provider-level fork from parent SDK session
   // - seeded-fresh-session: fresh backend session seeded with transcript up to branch cutoff
@@ -1568,9 +1566,21 @@ export class SessionManager implements ISessionManager {
       changed = true
     }
 
+    // Expert overrides are user-editable metadata, just like project binding.
+    if (managed.expertId !== header.expertId) {
+      managed.expertId = header.expertId
+      changed = true
+    }
+
     // Kanban column (mutable via drag; reconcile external/multi-window changes)
     if (managed.kanbanColumn !== header.kanbanColumn) {
       managed.kanbanColumn = header.kanbanColumn
+      changed = true
+    }
+
+    if (managed.isPinned !== header.isPinned) {
+      managed.isPinned = header.isPinned
+      this.sendEvent({ type: 'session_metadata_changed', sessionId, changes: { isPinned: managed.isPinned } }, managed.workspace.id)
       changed = true
     }
 
@@ -1762,22 +1772,29 @@ export class SessionManager implements ISessionManager {
         enableScheduler: true,
         onPromptsReady: async (prompts) => {
           // Execute prompt automations by creating new sessions
-          const settled = await Promise.allSettled(
-            prompts.map((pending) =>
-              this.executePromptAutomation({
-                workspaceId,
-                workspaceRootPath,
-                prompt: pending.prompt,
-                labels: pending.labels,
-                permissionMode: pending.permissionMode,
-                mentions: pending.mentions,
-                llmConnection: pending.llmConnection,
-                model: pending.model,
-                thinkingLevel: pending.thinkingLevel,
-                automationName: pending.automationName,
-              })
-            )
-          )
+          const settled = await Promise.allSettled(prompts.map(async (pending) => {
+            const retryLimit = pending.retryLimit ?? 0
+            for (let attempt = 0; ; attempt++) {
+              try {
+                return await this.executePromptAutomation({
+                  workspaceId,
+                  workspaceRootPath,
+                  prompt: pending.prompt,
+                  labels: pending.labels,
+                  permissionMode: pending.permissionMode,
+                  mentions: pending.mentions,
+                  llmConnection: pending.llmConnection,
+                  model: pending.model,
+                  thinkingLevel: pending.thinkingLevel,
+                  automationName: pending.automationName,
+                  projectId: pending.projectId,
+                })
+              } catch (error) {
+                if (attempt >= retryLimit) throw error
+                sessionLog.warn(`[Automations] Prompt action failed; retrying (${attempt + 1}/${retryLimit})`, error)
+              }
+            }
+          }))
 
           // Write enriched history entries (with session IDs and prompt summaries)
           for (const [idx, result] of settled.entries()) {
@@ -1796,6 +1813,15 @@ export class SessionManager implements ISessionManager {
 
             if (result.status === 'rejected') {
               sessionLog.error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
+              createDynamicItem(workspaceRootPath, {
+                kind: 'automation',
+                title: 'Automation run failed',
+                body: result.reason instanceof Error ? result.reason.message : String(result.reason),
+                automationId: pending.matcherId,
+                projectId: pending.projectId,
+                requiresAction: false,
+                priority: 'high',
+              })
             } else {
               sessionLog.info(`[Automations] Created session ${result.value.sessionId} from prompt action`)
             }
@@ -2501,6 +2527,14 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  async emitAutomationEvent(workspaceId: string, event: import('@craft-agent/shared/automations').AppEvent, data: Record<string, unknown>): Promise<void> {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    const system = this.automationSystems.get(workspace.rootPath)
+    if (!system) throw new Error('Automation runtime is not initialized for this workspace')
+    await system.eventBus.emit(event, { workspaceId, timestamp: Date.now(), data } as import('@craft-agent/shared/automations').GenericEventPayload)
+  }
+
   getActiveSessionsInfo(): ActiveSessionInfo[] {
     const result: ActiveSessionInfo[] = []
     for (const managed of this.sessions.values()) {
@@ -2713,11 +2747,25 @@ export class SessionManager implements ISessionManager {
     // announced to the renderer (see notifySessionCreated). Callers that register the session
     // themselves — the `sessions:create` RPC adds it from the return value — pass
     // `{ emitCreatedEvent: false }` to avoid a redundant hydrate.
-    internal?: { emitCreatedEvent?: boolean },
+    internal?: { emitCreatedEvent?: boolean; branchContextStrategy?: 'sdk-fork' | 'seeded-fresh-session' },
   ): Promise<Session> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
+    }
+
+    // A child session must point at an already managed parent in the same
+    // workspace. This keeps the persisted hierarchy traversable and prevents
+    // orphaned or cross-workspace children from entering the session store.
+    const parentSessionId = options?.parentSessionId
+    const parentSession = parentSessionId
+      ? this.sessions.get(parentSessionId)
+      : undefined
+    if (parentSessionId && !parentSession) {
+      throw new Error(`Parent session ${parentSessionId} not found`)
+    }
+    if (parentSession && parentSession.workspace.id !== workspace.id) {
+      throw new Error(`Parent session ${parentSessionId} belongs to a different workspace`)
     }
 
     // Get new session defaults from workspace config (with global fallback)
@@ -2739,10 +2787,42 @@ export class SessionManager implements ISessionManager {
       normalizeThinkingLevel(options?.thinkingLevel)
       ?? normalizeThinkingLevel(wsConfig?.defaults?.thinkingLevel)
       ?? getDefaultThinkingLevel()
-    // Get default model from workspace config (used when no session-specific model is set)
-    const defaultModel = wsConfig?.defaults?.model
-    // Get default enabled sources from workspace config
-    const defaultEnabledSourceSlugs = options?.enabledSourceSlugs ?? wsConfig?.defaults?.enabledSourceSlugs
+    // Resolve an expert before choosing the backend. It is a runtime recipe:
+    // explicit session selection > parent > project default > generic assistant.
+    const inheritedProjectForExpert = parentSession?.projectId
+    const requestedProjectForExpert = options?.projectId ?? inheritedProjectForExpert
+    let expertForSession: import('@craft-agent/shared/experts').ExpertProfile | null = null
+    let preResolvedExpertId = options?.expertId ?? parentSession?.expertId
+    if (!preResolvedExpertId && requestedProjectForExpert) {
+      const { loadProjectById } = await import('@craft-agent/shared/projects')
+      const project = loadProjectById(workspaceRootPath, requestedProjectForExpert)
+      preResolvedExpertId = project?.config.defaultExpertId
+    }
+    if (preResolvedExpertId) {
+      const { resolveExpert } = await import('@craft-agent/shared/experts')
+      expertForSession = resolveExpert(workspaceRootPath, preResolvedExpertId)
+      preResolvedExpertId = expertForSession?.id
+    }
+    const { resolveCapabilityAssignment } = await import('@craft-agent/shared/experts')
+    const capabilityAssignment = resolveCapabilityAssignment(
+      workspaceRootPath,
+      requestedProjectForExpert,
+      preResolvedExpertId,
+    )
+
+    // An explicit model and source list always win; otherwise an expert supplies
+    // defaults and the workspace remains the final fallback.
+    const defaultModel = expertForSession?.model ?? wsConfig?.defaults?.model
+    const effectiveConnectionSlug = options?.llmConnection ?? expertForSession?.connectionSlug
+    const assignedConnectorIds = [...new Set([...(expertForSession?.connectorIds ?? []), ...capabilityAssignment.connectorIds])]
+    const expertConnectorSlugs = assignedConnectorIds.length
+      ? loadAllSources(workspaceRootPath)
+        .filter(source => assignedConnectorIds.includes(source.config.id))
+        .map(source => source.config.slug)
+      : undefined
+    const defaultEnabledSourceSlugs = options?.enabledSourceSlugs
+      ?? expertConnectorSlugs
+      ?? wsConfig?.defaults?.enabledSourceSlugs
 
     // Resolve model tier hints ('fast' / 'default') to actual model IDs.
     // EditPopover uses tier hints instead of hardcoded Anthropic model names
@@ -2750,7 +2830,7 @@ export class SessionManager implements ISessionManager {
     let resolvedModelOption = options?.model || defaultModel
     if (resolvedModelOption === 'fast' || resolvedModelOption === 'default') {
       const tierConnection = resolveSessionConnection(
-        options?.llmConnection,
+        effectiveConnectionSlug,
         wsConfig?.defaults?.defaultLlmConnection,
       )
       if (tierConnection) {
@@ -2764,7 +2844,7 @@ export class SessionManager implements ISessionManager {
 
     // Resolve backend target early for branching policy checks.
     const targetBackendContext = resolveBackendContext({
-      sessionConnectionSlug: options?.llmConnection,
+      sessionConnectionSlug: effectiveConnectionSlug,
       workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
       managedModel: resolvedModelOption,
     })
@@ -2792,11 +2872,11 @@ export class SessionManager implements ISessionManager {
     // Subtasks inherit the parent's project when the caller didn't bind one explicitly —
     // a child of a project-bound task belongs to that project (board quick-add passes none),
     // so project-scoped filtering sees the whole task family.
-    const inheritedProjectId = options?.parentSessionId
-      ? this.sessions.get(options.parentSessionId)?.projectId
-      : undefined
+    const inheritedProjectId = parentSession?.projectId
+    const inheritedExpertId = parentSession?.expertId
     const requestedProjectId = options?.projectId ?? inheritedProjectId
     let resolvedProjectId: string | undefined
+    let resolvedExpertId = preResolvedExpertId ?? inheritedExpertId
     if (requestedProjectId) {
       const { loadProjectById } = await import('@craft-agent/shared/projects')
       const project = loadProjectById(workspaceRootPath, requestedProjectId)
@@ -2808,6 +2888,10 @@ export class SessionManager implements ISessionManager {
         }
       } else {
         resolvedProjectId = project.config.id
+        if (!resolvedExpertId && project.config.defaultExpertId) {
+          const { resolveExpert } = await import('@craft-agent/shared/experts')
+          resolvedExpertId = resolveExpert(workspaceRootPath, project.config.defaultExpertId)?.id
+        }
         if (
           (options?.workingDirectory === undefined || options?.workingDirectory === 'user_default') &&
           project.config.workingDirectory
@@ -2908,7 +2992,7 @@ export class SessionManager implements ISessionManager {
 
       // New branches always use strict provider-level SDK fork semantics.
       // Seeded mode remains only for legacy sessions created before strict fork was enforced.
-      const branchContextStrategy: 'sdk-fork' | 'seeded-fresh-session' = 'sdk-fork'
+      const branchContextStrategy: 'sdk-fork' | 'seeded-fresh-session' = internal?.branchContextStrategy ?? 'sdk-fork'
 
       const branchFromSdkSessionId = branchContextStrategy === 'sdk-fork'
         ? (sourceManaged?.sdkSessionId || sourceSession.sdkSessionId)
@@ -3016,11 +3100,8 @@ export class SessionManager implements ISessionManager {
       labels: options?.labels,
       isFlagged: options?.isFlagged,
       projectId: resolvedProjectId,
+      expertId: resolvedExpertId,
       parentSessionId: options?.parentSessionId,
-      taskSlug: options?.taskSlug,
-      taskRunId: options?.taskRunId,
-      taskNodeId: options?.taskNodeId,
-      taskDraft: options?.taskDraft,
       // Persist only an EXPLICIT selection (e.g. a task's spec.sources on its subtasks).
       // The workspace-default fallback stays dynamic — freezing it into the header would
       // pin every ordinary session to the defaults as of its creation time.
@@ -3053,6 +3134,7 @@ export class SessionManager implements ISessionManager {
       }
 
       branchedStored.branchFromMessageId = validatedBranch.sourceMessageId
+      branchedStored.branchFromSessionId = validatedBranch.sourceSessionId
       if (validatedBranch.branchContextStrategy === 'sdk-fork') {
         branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
         branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
@@ -3101,16 +3183,28 @@ export class SessionManager implements ISessionManager {
     }
 
     const isBranch = !!validatedBranch
+    const expertPrompt = expertForSession
+      ? [
+          expertForSession.systemPrompt,
+          expertForSession.memoryRule === 'none'
+            ? 'Do not use or create persistent Memory for this expert session.'
+            : expertForSession.memoryRule === 'project-only'
+              ? 'Use only the current project Memory; do not use user-level persistent Memory.'
+              : undefined,
+          expertForSession.collaborationRule,
+        ].filter(Boolean).join('\n\n')
+      : undefined
 
     const managed = createManagedSession(storedSession, workspace, {
       permissionMode: defaultPermissionMode,
       workingDirectory: resolvedWorkingDir,
       model: resolvedModel,
-      llmConnection: options?.llmConnection,
+      llmConnection: effectiveConnectionSlug,
       thinkingLevel: defaultThinkingLevel,
-      systemPromptPreset: options?.systemPromptPreset,
+      systemPromptPreset: expertPrompt || options?.systemPromptPreset,
       enabledSourceSlugs: defaultEnabledSourceSlugs,
       branchFromMessageId: validatedBranch?.sourceMessageId,
+      branchFromSessionId: validatedBranch?.sourceSessionId,
       branchContextStrategy: validatedBranch?.branchContextStrategy,
       branchFromSdkSessionId: validatedBranch?.branchFromSdkSessionId,
       branchFromSessionPath: validatedBranch?.branchFromSessionPath,
@@ -4418,57 +4512,6 @@ export class SessionManager implements ISessionManager {
         setSessionStatusFn: async (sessionId: string | undefined, status: string) => {
           await this.setSessionStatus(sessionId ?? managed.id, status as SessionStatus)
         },
-        // create_task — create a Task (board card + task.yaml + orchestrator session)
-        // WITHOUT running it. Spec building happens here (not in session-tools-core,
-        // which must stay dependency-free of @craft-agent/shared); the creation flow
-        // itself is createTaskFromSpec, shared verbatim with the tasks:create RPC.
-        createTaskFn: async (input) => {
-          const ws = managed.workspace
-          // Match spawn_session: an explicit project wins, otherwise keep newly
-          // captured work in the project that owns the invoking session.
-          const projectId = resolveCreateTaskProjectId(input.projectId, managed.projectId)
-          // Slug is derived from the title and must never overwrite an existing task
-          // (unlike the TaskEditor, where re-saving the same slug is the edit flow).
-          const slug = uniqueTaskSlug(input.title, new Set(listTaskSlugs(ws.rootPath)))
-
-          // Fail-soft reference checks: unknown slugs warn, they don't block creation
-          // (matching the finish() philosophy in the tasks:create handler).
-          const warnings: string[] = []
-          if (input.sources?.length) {
-            const available = new Set(loadWorkspaceSources(ws.rootPath).map(s => s.config.slug))
-            const missing = input.sources.filter(s => !available.has(s))
-            if (missing.length) warnings.push(`Unknown sources (kept in the spec, but they don't exist in this workspace): ${missing.join(', ')}`)
-          }
-          if (input.skills?.length) {
-            // loadAllSkills matches dispatch-time [skill:slug] resolution (global + workspace).
-            const available = new Set(loadAllSkills(ws.rootPath).map(s => s.slug))
-            const missing = input.skills.filter(s => !available.has(s))
-            if (missing.length) warnings.push(`Unknown skills (kept in the spec, but they don't exist in this workspace): ${missing.join(', ')}`)
-          }
-
-          // A spec requires ≥1 node; synthesize the single executable node from the
-          // description. Multi-node DAG authoring stays with the TaskEditor/generate flow.
-          const parsed = parseTaskSpec({
-            id: slug,
-            title: input.title,
-            goal: input.description,
-            ...(input.acceptanceCriteria ? { acceptance_criteria: input.acceptanceCriteria } : {}),
-            ...(projectId ? { project: projectId } : {}),
-            ...(input.workingDirectory ? { cwd: input.workingDirectory } : {}),
-            ...(input.sources?.length ? { sources: input.sources } : {}),
-            ...(input.skills?.length ? { skills: input.skills } : {}),
-            ...(input.model || input.llmConnection
-              ? { defaults: { ...(input.model ? { model: input.model } : {}), ...(input.llmConnection ? { llmConnection: input.llmConnection } : {}) } }
-              : {}),
-            nodes: [{ id: 'main', title: input.title, prompt: input.description }],
-          })
-          if (!parsed.success) {
-            throw new Error(`Invalid task spec: ${parsed.error.issues.map(i => i.message).join('; ')}`)
-          }
-
-          const created = await createTaskFromSpec(this, ws.id, ws.rootPath, parsed.data)
-          return { ...created, warnings: [...warnings, ...created.warnings] }
-        },
         getSessionInfoFn: (sessionId?: string) => {
           const targetId = sessionId ?? managed.id
           const session = this.sessions.get(targetId)
@@ -5493,99 +5536,6 @@ export class SessionManager implements ISessionManager {
     }
   }
 
-  async generateExploreBrief(
-    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
-  ): Promise<import('@craft-agent/shared/protocol').ExploreBriefResult> {
-    const workspace = getWorkspaceByNameOrId(request.workspaceId)
-    if (!workspace) throw new Error(`Workspace ${request.workspaceId} not found`)
-    if (request.sessions.length === 0 && request.tabs.length === 0) {
-      throw new Error('No workspace activity to analyze')
-    }
-
-    const enrichedSessions = await Promise.all(request.sessions.slice(0, 12).map(async (summary, index) => {
-      // Full conversation context is useful only for the most recent workstreams.
-      // Keep the payload bounded and exclude tools/intermediate messages.
-      if (index >= 8) return summary
-      const managed = this.sessions.get(summary.id)
-      if (!managed || managed.workspace.id !== workspace.id) return summary
-      try {
-        await this.ensureMessagesLoaded(managed)
-        const recentContext = managed.messages
-          .filter((message) => (message.role === 'user' || message.role === 'assistant') && !message.isIntermediate)
-          .slice(-6)
-          .map((message) => {
-            const content = message.content.replace(/\s+/g, ' ').trim().slice(0, 600)
-            return content ? `${message.role}: ${content}` : ''
-          })
-          .filter(Boolean)
-          .join('\n')
-          .slice(0, 2800)
-        return recentContext ? { ...summary, recentContext } : summary
-      } catch (error) {
-        sessionLog.warn(`Explore brief could not load session ${summary.id}: ${error instanceof Error ? error.message : error}`)
-        return summary
-      }
-    }))
-    const analysisRequest = { ...request, sessions: enrichedSessions }
-
-    const wsConfig = loadWorkspaceConfig(workspace.rootPath)
-    const defaultModel = wsConfig?.defaults?.model
-    const backendContext = resolveBackendContext({
-      workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
-      managedModel: defaultModel,
-    })
-    if (!backendContext.connection) throw new Error('No default AI connection is configured')
-
-    const resolvedModel = backendContext.resolvedModel
-      ?? defaultModel
-      ?? backendContext.connection.defaultModel
-    if (!resolvedModel) throw new Error('No default AI model is configured')
-
-    const thinkingLevel = normalizeThinkingLevel(wsConfig?.defaults?.thinkingLevel)
-      ?? getDefaultThinkingLevel()
-    const miniModel = getMiniModel(backendContext.connection)
-      ?? backendContext.connection.defaultModel
-      ?? resolvedModel
-    const agent = createBackendFromResolvedContext({
-      context: backendContext,
-      hostRuntime: buildBackendHostRuntimeContext(),
-      coreConfig: {
-        workspace,
-        session: {
-          id: `explore-brief-${randomUUID()}`,
-          workspaceRootPath: workspace.rootPath,
-          createdAt: Date.now(),
-          lastUsedAt: Date.now(),
-          model: resolvedModel,
-          llmConnection: backendContext.connection.slug,
-        },
-        miniModel,
-        thinkingLevel,
-        envOverrides: {
-          CRAFT_WORKSPACE_PATH: workspace.rootPath,
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: miniModel,
-        },
-        isHeadless: true,
-      },
-      providerOptions: { piAuthProvider: backendContext.connection.piAuthProvider },
-    })
-
-    try {
-      await agent.postInit()
-      const response = await agent.queryLlm({
-        prompt: buildExploreBriefPrompt(analysisRequest),
-        systemPrompt: 'You organize recent workspace activity into a factual, concise briefing. Return only valid JSON.',
-        model: resolvedModel,
-        maxTokens: 1200,
-        temperature: 0.2,
-        outputSchema: EXPLORE_BRIEF_OUTPUT_SCHEMA,
-      })
-      return parseExploreBriefResult(response.text, analysisRequest, response.model ?? resolvedModel)
-    } finally {
-      agent.destroy()
-    }
-  }
-
   /**
    * Update the working directory for a session.
    *
@@ -5694,27 +5644,105 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * Update the content of a specific message in a session
-   * Used by preview window to save edited content back to the original message
+   * Edit a historical user message without silently rewriting the context that
+   * an agent has already consumed. The result is a seeded branch whose copied
+   * history ends at the edited message; its first model turn therefore sees
+   * the corrected text instead of the source session's provider-native fork.
    */
-  updateMessageContent(sessionId: string, messageId: string, content: string): void {
+  async editMessageAsBranch(sessionId: string, messageId: string, content: string): Promise<Session> {
     const managed = this.sessions.get(sessionId)
     if (!managed) {
-      sessionLog.warn(`Cannot update message: session ${sessionId} not found`)
-      return
+      throw new Error(`Cannot edit message: session ${sessionId} not found`)
     }
+    if (managed.isProcessing) throw new Error('Cannot edit a message while the session is processing')
+    await this.ensureMessagesLoaded(managed)
 
     const message = managed.messages.find(m => m.id === messageId)
     if (!message) {
-      sessionLog.warn(`Cannot update message: message ${messageId} not found in session ${sessionId}`)
-      return
+      throw new Error(`Cannot edit message: message ${messageId} not found in session ${sessionId}`)
     }
+    if (message.role !== 'user') throw new Error('Only user messages can be edited')
+    const editedContent = content.trim()
+    if (!editedContent) throw new Error('Edited message cannot be empty')
 
-    // Update the message content
-    message.content = content
-    // Persist the updated session
-    this.persistSession(managed)
-    sessionLog.info(`Updated message ${messageId} content in session ${sessionId}`)
+    const branch = await this.createSession(managed.workspace.id, {
+      name: managed.name,
+      permissionMode: managed.permissionMode,
+      thinkingLevel: managed.thinkingLevel,
+      workingDirectory: managed.workingDirectory,
+      model: managed.model,
+      llmConnection: managed.llmConnection,
+      enabledSourceSlugs: managed.enabledSourceSlugs,
+      labels: managed.labels,
+      projectId: managed.projectId,
+      parentSessionId: managed.parentSessionId,
+      branchFromSessionId: sessionId,
+      branchFromMessageId: messageId,
+    }, {
+      emitCreatedEvent: false,
+      branchContextStrategy: 'seeded-fresh-session',
+    })
+
+    const branched = this.sessions.get(branch.id)
+    if (!branched) throw new Error(`Failed to create edited branch ${branch.id}`)
+    const copiedMessage = branched.messages.find(m => m.id === messageId)
+    if (!copiedMessage) throw new Error(`Edited branch ${branch.id} is missing message ${messageId}`)
+    copiedMessage.content = editedContent
+    this.persistSession(branched)
+    await this.flushSession(branched.id)
+    this.notifySessionCreated(managed.workspace.id, branched.id)
+    sessionLog.info(`Created edited branch ${branched.id} from ${sessionId}:${messageId}`)
+    return managedToSession(branched, { messages: branched.messages })
+  }
+
+  /**
+   * Delete a message only in a new seeded branch. The source transcript remains
+   * immutable for audit, and later messages are excluded by the branch cutoff.
+   */
+  async deleteMessageAsBranch(sessionId: string, messageId: string): Promise<Session> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Cannot delete message: session ${sessionId} not found`)
+    if (managed.isProcessing) throw new Error('Cannot delete a message while the session is processing')
+    await this.ensureMessagesLoaded(managed)
+    const message = managed.messages.find(m => m.id === messageId)
+    if (!message) throw new Error(`Cannot delete message: message ${messageId} not found in session ${sessionId}`)
+    if (message.hidden) throw new Error('Hidden system messages cannot be deleted')
+
+    const branch = await this.createSession(managed.workspace.id, {
+      name: managed.name,
+      permissionMode: managed.permissionMode,
+      thinkingLevel: managed.thinkingLevel,
+      workingDirectory: managed.workingDirectory,
+      model: managed.model,
+      llmConnection: managed.llmConnection,
+      enabledSourceSlugs: managed.enabledSourceSlugs,
+      labels: managed.labels,
+      projectId: managed.projectId,
+      parentSessionId: managed.parentSessionId,
+      branchFromSessionId: sessionId,
+      branchFromMessageId: messageId,
+    }, {
+      emitCreatedEvent: false,
+      branchContextStrategy: 'seeded-fresh-session',
+    })
+
+    const branched = this.sessions.get(branch.id)
+    if (!branched) throw new Error(`Failed to create deletion branch ${branch.id}`)
+    const index = branched.messages.findIndex(m => m.id === messageId)
+    if (index === -1) throw new Error(`Deletion branch ${branch.id} is missing message ${messageId}`)
+    branched.messages.splice(index, 1)
+    this.persistSession(branched)
+    await this.flushSession(branched.id)
+    this.notifySessionCreated(managed.workspace.id, branched.id)
+    sessionLog.info(`Created deletion branch ${branched.id} from ${sessionId}:${messageId}`)
+    return managedToSession(branched, { messages: branched.messages })
+  }
+
+  /** @deprecated Historical mutation is unsafe; use editMessageAsBranch instead. */
+  updateMessageContent(sessionId: string, messageId: string, content: string): void {
+    void this.editMessageAsBranch(sessionId, messageId, content).catch((error) => {
+      sessionLog.warn(`Cannot edit message ${messageId} in ${sessionId}:`, error)
+    })
   }
 
   /**
@@ -5981,6 +6009,40 @@ export class SessionManager implements ISessionManager {
 
     // Clean up attachments directory (handled by deleteStoredSession for workspace-scoped storage)
     sessionLog.info(`Deleted session ${sessionId}`)
+  }
+
+  /**
+   * Expand explicit project knowledge references only for the model input.
+   * The persisted user message keeps its compact `[knowledge:id]` form, while
+   * lookup is constrained to the session's bound project to prevent a guessed
+   * document id from crossing project scope.
+   */
+  private async resolveProjectKnowledgeMentions(managed: ManagedSession, message: string): Promise<string> {
+    if (!managed.projectId || !message.includes('[knowledge:')) return message
+
+    try {
+      const { getLibraryService } = await import('../library/LibraryService')
+      const service = getLibraryService(managed.workspace.rootPath, managed.workspace.id)
+      return message.replace(/\[knowledge:([^\]]+)\]/g, (_match, documentId: string) => {
+        const document = service.get(documentId)
+        if (!document || document.meta.projectId !== managed.projectId) {
+          return `[Referenced project knowledge is unavailable: ${documentId}]`
+        }
+
+        // An explicit reference should be useful without allowing one document
+        // to consume an unbounded model context. The complete document remains
+        // available in the project knowledge library.
+        const body = document.body.trim()
+        const maxChars = 20_000
+        const excerpt = body.length > maxChars
+          ? `${body.slice(0, maxChars)}\n\n[Document truncated after ${maxChars} characters]`
+          : body
+        return `<project-knowledge title="${document.meta.title.replace(/"/g, '&quot;')}" id="${documentId}">\n${excerpt}\n</project-knowledge>`
+      })
+    } catch (error) {
+      sessionLog.warn(`Failed to resolve project knowledge mentions for ${managed.id}:`, error)
+      return message
+    }
   }
 
   async sendMessage(
@@ -6265,12 +6327,18 @@ export class SessionManager implements ISessionManager {
     // Pre-enable sources required by invoked skills (Issue #249)
     // This eliminates the two-turn penalty where the agent discovers missing sources at runtime.
     // Uses targeted loadSkillBySlug() instead of loadAllSkills() to avoid O(N) filesystem scans.
-    if (options?.skillSlugs?.length) {
+    const { resolveExpert, resolveCapabilityAssignment } = await import('@craft-agent/shared/experts')
+    const expertSkillSlugs = managed.expertId
+      ? resolveExpert(managed.workspace.rootPath, managed.expertId)?.skillSlugs ?? []
+      : []
+    const assignedSkillSlugs = resolveCapabilityAssignment(managed.workspace.rootPath, managed.projectId, managed.expertId).skillSlugs
+    const effectiveSkillSlugs = [...new Set([...(options?.skillSlugs ?? []), ...expertSkillSlugs, ...assignedSkillSlugs])]
+    if (effectiveSkillSlugs.length) {
       try {
         const workspaceRoot = managed.workspace.rootPath
 
         const requiredSources = new Set<string>()
-        for (const slug of options.skillSlugs) {
+        for (const slug of effectiveSkillSlugs) {
           const skill = loadSkillBySlug(workspaceRoot, slug, managed.workingDirectory)
           if (skill?.metadata.requiredSources) {
             for (const src of skill.metadata.requiredSources) {
@@ -6400,7 +6468,7 @@ export class SessionManager implements ISessionManager {
       // Uses <system-reminder> tags so the LLM treats it as transient system guidance
       // rather than part of the user's message content. The original message is stored
       // in session JSONL (line ~3952); this only affects the SDK's in-process context.
-      let effectiveMessage = message
+      let effectiveMessage = await this.resolveProjectKnowledgeMentions(managed, message)
       if (managed.wasInterrupted) {
         effectiveMessage = `${message}\n\n<system-reminder>The previous assistant response was interrupted by the user and may be incomplete. Do not repeat or continue the interrupted response unless asked. Focus on the new message above.</system-reminder>`
         managed.wasInterrupted = false
@@ -7553,6 +7621,18 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  /** Set an explicit expert override. Unknown/deleted ids intentionally become generic assistant. */
+  async setSessionExpertId(sessionId: string, expertId: string | null): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return
+    const { resolveExpert } = await import('@craft-agent/shared/experts')
+    managed.expertId = resolveExpert(managed.workspace.rootPath, expertId) ? expertId ?? undefined : undefined
+    this.setMetadataWriteGuard(managed)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    this.configWatchers.get(managed.workspace.rootPath)?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
+  }
+
   /**
    * Set the kanban board column for a session ('todo' | 'in-progress' | 'done').
    * Pass `null` to clear (board falls back to the default column). Independent of sessionStatus.
@@ -7571,6 +7651,20 @@ export class SessionManager implements ISessionManager {
       const watcher = this.configWatchers.get(managed.workspace.rootPath)
       watcher?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
     }
+  }
+
+  /** Pin or unpin a session in list views without changing its task state. */
+  async setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) throw new Error(`Session not found: ${sessionId}`)
+    if (managed.isPinned === pinned) return
+
+    managed.isPinned = pinned
+    this.setMetadataWriteGuard(managed)
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    this.sendEvent({ type: 'session_metadata_changed', sessionId, changes: { isPinned: pinned } }, managed.workspace.id)
+    this.configWatchers.get(managed.workspace.rootPath)?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
   }
 
   /** Update the lightweight task fields used by the board, Today, and reminders. */
@@ -7735,201 +7829,6 @@ export class SessionManager implements ISessionManager {
       sessionId,
       changes: { taskCheckpoints: managed.taskCheckpoints },
     }, managed.workspace.id)
-  }
-
-  /**
-   * Record the total DAG node count on a Conductor orchestrator session. The board uses this as a
-   * stable progress denominator so it doesn't grow as child sessions are spawned lazily at dispatch.
-   */
-  async setTaskNodeCount(sessionId: string, count: number): Promise<void> {
-    const managed = this.sessions.get(sessionId)
-    if (managed) {
-      managed.taskNodeCount = count
-      this.setMetadataWriteGuard(managed)
-
-      this.persistSession(managed)
-      await this.flushSession(managed.id)
-      // Self-writes don't re-emit through the file watcher (taskNodeCount isn't in the header
-      // signature), so push a live metadata event so the progress denominator updates immediately.
-      this.sendEvent({ type: 'session_metadata_changed', sessionId, changes: { taskNodeCount: count } }, managed.workspace.id)
-      const watcher = this.configWatchers.get(managed.workspace.rootPath)
-      watcher?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
-    }
-  }
-
-  /**
-   * Promote a hidden generate-time orchestrator (`taskDraft`) into the real, board-visible
-   * orchestrator for `taskSlug`. This is the single narrow path that lets "Generate → Create & Run"
-   * reuse the draft session instead of minting a second top-level tile (#bug1).
-   *
-   * Returns `true` on success (including an idempotent re-adopt of the same slug). Returns `false`
-   * — leaving the session untouched — when the session is missing, isn't a draft, or is already
-   * bound to a *different* slug. Callers fall back to `createSession` on `false`.
-   *
-   * Deliberately does NOT touch tools/sources/capabilities: the orchestrator keeps everything it
-   * was created with so it can still author/verify the run.
-   */
-  async adoptGeneratedTaskOrchestrator(
-    sessionId: string,
-    taskSlug: string,
-    reconcile?: { name?: string; projectId?: string; workingDirectory?: string; model?: string; llmConnection?: string; permissionMode?: PermissionMode },
-  ): Promise<boolean> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) {
-      sessionLog.warn('adoptGeneratedTaskOrchestrator: session not found', { sessionId, taskSlug })
-      return false
-    }
-    // Idempotency: already bound to this slug → no-op success. Bound to a different slug → refuse,
-    // so a stale draft ref can't hijack an unrelated orchestrator.
-    if (managed.taskSlug) {
-      if (managed.taskSlug === taskSlug) return true
-      sessionLog.warn('adoptGeneratedTaskOrchestrator: slug mismatch, refusing to rebind', {
-        sessionId, existing: managed.taskSlug, requested: taskSlug,
-      })
-      return false
-    }
-    // Only hidden generate-time drafts are eligible. A non-draft session without a slug isn't a
-    // generate orchestrator and must not be silently captured.
-    if (!managed.taskDraft) {
-      sessionLog.warn('adoptGeneratedTaskOrchestrator: session is not a task draft', { sessionId, taskSlug })
-      return false
-    }
-
-    // What actually changes — so we fire canonical live-updates (agent + caches + per-field events)
-    // only when needed. With generate now seeding model/connection/mode, these are usually all false.
-    const modelChanged = Boolean(reconcile?.model && reconcile.model !== managed.model)
-    const connectionChanged = Boolean(
-      reconcile?.llmConnection && !managed.connectionLocked && reconcile.llmConnection !== managed.llmConnection,
-    )
-    const cwdChanged = Boolean(reconcile?.workingDirectory && reconcile.workingDirectory !== managed.workingDirectory)
-    const modeChanged = Boolean(reconcile?.permissionMode && reconcile.permissionMode !== managed.permissionMode)
-
-    // Promote task metadata (no canonical mutator for these). Connection is set directly because
-    // setSessionConnection() refuses a session that has already sent messages (a generate draft has);
-    // the connection_changed event below keeps the renderer in sync.
-    managed.taskSlug = taskSlug
-    managed.taskDraft = false
-    if (reconcile?.projectId !== undefined) managed.projectId = reconcile.projectId
-    if (connectionChanged) managed.llmConnection = reconcile!.llmConnection
-    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
-    if (renamed) managed.name = reconcile!.name!
-
-    // Route model / cwd / permission mode through the canonical mutators so the LIVE agent, caches,
-    // and per-field events stay consistent — not just the on-disk metadata (the split-brain the
-    // follow-up review flagged). Each targets only the changed field; persist below captures the mode.
-    if (modelChanged) await this.updateSessionModel(sessionId, managed.workspace.id, reconcile!.model!)
-    if (cwdChanged) this.updateWorkingDirectory(sessionId, reconcile!.workingDirectory!)
-    if (modeChanged) this.setSessionPermissionMode(sessionId, reconcile!.permissionMode!)
-
-    this.setMetadataWriteGuard(managed)
-    this.persistSession(managed)
-    await this.flushSession(managed.id)
-
-    // One-shot board promotion: clearing taskDraft (sent as `false`, never `undefined` — undefined
-    // is dropped over the JSON wire) reveals the already-announced tile; taskSlug/projectId
-    // reconcile its metadata. `false` is falsy for the board's `if (meta.taskDraft)` skip.
-    const changes: { taskDraft: boolean; taskSlug: string; projectId?: string } = { taskDraft: false, taskSlug }
-    if (reconcile?.projectId !== undefined) changes.projectId = reconcile.projectId
-    this.sendEvent({ type: 'session_metadata_changed', sessionId, changes }, managed.workspace.id)
-    if (renamed) {
-      this.sendEvent({ type: 'name_changed', sessionId, name: managed.name }, managed.workspace.id)
-    }
-    if (connectionChanged) {
-      this.sendEvent({
-        type: 'connection_changed',
-        sessionId,
-        connectionSlug: managed.llmConnection!,
-        supportsBranching: resolveSupportsBranching(managed),
-      }, managed.workspace.id)
-    }
-    const watcher = this.configWatchers.get(managed.workspace.rootPath)
-    watcher?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
-    sessionLog.info('adoptGeneratedTaskOrchestrator: promoted draft', { sessionId, taskSlug, renamed, modelChanged, connectionChanged, cwdChanged, modeChanged })
-    return true
-  }
-
-  /**
-   * User-initiated bind of an *existing, visible* session (e.g. a quick-add tile) to a task slug.
-   *
-   * This is distinct from {@link adoptGeneratedTaskOrchestrator}, which is the narrow draft-only
-   * promotion path. A quick-add tile is a normal non-draft session with no `taskSlug`; the draft
-   * guard there correctly refuses it, so the editor's "save this spec onto this tile" flow needs
-   * its own path. The guard in the adopt method stays untouched.
-   *
-   * Returns `true` on success (including an idempotent re-bind of the same slug). Returns `false`
-   * — leaving the session untouched — when the session is missing or already bound to a *different*
-   * slug. Callers MUST treat `false` as a hard error and must NOT fall back to creating a fresh
-   * orchestrator (that would mint a duplicate tile).
-   *
-   * Unlike adopt, this reconciles `llmConnection` too (a fresh create sets it; adopt skips it) so
-   * the bound tile doesn't render a stale backend.
-   */
-  async bindExistingSessionToTask(
-    sessionId: string,
-    taskSlug: string,
-    reconcile?: { name?: string; projectId?: string; workingDirectory?: string; model?: string; llmConnection?: string; permissionMode?: PermissionMode },
-  ): Promise<boolean> {
-    const managed = this.sessions.get(sessionId)
-    if (!managed) {
-      sessionLog.warn('bindExistingSessionToTask: session not found', { sessionId, taskSlug })
-      return false
-    }
-    if (managed.taskSlug) {
-      if (managed.taskSlug === taskSlug) return true
-      sessionLog.warn('bindExistingSessionToTask: slug mismatch, refusing to rebind', {
-        sessionId, existing: managed.taskSlug, requested: taskSlug,
-      })
-      return false
-    }
-
-    // What actually changes — so we fire canonical live-updates (agent + caches + per-field events)
-    // only when needed. A quick-add tile is already live, so these keep its running agent in step.
-    const modelChanged = Boolean(reconcile?.model && reconcile.model !== managed.model)
-    const connectionChanged = Boolean(
-      reconcile?.llmConnection && !managed.connectionLocked && reconcile.llmConnection !== managed.llmConnection,
-    )
-    const cwdChanged = Boolean(reconcile?.workingDirectory && reconcile.workingDirectory !== managed.workingDirectory)
-    const modeChanged = Boolean(reconcile?.permissionMode && reconcile.permissionMode !== managed.permissionMode)
-
-    // Promote task metadata (no canonical mutator for these). Connection is set directly because
-    // setSessionConnection() refuses a session that has already sent messages (a quick-add tile has);
-    // the connection_changed event below keeps the renderer in sync.
-    managed.taskSlug = taskSlug
-    managed.taskDraft = false
-    if (reconcile?.projectId !== undefined) managed.projectId = reconcile.projectId
-    if (connectionChanged) managed.llmConnection = reconcile!.llmConnection
-    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
-    if (renamed) managed.name = reconcile!.name!
-
-    // Route model / cwd / permission mode through the canonical mutators so the LIVE agent, caches,
-    // and per-field events stay consistent — not just the on-disk metadata (the split-brain the
-    // follow-up review flagged). updateSessionModel emits session_model_changed itself.
-    if (modelChanged) await this.updateSessionModel(sessionId, managed.workspace.id, reconcile!.model!)
-    if (cwdChanged) this.updateWorkingDirectory(sessionId, reconcile!.workingDirectory!)
-    if (modeChanged) this.setSessionPermissionMode(sessionId, reconcile!.permissionMode!)
-
-    this.setMetadataWriteGuard(managed)
-    this.persistSession(managed)
-    await this.flushSession(managed.id)
-
-    const changes: { taskDraft: boolean; taskSlug: string; projectId?: string } = { taskDraft: false, taskSlug }
-    if (reconcile?.projectId !== undefined) changes.projectId = reconcile.projectId
-    this.sendEvent({ type: 'session_metadata_changed', sessionId, changes }, managed.workspace.id)
-    if (renamed) {
-      this.sendEvent({ type: 'name_changed', sessionId, name: managed.name }, managed.workspace.id)
-    }
-    if (connectionChanged) {
-      this.sendEvent({
-        type: 'connection_changed',
-        sessionId,
-        connectionSlug: managed.llmConnection!,
-        supportsBranching: resolveSupportsBranching(managed),
-      }, managed.workspace.id)
-    }
-    const watcher = this.configWatchers.get(managed.workspace.rootPath)
-    watcher?.notifyFileChange(`sessions/${sessionId}/session.jsonl`)
-    sessionLog.info('bindExistingSessionToTask: bound existing session', { sessionId, taskSlug, renamed, modelChanged, connectionChanged, cwdChanged, modeChanged })
-    return true
   }
 
   /**
@@ -8953,6 +8852,8 @@ export class SessionManager implements ISessionManager {
       model,
       thinkingLevel,
       automationName,
+      projectId,
+      expertId,
       waitForCompletion,
     } = input
 
@@ -8985,6 +8886,8 @@ export class SessionManager implements ISessionManager {
       llmConnection,
       model,
       thinkingLevel,
+      projectId,
+      expertId,
     })
 
     // Populate triggeredBy metadata so title generation is explicitly skipped
@@ -9494,247 +9397,4 @@ export class SessionManager implements ISessionManager {
     sessionLog.info('Cleanup complete')
   }
 
-  /**
-   * Single RPC orchestration for Explore "完成并归档".
-   * Order: mark_done → create_checkpoint → resolve_loops → dismiss_guidance → archive → clear_snooze.
-   * Not a cross-file DB transaction; returns full steps[] on partial failure.
-   */
-  async completeAndArchive(
-    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
-  ): Promise<import('@craft-agent/shared/protocol').CompleteAndArchiveResponse> {
-    const { getTodayStateStore } = await import('../today/TodayStateStore')
-    type Step = import('@craft-agent/shared/protocol').CompleteAndArchiveStepResult
-    const steps: Step[] = []
-    const sessionId = request.sessionId
-    const options = request.options ?? {}
-    const createFinalCheckpoint = options.createFinalCheckpoint !== false
-    const resolveOpenLoops = options.resolveOpenLoops !== false
-    const dismissGuidance = options.dismissGuidance !== false
-    const clearTodaySnooze = options.clearTodaySnooze !== false
-
-    const managed = this.sessions.get(sessionId)
-    if (!managed) {
-      return {
-        sessionId,
-        ok: false,
-        alreadyCompleted: false,
-        steps: [{ step: 'mark_done', status: 'failed', detail: 'Session not found', errorCode: 'session_not_found' }],
-      }
-    }
-
-    if (request.workspaceId && managed.workspace.id !== request.workspaceId) {
-      return {
-        sessionId,
-        ok: false,
-        alreadyCompleted: false,
-        steps: [{ step: 'mark_done', status: 'failed', detail: 'Workspace mismatch', errorCode: 'workspace_mismatch' }],
-      }
-    }
-
-    const store = getTodayStateStore(managed.workspace.rootPath)
-    if (request.idempotencyKey) {
-      const cached = store.getIdempotency(request.idempotencyKey)
-      if (cached) return cached
-    }
-
-    const alreadyDone = managed.sessionStatus === 'done' || managed.kanbanColumn === 'done'
-    const alreadyArchived = Boolean(managed.isArchived)
-    if (alreadyDone && alreadyArchived) {
-      if (clearTodaySnooze) {
-        store.clearSnoozesMatching((key) => key === sessionId || key.startsWith(`${sessionId}:`))
-        steps.push({ step: 'clear_snooze', status: 'already_done' })
-      } else {
-        steps.push({ step: 'clear_snooze', status: 'skipped' })
-      }
-      const response: import('@craft-agent/shared/protocol').CompleteAndArchiveResponse = {
-        sessionId,
-        ok: true,
-        alreadyCompleted: true,
-        steps: [
-          { step: 'mark_done', status: 'already_done' },
-          { step: 'create_checkpoint', status: 'skipped', detail: 'already completed' },
-          { step: 'resolve_loops', status: 'already_done' },
-          { step: 'dismiss_guidance', status: 'already_done' },
-          { step: 'archive', status: 'already_done' },
-          ...steps.filter((s) => s.step === 'clear_snooze'),
-        ],
-      }
-      if (request.idempotencyKey) store.setIdempotency(request.idempotencyKey, response)
-      return response
-    }
-
-    // 1. mark_done
-    try {
-      if (alreadyDone) {
-        steps.push({ step: 'mark_done', status: 'already_done' })
-      } else {
-        await this.setSessionStatus(sessionId, 'done')
-        await this.setKanbanColumn(sessionId, 'done')
-        steps.push({ step: 'mark_done', status: 'ok' })
-      }
-    } catch (err) {
-      steps.push({
-        step: 'mark_done',
-        status: 'failed',
-        detail: err instanceof Error ? err.message : String(err),
-        errorCode: 'mark_done_failed',
-      })
-      const response = { sessionId, ok: false, alreadyCompleted: false, steps }
-      if (request.idempotencyKey) store.setIdempotency(request.idempotencyKey, response)
-      return response
-    }
-
-    // 2. create_checkpoint (optional; failure does not block)
-    if (!createFinalCheckpoint) {
-      steps.push({ step: 'create_checkpoint', status: 'skipped' })
-    } else {
-      try {
-        await this.createTaskCheckpoint(sessionId, undefined, {
-          source: 'manual',
-          outcome: 'completed',
-        })
-        steps.push({ step: 'create_checkpoint', status: 'ok' })
-      } catch (err) {
-        steps.push({
-          step: 'create_checkpoint',
-          status: 'failed',
-          detail: err instanceof Error ? err.message : String(err),
-          errorCode: 'checkpoint_failed',
-        })
-      }
-    }
-
-    const cognition = this.getCognitionFor(managed)
-
-    // 3. resolve_loops
-    if (!resolveOpenLoops) {
-      steps.push({ step: 'resolve_loops', status: 'skipped' })
-    } else {
-      try {
-        const loops = await cognition.listLoops({
-          sessionId,
-          includeResolved: false,
-          limit: 200,
-        })
-        const openish = loops.filter((loop) =>
-          loop.status === 'open' || loop.status === 'waiting' || loop.status === 'blocked' || loop.status === 'stale',
-        )
-        let failed = 0
-        for (const loop of openish) {
-          const result = await cognition.resolveLoop(loop.id)
-          if (!result) failed += 1
-        }
-        if (failed > 0) {
-          steps.push({
-            step: 'resolve_loops',
-            status: 'failed',
-            detail: `${failed} loop(s) failed to resolve`,
-            errorCode: 'resolve_loops_partial',
-          })
-        } else {
-          steps.push({
-            step: 'resolve_loops',
-            status: openish.length === 0 ? 'already_done' : 'ok',
-            detail: openish.length ? `resolved ${openish.length}` : undefined,
-          })
-        }
-      } catch (err) {
-        steps.push({
-          step: 'resolve_loops',
-          status: 'failed',
-          detail: err instanceof Error ? err.message : String(err),
-          errorCode: 'resolve_loops_failed',
-        })
-      }
-    }
-
-    // 4. dismiss_guidance
-    if (!dismissGuidance) {
-      steps.push({ step: 'dismiss_guidance', status: 'skipped' })
-    } else {
-      try {
-        const guidance = await cognition.listGuidance({
-          sessionId,
-          includeDismissed: false,
-          limit: 200,
-          forToday: false,
-        })
-        let failed = 0
-        for (const item of guidance) {
-          const result = await cognition.dismissGuidance(item.id)
-          if (!result) failed += 1
-        }
-        if (failed > 0) {
-          steps.push({
-            step: 'dismiss_guidance',
-            status: 'failed',
-            detail: `${failed} guidance item(s) failed to dismiss`,
-            errorCode: 'dismiss_guidance_partial',
-          })
-        } else {
-          steps.push({
-            step: 'dismiss_guidance',
-            status: guidance.length === 0 ? 'already_done' : 'ok',
-            detail: guidance.length ? `dismissed ${guidance.length}` : undefined,
-          })
-        }
-      } catch (err) {
-        steps.push({
-          step: 'dismiss_guidance',
-          status: 'failed',
-          detail: err instanceof Error ? err.message : String(err),
-          errorCode: 'dismiss_guidance_failed',
-        })
-      }
-    }
-
-    // 5. archive (must succeed for overall ok)
-    let archiveOk = false
-    try {
-      if (alreadyArchived) {
-        steps.push({ step: 'archive', status: 'already_done' })
-        archiveOk = true
-      } else {
-        await this.archiveSession(sessionId)
-        steps.push({ step: 'archive', status: 'ok' })
-        archiveOk = true
-      }
-    } catch (err) {
-      steps.push({
-        step: 'archive',
-        status: 'failed',
-        detail: err instanceof Error ? err.message : String(err),
-        errorCode: 'archive_failed',
-      })
-      archiveOk = false
-    }
-
-    // 6. clear_snooze
-    if (!clearTodaySnooze) {
-      steps.push({ step: 'clear_snooze', status: 'skipped' })
-    } else {
-      try {
-        store.clearSnoozesMatching((key) => key === sessionId || key.startsWith(`${sessionId}:`) || key === `session:${sessionId}`)
-        steps.push({ step: 'clear_snooze', status: 'ok' })
-      } catch (err) {
-        steps.push({
-          step: 'clear_snooze',
-          status: 'failed',
-          detail: err instanceof Error ? err.message : String(err),
-          errorCode: 'clear_snooze_failed',
-        })
-      }
-    }
-
-    const response: import('@craft-agent/shared/protocol').CompleteAndArchiveResponse = {
-      sessionId,
-      ok: archiveOk,
-      alreadyCompleted: false,
-      steps,
-    }
-    if (request.idempotencyKey && archiveOk) {
-      store.setIdempotency(request.idempotencyKey, response)
-    }
-    return response
-  }
 }

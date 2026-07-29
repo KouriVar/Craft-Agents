@@ -13,10 +13,9 @@
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, Sparkles } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import type { CognitionGuidanceDto, PrivacyPolicyDto } from '@craft-agent/shared/protocol'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { MetadataBadge } from '@/components/ui/metadata-badge'
 import { StyledDropdownMenuContent } from '@/components/ui/styled-dropdown'
 import { projectsAtom } from '@/atoms/projects'
 import { sessionMetaMapAtom } from '@/atoms/sessions'
@@ -213,52 +212,40 @@ export function ContextSuggestionBadge({
           </DropdownMenuTrigger>
 
           <div className="relative z-[1] inline-flex items-center min-w-0">
-            <MetadataBadge
-              label={label}
-              icon={<Sparkles className="h-3.5 w-3.5 shrink-0 opacity-70" />}
-              interactive={!disabled}
-              isActive={menuOpen}
-              showChevron={!hasAlternates}
-              shadow="none"
+            <button
+              type="button"
               disabled={disabled}
-              onClick={() => {
-                if (disabled) return
-                runSuggestion(primary)
-              }}
               title={label}
-              className={cn(
-                // Quiet peer of Mode / Status: no tinted chip, no CTA hover lift.
-                'bg-transparent text-foreground/80 shadow-none',
-                'hover:bg-foreground/5',
-                menuOpen && 'bg-foreground/5',
-                hasAlternates && 'rounded-r-none pr-2',
-              )}
-            />
-
-            {hasAlternates && (
-              <button
-                type="button"
-                disabled={disabled}
-                aria-label={t('contextSuggestions.chevronAria')}
-                aria-expanded={menuOpen}
-                onClick={(event) => {
+              onClick={(event) => {
+                if (disabled) return
+                if ((event.target as HTMLElement).closest('[data-suggestion-chevron]')) {
                   event.preventDefault()
                   event.stopPropagation()
-                  if (disabled) return
                   setMenuOpen(true)
-                }}
-                className={cn(
-                  'h-[30px] pl-1 pr-2.5 rounded-r-[8px] flex items-center shrink-0',
-                  'outline-none select-none transition-colors',
-                  'bg-transparent text-foreground/80',
-                  'hover:bg-foreground/5',
-                  menuOpen && 'bg-foreground/5',
-                  'disabled:opacity-50 disabled:pointer-events-none',
-                )}
-              >
-                <ChevronDown className="h-3 w-3 opacity-40 shrink-0" />
-              </button>
-            )}
+                  return
+                }
+                runSuggestion(primary)
+              }}
+              className={cn(
+                'inline-flex items-center gap-1.5 shrink-0 select-none outline-none transition-colors',
+                'h-7 pl-3 pr-2.5 rounded-control bg-foreground/5 text-foreground/70 shadow-tinted',
+                'text-xs font-medium',
+                'hover:bg-foreground/[0.07]',
+                menuOpen && 'bg-foreground/[0.07]',
+                'disabled:opacity-50 disabled:pointer-events-none',
+              )}
+              style={{ '--shadow-color': 'var(--foreground-rgb)' } as React.CSSProperties}
+            >
+              <span className="whitespace-nowrap">{label}</span>
+              {hasAlternates && (
+                <span
+                  data-suggestion-chevron
+                  className="-mr-0.5 inline-flex h-full items-center pl-0.5"
+                >
+                  <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                </span>
+              )}
+            </button>
           </div>
         </div>
 

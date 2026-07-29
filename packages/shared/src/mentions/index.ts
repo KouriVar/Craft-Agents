@@ -10,6 +10,7 @@
  * - Sources: [source:slug]
  * - Files:   [file:path]
  * - Folders: [folder:path]
+ * - Project files: [project-file:absolute-path]
  */
 
 // Simple path join that works in both Node and browser contexts.
@@ -233,5 +234,12 @@ export function resolveFileMentions(text: string, workingDirectory: string): str
         : joinPath(workingDirectory, folderPath)
       const name = folderPath.split('/').pop() || folderPath
       return `[Mentioned folder: ${name} (at ${resolved})]`
+    })
+    .replace(/\[project-file:([^\]]+)\]/g, (_match, filePath: string) => {
+      const resolved = filePath.startsWith('/') || filePath.startsWith('~')
+        ? filePath
+        : joinPath(workingDirectory, filePath)
+      const name = filePath.split('/').pop() || filePath
+      return `[Mentioned project file: ${name} (at ${resolved})]`
     })
 }

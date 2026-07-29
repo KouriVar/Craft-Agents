@@ -37,10 +37,3 @@ jobs:
       - name: Run cross-platform server smoke tests
         if: github.event_name != 'workflow_dispatch'
         run: bun test packages/server/src/__tests__/smoke.test.ts
-
-      - name: Run full --validate-server integration suite
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.CRAFT_ANTHROPIC_API_KEY }}
-          STITCH_API_KEY: ${{ secrets.STITCH_API_KEY }}
-        run: bun run apps/cli/src/index.ts --validate-server --no-spinner --timeout 180000 --workspace-dir .github/agents

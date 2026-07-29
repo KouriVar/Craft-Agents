@@ -19,6 +19,11 @@ interface HeaderMetadataSignature {
   permissionMode?: string
   hasUnread?: boolean
   lastReadMessageId?: string
+  parentSessionId?: string
+  expertId?: string
+  isPinned?: boolean
+  branchFromSessionId?: string
+  branchFromMessageId?: string
   taskGoal?: string
   taskPriority?: SessionHeader['taskPriority']
   taskDueAt?: number
@@ -37,6 +42,11 @@ function getHeaderMetadataSignature(header: SessionHeader): string {
     permissionMode: header.permissionMode,
     hasUnread: header.hasUnread,
     lastReadMessageId: header.lastReadMessageId,
+    parentSessionId: header.parentSessionId,
+    expertId: header.expertId,
+    isPinned: header.isPinned,
+    branchFromSessionId: header.branchFromSessionId,
+    branchFromMessageId: header.branchFromMessageId,
     taskGoal: header.taskGoal,
     taskPriority: header.taskPriority,
     taskDueAt: header.taskDueAt,
@@ -58,6 +68,11 @@ function mergeHeaderWithExternalMetadata(localHeader: SessionHeader, diskHeader:
     permissionMode: diskHeader.permissionMode,
     hasUnread: diskHeader.hasUnread,
     lastReadMessageId: diskHeader.lastReadMessageId,
+    parentSessionId: diskHeader.parentSessionId,
+    expertId: diskHeader.expertId,
+    isPinned: diskHeader.isPinned,
+    branchFromSessionId: diskHeader.branchFromSessionId,
+    branchFromMessageId: diskHeader.branchFromMessageId,
     taskGoal: diskHeader.taskGoal,
     taskPriority: diskHeader.taskPriority,
     taskDueAt: diskHeader.taskDueAt,

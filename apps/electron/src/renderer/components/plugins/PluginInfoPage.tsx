@@ -92,6 +92,8 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
   const [busy, setBusy] = React.useState(false)
   const [diagnosing, setDiagnosing] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [updateOpen, setUpdateOpen] = React.useState(false)
+  const [updatePreview, setUpdatePreview] = React.useState<Awaited<ReturnType<typeof window.electronAPI.previewPluginUpdate>>>(null)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -181,6 +183,36 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
     }
   }
 
+  const checkForUpdate = async () => {
+    if (!plugin || busy) return
+    setBusy(true)
+    try {
+      const preview = await window.electronAPI.previewPluginUpdate(workspaceId, plugin.name)
+      if (!preview) { toast.message('未在已配置市场中找到可更新的安装包'); return }
+      setUpdatePreview(preview)
+      if (!preview.hasUpdate) { toast.success('当前已是最新版本'); return }
+      setUpdateOpen(true)
+    } catch (error) {
+      toast.error('检查插件更新失败', { description: error instanceof Error ? error.message : String(error) })
+    } finally { setBusy(false) }
+  }
+
+  const updatePlugin = async () => {
+    if (!plugin || !updatePreview || busy) return
+    setBusy(true)
+    try {
+      await window.electronAPI.installMarketplacePlugin(workspaceId, updatePreview.marketplaceId, updatePreview.pluginName, { enabled: plugin.enabled })
+      setUpdateOpen(false)
+      await load()
+      await diagnose()
+      toast.success('插件包已检查并更新')
+    } catch (error) {
+      toast.error('插件包更新失败', { description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const authenticateRequirement = async (
     requirement: NonNullable<WorkspacePluginEntry['compatibility']>['authRequirements'][number],
   ) => {
@@ -258,12 +290,7 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
       <PanelHeader
         title={displayName}
         badge={plugin.version ? <span className="text-xs text-muted-foreground">v{plugin.version}</span> : undefined}
-        actions={
-          <Button size="sm" variant="outline" onClick={() => { void diagnose() }} disabled={diagnosing}>
-            <RefreshCw className={cn('h-3.5 w-3.5', diagnosing && 'animate-spin')} />
-            {t('settings.plugins.diagnose', { defaultValue: 'Diagnose' })}
-          </Button>
-        }
+        actions={<div className="flex gap-2">{plugin.source === 'git' && <Button size="sm" variant="outline" onClick={() => void checkForUpdate()} disabled={busy}>检查更新</Button>}<Button size="sm" variant="outline" onClick={() => { void diagnose() }} disabled={diagnosing}><RefreshCw className={cn('h-3.5 w-3.5', diagnosing && 'animate-spin')} />{t('settings.plugins.diagnose', { defaultValue: 'Diagnose' })}</Button></div>}
       />
       <ScrollArea className="flex-1">
         <div className="mx-auto max-w-3xl px-6 py-6">
@@ -456,6 +483,7 @@ export function PluginInfoPage({ workspaceId, pluginName }: PluginInfoPageProps)
           </section>
         </div>
       </ScrollArea>
+      <Dialog open={updateOpen} onOpenChange={setUpdateOpen}><DialogContent><DialogHeader><DialogTitle>确认更新插件包</DialogTitle><DialogDescription>发现 {updatePreview?.currentVersion || '未声明'} → {updatePreview?.nextVersion || '新版本'}；更新不会静默执行。</DialogDescription></DialogHeader><div className="space-y-2 text-sm text-muted-foreground"><p>市场：{updatePreview?.marketplaceId}</p><p>能力：{updatePreview?.compatibility?.capabilities.map(item => item.label).join('、') || '待安装后检测'}</p><p>凭据：{updatePreview?.compatibility?.authRequirements.map(item => item.name).join('、') || '未声明额外凭据'}</p><p>确认后会重新安装并保留当前启用状态。</p></div><DialogFooter><Button variant="outline" onClick={() => setUpdateOpen(false)} disabled={busy}>取消</Button><Button onClick={() => void updatePlugin()} disabled={busy}>{busy ? '更新中…' : '确认更新'}</Button></DialogFooter></DialogContent></Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-md">

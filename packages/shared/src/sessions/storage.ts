@@ -188,11 +188,8 @@ export async function createSession(
     labels?: string[];
     isFlagged?: boolean;
     projectId?: string;
+    expertId?: string;
     parentSessionId?: string;
-    taskSlug?: string;
-    taskRunId?: string;
-    taskNodeId?: string;
-    taskDraft?: boolean;
   }
 ): Promise<SessionConfig> {
   ensureSessionsDir(workspaceRootPath);
@@ -225,11 +222,8 @@ export async function createSession(
     labels: options?.labels,
     isFlagged: options?.isFlagged,
     projectId: options?.projectId,
+    expertId: options?.expertId,
     parentSessionId: options?.parentSessionId,
-    taskSlug: options?.taskSlug,
-    taskRunId: options?.taskRunId,
-    taskNodeId: options?.taskNodeId,
-    taskDraft: options?.taskDraft,
   };
 
   // Save empty session
@@ -554,6 +548,8 @@ export async function updateSessionMetadata(
     | 'isArchived'
     | 'archivedAt'
     | 'projectId'
+    | 'expertId'
+    | 'isPinned'
   >>
 ): Promise<void> {
   const session = loadSession(workspaceRootPath, sessionId);
@@ -576,6 +572,8 @@ export async function updateSessionMetadata(
   if (updates.isArchived !== undefined) session.isArchived = updates.isArchived;
   if ('archivedAt' in updates) session.archivedAt = updates.archivedAt;
   if ('projectId' in updates) session.projectId = updates.projectId;
+  if ('expertId' in updates) session.expertId = updates.expertId;
+  if ('isPinned' in updates) session.isPinned = updates.isPinned;
 
   await saveSession(session);
 }

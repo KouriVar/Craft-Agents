@@ -17,7 +17,6 @@ import {
   Search,
   Plus,
   Trash2,
-  DatabaseZap,
   Zap,
   Plug,
   Inbox,
@@ -40,6 +39,10 @@ import {
   Star,
   History,
   Download,
+  Upload,
+  BrainCircuit,
+  Cable,
+  Puzzle,
 } from 'lucide-react'
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from '@/components/ui/source-avatar'
@@ -47,7 +50,7 @@ import { TopBar } from './TopBar'
 import { SquarePenRounded } from '../icons/SquarePenRounded'
 import { McpIcon } from '../icons/McpIcon'
 import { cn } from '@/lib/utils'
-import { isMac } from '@/lib/platform'
+import { isMac, isWindows } from '@/lib/platform'
 import { Button } from '@/components/ui/button'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import { Separator } from '@/components/ui/separator'
@@ -75,6 +78,7 @@ import {
 } from '@/components/ui/collapsible'
 import { SessionList, type ChatGroupingMode } from './SessionList'
 import { MainContentPanel } from './MainContentPanel'
+import { WorkspaceSearchDialog } from '@/components/search/WorkspaceSearchDialog'
 import { PanelStackContainer } from './PanelStackContainer'
 import { CompactSessionListFilter } from './CompactSessionListFilter'
 import type { ChatDisplayHandle } from './ChatDisplay'
@@ -101,16 +105,17 @@ import type {
   AutomationFilter,
   WidgetDescriptor,
   BrowserInstanceInfo,
+  BrowserBookmarkEntry,
 } from '../../../shared/types'
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { pluginListKindAtom, pluginsAtom } from '@/atoms/plugins'
+import { capabilityNavigatorKindAtom } from '@/atoms/capability-center'
+import { dynamicCenterFilterAtom, dynamicCenterRefreshAtom } from '@/atoms/dynamic-center'
 import {
   browserNavigatorKindAtom,
   browserWorkspaceTabsAtom,
-  exploreModeAtom,
-  type ExploreMode,
   type BrowserWorkspaceTab,
 } from '@/atoms/browser-workspace'
 import { filterInstancesForWorkspace } from '@/atoms/browser-pane'
@@ -144,6 +149,7 @@ import type { LabelConfig } from '@craft-agent/shared/labels'
 import { resolveEntityColor } from '@craft-agent/shared/colors'
 import * as storage from '@/lib/local-storage'
 import { loadBrowserWorkspace } from '@/lib/browser-workspace-storage'
+import { subscribeBrowserWorkspaceTabRequests } from '@/lib/browser-workspace-events'
 import {
   BrowserWorkspaceRequestGate,
   BrowserWorkspaceTabCloseGuard,
@@ -165,13 +171,15 @@ import {
   isPluginsNavigation,
   isBrowserNavigation,
   isAutomationsNavigation,
+  isDynamicNavigation,
   isProjectsNavigation,
   isLibraryNavigation,
   type NavigationState,
 } from '@/contexts/NavigationContext'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SourcesListPanel } from './SourcesListPanel'
-import { SkillsListPanel } from './SkillsListPanel'
+import { CapabilityListPanel } from '../capabilities/CapabilityListPanel'
+import { DynamicListPanel } from '../dynamic/DynamicListPanel'
 import { PluginsListPanel } from '../plugins/PluginsListPanel'
 import { PluginInstallMenu } from '../plugins/PluginInstallMenu'
 import { BrowserExtensionInstallMenu } from '../plugins/BrowserExtensionInstallMenu'
@@ -189,7 +197,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { PanelHeader } from './PanelHeader'
 import { FabNewChat } from './FabNewChat'
 import { SendToWorkspaceDialog } from './SendToWorkspaceDialog'
-import { CreateProjectDialog } from '../projects/CreateProjectDialog'
 import { MessagingDialogHost } from '@/components/messaging/MessagingDialogHost'
 import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
 import SettingsNavigator from '@/pages/settings/SettingsNavigator'
@@ -237,6 +244,18 @@ type FilterMode = 'include' | 'exclude'
 type ResizeTarget = 'sidebar' | 'session-list' | 'right-sidebar'
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
+const SHOW_SIDEBAR_BOOKMARKS = false
+type GlassIntensity = 'off' | 'subtle' | 'medium' | 'strong' | 'max'
+
+function migrateWindowsBackgroundEffectEnabled(): boolean {
+  const persisted = storage.get<boolean | null>(storage.KEYS.windowsBackgroundEffectEnabled, null)
+  if (typeof persisted === 'boolean') return persisted
+
+  const legacyShellIntensity = storage.get<GlassIntensity>(storage.KEYS.shellGlassIntensity, 'medium')
+  const enabled = legacyShellIntensity !== 'off'
+  storage.set(storage.KEYS.windowsBackgroundEffectEnabled, enabled)
+  return enabled
+}
 const RIGHT_SIDEBAR_DEFAULT_WIDTH = 380
 const RIGHT_SIDEBAR_MIN_WIDTH = 220
 const RIGHT_SIDEBAR_MAX_WIDTH = 960
@@ -266,7 +285,7 @@ function FilterModeBadge({ mode }: { mode: FilterMode }) {
   return (
     <span
       className={cn(
-        'flex items-center justify-center h-5 w-5 rounded-[4px] -mr-1',
+        'flex items-center justify-center h-5 w-5 rounded-menu-item -mr-1',
         mode === 'include' ? 'bg-background text-foreground shadow-minimal' : 'bg-destructive/10 text-destructive shadow-tinted',
       )}
       style={
@@ -704,6 +723,8 @@ function AppShellContent({
   const rightSidebarWidthRef = React.useRef(rightSidebarWidth)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
+  const appAppearanceRef = useRef<'light' | 'dark'>(isDark ? 'dark' : 'light')
+  appAppearanceRef.current = isDark ? 'dark' : 'light'
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
 
   React.useEffect(() => {
@@ -746,11 +767,9 @@ function AppShellContent({
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
 
-  // UNIFIED NAVIGATION STATE - single source of truth from NavigationContext
+  // Navigation state is the single source of truth for the focused panel.
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
-  const [unifiedExploreActive, setUnifiedExploreActive] = React.useState(() => isBrowserNavigation(navState))
-  const [exploreMode, setExploreMode] = useAtom(exploreModeAtom)
 
   const store = useStore()
   const panelStack = useAtomValue(panelStackAtom)
@@ -788,26 +807,6 @@ function AppShellContent({
   }, [navState])
 
   const sessionFilter = sessionsContext?.filter ?? null
-  // Explore is a single navigator surface for live browser tabs and regular
-  // conversations. Browser and session lifecycles remain independent; only
-  // their navigation list is composed together.
-  const isUnifiedExploreNavigation =
-    isBrowserNavigation(navState) || (unifiedExploreActive && isSessionsNavigation(navState) && sessionFilter?.kind === 'allSessions')
-  const isUnifiedExploreHome =
-    isUnifiedExploreNavigation &&
-    ((isBrowserNavigation(navState) && !navState.details) || (isSessionsNavigation(navState) && !navState.details))
-
-  React.useEffect(() => {
-    if (isBrowserNavigation(navState)) {
-      setUnifiedExploreActive(true)
-      setExploreMode('browser')
-      return
-    }
-    if (unifiedExploreActive && isSessionsNavigation(navState) && sessionFilter?.kind === 'allSessions') {
-      setExploreMode('sessions')
-    }
-  }, [navState, sessionFilter?.kind, setExploreMode, unifiedExploreActive])
-
   // Board view replaces the session-list navigator with the full-width Kanban panel,
   // so the navigator (and its resize handle) collapse to zero width while it's active.
   const isBoardView = isSessionsNavigation(navState) && navState.viewMode === 'board'
@@ -821,7 +820,7 @@ function AppShellContent({
     const sidebarVisibleWidth = effectiveSidebarAndNavigatorHidden || !isSidebarVisible ? 0 : sidebarWidth + PANEL_GAP
     const navigatorVisibleWidth =
       effectiveSidebarAndNavigatorHidden || isBoardView || !isSessionListVisible ? 0 : sessionListWidth + PANEL_GAP
-    const chromeWidth = sidebarVisibleWidth + navigatorVisibleWidth + PANEL_EDGE_INSET + PANEL_GAP
+    const chromeWidth = sidebarVisibleWidth + navigatorVisibleWidth + (PANEL_EDGE_INSET * 2) + PANEL_GAP
     const contentAreaWidth = Math.max(0, shellAvailableWidth - chromeWidth)
 
     const min = contentAreaWidth < 760 ? RIGHT_SIDEBAR_NARROW_MIN_WIDTH : RIGHT_SIDEBAR_MIN_WIDTH
@@ -1036,6 +1035,14 @@ function AppShellContent({
   // Search state for session list
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setWorkspaceSearchOpen(true) }
+    }
+    window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
   const isStateSubView = sessionFilter?.kind === 'state'
@@ -1127,7 +1134,7 @@ function AppShellContent({
   const [collapsedItems, setCollapsedItems] = React.useState<Set<string>>(() => {
     const saved = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null)
     if (saved !== null) return new Set(saved)
-    return new Set(['nav:labels'])
+    return new Set(['nav:labels', 'nav:bookmarks'])
   })
   const isExpanded = React.useCallback((id: string) => !collapsedItems.has(id), [collapsedItems])
   const toggleExpanded = React.useCallback((id: string) => {
@@ -1162,6 +1169,10 @@ function AppShellContent({
   }, [plugins, setPluginsAtom])
   const [browserTabs, setBrowserTabs] = useAtom(browserWorkspaceTabsAtom)
   const [browserNavigatorKind, setBrowserNavigatorKind] = useAtom(browserNavigatorKindAtom)
+  const [sidebarBookmarks, setSidebarBookmarks] = React.useState<BrowserBookmarkEntry[]>([])
+  const [capabilityNavigatorKind, setCapabilityNavigatorKind] = useAtom(capabilityNavigatorKindAtom)
+  const [dynamicFilter, setDynamicFilter] = useAtom(dynamicCenterFilterAtom)
+  const requestDynamicRefresh = useSetAtom(dynamicCenterRefreshAtom)
   const [browserHydratedWorkspaceId, setBrowserHydratedWorkspaceId] = React.useState<string | null>(null)
   const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
   const blankBrowserTabCreationGateRef = React.useRef(new BrowserWorkspaceRequestGate<string | null>())
@@ -1190,6 +1201,34 @@ function AppShellContent({
   // Assign during render so completions queued between commit and effects see
   // the new scope immediately.
   activeBrowserWorkspaceScopeKeyRef.current = browserWorkspaceScopeKey
+
+  const refreshSidebarBookmarks = React.useCallback(async () => {
+    if (!SHOW_SIDEBAR_BOOKMARKS) {
+      setSidebarBookmarks([])
+      return
+    }
+    const api = window.electronAPI?.browserPane
+    if (!activeWorkspaceId || !api || !window.electronAPI.isChannelAvailable('browser-pane:list-bookmarks')) {
+      setSidebarBookmarks([])
+      return
+    }
+    try {
+      setSidebarBookmarks(await api.listBookmarks())
+    } catch (error) {
+      console.warn('[AppShell] Failed to load sidebar bookmarks:', error)
+      setSidebarBookmarks([])
+    }
+  }, [activeWorkspaceId])
+
+  React.useEffect(() => {
+    if (!SHOW_SIDEBAR_BOOKMARKS) return
+    void refreshSidebarBookmarks()
+    const api = window.electronAPI?.browserPane
+    if (!api) return
+    return api.onProfileChanged((kind) => {
+      if (kind === 'bookmarks') void refreshSidebarBookmarks()
+    })
+  }, [refreshSidebarBookmarks])
 
   React.useEffect(() => {
     const api = window.electronAPI?.browserPane
@@ -1243,6 +1282,7 @@ function AppShellContent({
             show: false,
             initialUrl: savedTab.url && savedTab.url !== 'about:blank' ? savedTab.url : undefined,
             bindToSessionId: savedTab.ownerSessionId ?? undefined,
+            appearance: appAppearanceRef.current,
           })
           restoredIds.push(restoredId)
           idMap.set(savedTab.id, restoredId)
@@ -1470,7 +1510,7 @@ function AppShellContent({
       .catch((err) => {
       console.error('[Chat] Failed to load workspace settings:', err)
     })
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, navigate])
 
   // Reset UI state when workspace changes
   // This prevents stale search queries, focused items, and filter state from persisting
@@ -1504,11 +1544,11 @@ function AppShellContent({
       setExpandedFolders(new Set(newExpandedFolders))
 
       const newCollapsedItems = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null, activeWorkspaceId)
-      setCollapsedItems(newCollapsedItems !== null ? new Set(newCollapsedItems) : new Set(['nav:labels']))
+      setCollapsedItems(newCollapsedItems !== null ? new Set(newCollapsedItems) : new Set(['nav:labels', 'nav:bookmarks']))
     }
 
     previousWorkspaceRef.current = activeWorkspaceId
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, navigate])
 
   // Load sources from backend on mount
   React.useEffect(() => {
@@ -2265,7 +2305,6 @@ function AppShellContent({
     onSessionLabelsChange: handleSessionLabelsChange,
     enabledModes,
     sessionStatuses: effectiveSessionStatuses,
-    isUnifiedExploreNavigation,
     onOpenBrowserUrl: (url) => openBrowserUrlRef.current(url),
     onSessionSourcesChange: handleSessionSourcesChange,
     onJumpToTaskSessions: handleJumpToTaskSessions,
@@ -2294,7 +2333,6 @@ function AppShellContent({
       handleSessionLabelsChange,
       enabledModes,
       effectiveSessionStatuses,
-      isUnifiedExploreNavigation,
       handleSessionSourcesChange,
       handleJumpToTaskSessions,
       searchActive,
@@ -2330,6 +2368,7 @@ function AppShellContent({
   // cannot get trapped in focus mode after restarting the app.
   React.useEffect(() => {
     storage.remove(storage.KEYS.focusModeEnabled)
+    storage.remove(storage.KEYS.legacyExploreMode)
   }, [])
 
   // Focus mode uses the whole window as a distraction-free canvas. Hide the
@@ -2381,13 +2420,12 @@ function AppShellContent({
   }, [collapsedItems, activeWorkspaceId])
 
   const handleViewClick = useCallback((viewId: string) => {
-    setUnifiedExploreActive(false)
     navigate(routes.view.view(viewId))
   }, [])
 
   // Handler for sources view (all sources)
-  const handleSourcesClick = useCallback(() => {
-    navigate(routes.view.sources())
+  const handleSessionsClick = useCallback(() => {
+    navigate(routes.view.allSessions())
   }, [])
 
   // Handlers for source type filter views (subcategories in Sources dropdown)
@@ -2408,10 +2446,6 @@ function AppShellContent({
     navigate(routes.view.skills())
   }, [])
 
-  const handlePluginsClick = useCallback(() => {
-    navigate(routes.view.plugins())
-  }, [])
-
   const createRuntimeBrowserTab = useCallback(
     (initialUrl?: string): Promise<string | null> => {
     const isBlankTab = !initialUrl?.trim()
@@ -2424,6 +2458,7 @@ function AppShellContent({
             embedded: true,
             show: false,
             initialUrl,
+            appearance: isDark ? 'dark' : 'light',
           })
         if (!isBrowserWorkspaceScopeCurrent(requestScopeKey, activeBrowserWorkspaceScopeKeyRef.current)) {
           return null
@@ -2458,42 +2493,56 @@ function AppShellContent({
     }
     return create()
     },
-    [activeWorkspaceId, remoteBrowserWorkspaceId, setBrowserTabs],
+    [activeWorkspaceId, isDark, remoteBrowserWorkspaceId, setBrowserTabs],
   )
+
+  // Keep already-open blank tabs synchronized when the user changes the app
+  // appearance (including the resolved light/dark result of “Automatic”).
+  React.useEffect(() => {
+    const appearance = isDark ? 'dark' : 'light'
+    for (const tab of browserTabs) {
+      if (!tab.url.includes('/browser-empty-state.html')) continue
+      try {
+        const nextUrl = new URL(tab.url)
+        if (nextUrl.searchParams.get('appearance') === appearance) continue
+        nextUrl.searchParams.set('appearance', appearance)
+        void window.electronAPI.browserPane.navigate(tab.id, nextUrl.toString()).catch(() => {})
+      } catch {
+        // Ignore malformed/partially initialized tab URLs; the next tab update
+        // will provide a canonical URL from the browser pane manager.
+      }
+    }
+  }, [browserTabs, isDark])
 
   const handleBrowserClick = useCallback(() => {
-    setUnifiedExploreActive(true)
-    const route = exploreMode === 'browser' ? routes.view.browser() : routes.view.allSessions()
-    navigate(route, { skipAutoSelect: true })
-  }, [exploreMode])
-
-  // Explore mode switch: swap the navigator between the sessions perspective
-  // (reusing SessionList) and the browser perspective (reusing browser tabs).
-  // Both stay inside unified Explore; the atom also records the last mode for
-  // the Explore home (M3).
-  const handleExploreModeChange = useCallback(
-    (mode: ExploreMode) => {
-    setExploreMode(mode)
-    setUnifiedExploreActive(true)
-      const route = mode === 'browser' ? routes.view.browser() : routes.view.allSessions()
-    navigate(route, { skipAutoSelect: true })
-    },
-    [setExploreMode],
-  )
+    navigate(routes.view.browser(), { skipAutoSelect: true })
+  }, [])
 
   const handleBrowserTabSelect = useCallback(
     (tabId: string) => {
-    setUnifiedExploreActive(true)
-    setExploreMode('browser')
-    setLastActiveBrowserTabId(tabId)
-    navigate(routes.view.browser(tabId))
+      const now = Date.now()
+      const currentMeta = browserTabMetaRef.current.get(tabId)
+      browserTabMetaRef.current.set(tabId, {
+        createdAt: currentMeta?.createdAt ?? now,
+        lastAccessedAt: now,
+      })
+      setLastActiveBrowserTabId(tabId)
+      navigate(routes.view.browser(tabId))
     },
-    [setExploreMode],
+    [],
   )
 
+  const browserTabLastAccessedAtById = (() => {
+    const byId: Record<string, number> = {}
+    const now = Date.now()
+    for (const tab of browserTabs) {
+      const meta = browserTabMetaRef.current.get(tab.id)
+      byId[tab.id] = meta?.lastAccessedAt ?? meta?.createdAt ?? now
+    }
+    return byId
+  })()
+
   const handleAddBrowserTab = useCallback(() => {
-    setUnifiedExploreActive(true)
-    setExploreMode('browser')
     setBrowserNavigatorKind('tabs')
     void createRuntimeBrowserTab().then((id) => {
       if (id) {
@@ -2501,12 +2550,10 @@ function AppShellContent({
         navigate(routes.view.browser(id))
       }
     })
-  }, [createRuntimeBrowserTab, setBrowserNavigatorKind, setExploreMode])
+  }, [createRuntimeBrowserTab, setBrowserNavigatorKind])
 
   const handleOpenBrowserUrl = useCallback(
     (url: string) => {
-    setUnifiedExploreActive(true)
-    setExploreMode('browser')
     setBrowserNavigatorKind('tabs')
     void createRuntimeBrowserTab(url).then((id) => {
       if (!id) return
@@ -2514,9 +2561,23 @@ function AppShellContent({
       navigate(routes.view.browser(id))
     })
     },
-    [createRuntimeBrowserTab, setBrowserNavigatorKind, setExploreMode],
+    [createRuntimeBrowserTab, setBrowserNavigatorKind],
   )
   openBrowserUrlRef.current = handleOpenBrowserUrl
+
+  const getBookmarkDomain = React.useCallback((url: string) => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '')
+    } catch {
+      return url
+    }
+  }, [])
+
+  // Both browser entry points request tabs from this one workspace owner. The
+  // right sidebar used to instantiate isolated <webview> tabs of its own.
+  React.useEffect(() => subscribeBrowserWorkspaceTabRequests(({ initialUrl, onCreated }) => {
+    void createRuntimeBrowserTab(initialUrl).then(onCreated).catch(() => onCreated(null))
+  }), [createRuntimeBrowserTab])
 
   const handleCloseBrowserTabs = useCallback(
     (tabIds: string[]) => {
@@ -2659,6 +2720,10 @@ function AppShellContent({
     navigate(routes.view.automations())
   }, [])
 
+  const handleDynamicClick = useCallback(() => {
+    navigate(routes.view.dynamic())
+  }, [])
+
   // Handler for projects view
   const handleProjectsClick = useCallback(() => {
     navigate(routes.view.projects())
@@ -2714,6 +2779,8 @@ function AppShellContent({
     | 'add-source-mcp'
     | 'add-source-local'
     | 'add-skill'
+    | 'add-expert'
+    | 'add-connector'
     | 'automation-config'
     | 'add-project'
     | null
@@ -2736,7 +2803,9 @@ function AppShellContent({
       const rect = trigger.getBoundingClientRect()
       editPopoverAnchorY.current = rect.top
       editPopoverTriggerRef.current = trigger
+      return true
     }
+    return false
   }, [])
 
   // Sync data-edit-active attribute on the trigger element with EditPopover open state.
@@ -2790,40 +2859,24 @@ function AppShellContent({
   // Handler for "Add Skill" context menu action
   // Opens the EditPopover for adding a new skill
   const openAddSkill = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('add-skill'), 50)
-  }, [captureContextMenuPosition])
+    editPopoverAnchorY.current = 120
+    setEditPopoverOpen('add-skill')
+  }, [])
 
   // Handler for "Add Automation" context menu action
-  // Opens the EditPopover for adding a new automation
+  // Opens the native EditPopover for adding a new automation.
   const openAddAutomation = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('automation-config'), 50)
-  }, [captureContextMenuPosition])
+    editPopoverAnchorY.current = 120
+    setEditPopoverOpen('automation-config')
+  }, [])
 
-  // Handler for "Add Project" context menu action — creates a project directly
-  // Open the "Create Project" dialog so the user can provide a name up front.
-  // The previous flow auto-created with the default name and produced ugly
-  // permanent slugs (new-project, new-project-1, …).
-  const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false)
+  // Handler for "Add Project" context menu action
+  // Opens the native EditPopover for adding a new project.
   const openAddProject = useCallback(() => {
     if (!activeWorkspace?.id) return
-    setCreateProjectDialogOpen(true)
+    editPopoverAnchorY.current = 120
+    setEditPopoverOpen('add-project')
   }, [activeWorkspace?.id])
-  const handleCreateProjectSubmit = useCallback(
-    async (name: string) => {
-    if (!activeWorkspace?.id) return
-    setCreateProjectDialogOpen(false)
-    try {
-      const project = await window.electronAPI.createProject(activeWorkspace.id, { name })
-      navigate(routes.view.projects(project.slug))
-    } catch (err) {
-      console.error('[AppShell] Failed to create project:', err)
-      toast.error(t('projectsList.createFailed'))
-    }
-    },
-    [activeWorkspace?.id, navigate, t],
-  )
 
   /**
    * Resolve the "inherit sole active filter" rule: if exactly one filter value
@@ -2859,10 +2912,7 @@ function AppShellContent({
   const handleNewChat = useCallback(() => {
     if (!activeWorkspace) return
 
-    setUnifiedExploreActive(true)
-    setExploreMode('sessions')
-
-    // Exit search mode and enter Explore's sessions perspective.
+    // Exit search mode and enter the sessions navigator.
     setSearchActive(false)
     setSearchQuery('')
 
@@ -2874,15 +2924,20 @@ function AppShellContent({
 
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
-  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams, setExploreMode])
+  }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
 
   const handlePrimaryCreate = useCallback(() => {
-    if (exploreMode === 'browser') {
-      handleAddBrowserTab()
-      return
-    }
     handleNewChat()
-  }, [exploreMode, handleAddBrowserTab, handleNewChat])
+  }, [handleNewChat])
+
+  const handleCreateLibraryDocument = useCallback(() => {
+    if (!activeWorkspaceId) return
+    void window.electronAPI.createLibraryDocument({ workspaceId: activeWorkspaceId })
+      .then(document => navigate(routes.view.library(document.meta.id)))
+      .catch(error => toast.error('新建知识文档失败', {
+        description: error instanceof Error ? error.message : String(error),
+      }))
+  }, [activeWorkspaceId])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(
@@ -2936,10 +2991,25 @@ function AppShellContent({
     // 1. Explore is the primary app entry.
     result.push({ id: 'nav:browser', type: 'nav', action: handleBrowserClick })
 
-    // 2. Sources, Skills, Settings
-    result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
+    // 2. Capability centre and settings. Connector and package routes remain
+    // available for compatibility and advanced settings, but are not normal navigation.
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
-    result.push({ id: 'nav:plugins', type: 'nav', action: handlePluginsClick })
+    if (SHOW_SIDEBAR_BOOKMARKS) {
+      result.push({
+        id: 'nav:bookmarks',
+        type: 'nav',
+        action: () => toggleExpanded('nav:bookmarks'),
+      })
+    }
+    if (SHOW_SIDEBAR_BOOKMARKS && isExpanded('nav:bookmarks')) {
+      for (const bookmark of sidebarBookmarks) {
+        result.push({
+          id: `nav:bookmark:${bookmark.id}`,
+          type: 'nav',
+          action: () => handleOpenBrowserUrl(bookmark.url),
+        })
+      }
+    }
     result.push({
       id: 'nav:automations',
       type: 'nav',
@@ -2959,9 +3029,11 @@ function AppShellContent({
     return result
   }, [
     handleBrowserClick,
-    handleSourcesClick,
     handleSkillsClick,
-    handlePluginsClick,
+    isExpanded,
+    sidebarBookmarks,
+    handleOpenBrowserUrl,
+    toggleExpanded,
     handleAutomationsClick,
     handleSettingsClick,
     handleWhatsNewClick,
@@ -3087,6 +3159,8 @@ function AppShellContent({
 
     // Skills navigator
     if (isSkillsNavigation(navState)) {
+      if (capabilityNavigatorKind === 'experts') return t('sidebar.allExperts')
+      if (capabilityNavigatorKind === 'connectors') return t('sidebar.allConnectors')
       return t('sidebar.allSkills')
     }
 
@@ -3099,6 +3173,21 @@ function AppShellContent({
     // Projects navigator
     if (isProjectsNavigation(navState)) {
       return t('sidebar.allProjects')
+    }
+
+    if (isLibraryNavigation(navState)) {
+      return t('sidebar.library')
+    }
+
+    if (isBrowserNavigation(navState)) {
+      if (browserNavigatorKind === 'bookmarks') return t('browser.bookmarks', { defaultValue: '收藏' })
+      if (browserNavigatorKind === 'history') return t('browser.history', { defaultValue: '历史记录' })
+      if (browserNavigatorKind === 'downloads') return t('browser.downloads', { defaultValue: '下载' })
+      return t('browser.allTabs', { defaultValue: '所有标签' })
+    }
+
+    if (isDynamicNavigation(navState)) {
+      return t('dynamic.title', { defaultValue: '动态' })
     }
 
     // Automations navigator
@@ -3138,10 +3227,60 @@ function AppShellContent({
       default:
         return t('sidebar.allSessions')
     }
-  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses, pluginListKind])
+  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses, pluginListKind, browserNavigatorKind, capabilityNavigatorKind])
+
+  const [shellGlassIntensity, setShellGlassIntensityState] = useState(() =>
+    storage.get(storage.KEYS.shellGlassIntensity, 'medium'),
+  )
+  const [panelGlassIntensity, setPanelGlassIntensityState] = useState(() =>
+    storage.get(storage.KEYS.panelGlassIntensity, 'off'),
+  )
+  const [windowsBackgroundEffectEnabled, setWindowsBackgroundEffectEnabledState] = useState(() =>
+    isWindows ? migrateWindowsBackgroundEffectEnabled() : true,
+  )
+
+  useEffect(() => {
+    const handleShellGlassChange = (event: Event) => {
+      const value = (event as CustomEvent<string>).detail
+      setShellGlassIntensityState(value || 'medium')
+    }
+    window.addEventListener('craft:shell-glass-intensity-changed', handleShellGlassChange)
+    return () => window.removeEventListener('craft:shell-glass-intensity-changed', handleShellGlassChange)
+  }, [])
+
+  useEffect(() => {
+    const handlePanelGlassChange = (event: Event) => {
+      const value = (event as CustomEvent<string>).detail
+      setPanelGlassIntensityState(value || 'off')
+    }
+    window.addEventListener('craft:panel-glass-intensity-changed', handlePanelGlassChange)
+    return () => window.removeEventListener('craft:panel-glass-intensity-changed', handlePanelGlassChange)
+  }, [])
+
+  useEffect(() => {
+    const handleWindowsBackgroundEffectChange = (event: Event) => {
+      setWindowsBackgroundEffectEnabledState(Boolean((event as CustomEvent<boolean>).detail))
+    }
+    window.addEventListener('craft:windows-background-effect-changed', handleWindowsBackgroundEffectChange)
+    return () => window.removeEventListener('craft:windows-background-effect-changed', handleWindowsBackgroundEffectChange)
+  }, [])
+
+  // Windows has one native-material shell. Its background toggle must not
+  // activate the legacy per-region shell or panel glass intensity levels.
+  const effectiveShellGlassIntensity = isWindows ? undefined : shellGlassIntensity
+  const effectivePanelGlassIntensity = isWindows ? undefined : panelGlassIntensity
+  const windowsBackgroundEffectState = isWindows
+    ? (windowsBackgroundEffectEnabled ? 'enabled' : 'disabled')
+    : undefined
 
   return (
     <AppShellProvider value={appShellContextValue}>
+      <div
+        className="ca-window-shell h-full"
+        data-shell-glass-intensity={effectiveShellGlassIntensity}
+        data-panel-glass-intensity={effectivePanelGlassIntensity}
+        data-windows-background-effect={windowsBackgroundEffectState}
+      >
         {/* === TOP BAR === */}
         <TopBar
           workspaces={workspaces}
@@ -3172,12 +3311,12 @@ function AppShellContent({
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
         ref={shellRef}
-        className="flex items-stretch relative"
+        className="ca-workspace-shell flex items-stretch relative"
         style={{
           height: '100%',
           paddingRight: isAutoCompact ? 0 : PANEL_EDGE_INSET,
           paddingBottom: isAutoCompact ? 0 : PANEL_EDGE_INSET,
-          paddingLeft: 0,
+          paddingLeft: isAutoCompact ? 0 : PANEL_EDGE_INSET,
           gap: PANEL_GAP,
         }}
       >
@@ -3186,7 +3325,7 @@ function AppShellContent({
             <div
               ref={sidebarRef}
               style={{ width: sidebarWidth }}
-              className="h-full font-sans relative"
+              className="h-full font-sans relative panel-chrome-surface"
               data-focus-zone="sidebar"
               tabIndex={sidebarFocused ? 0 : -1}
               onKeyDown={handleSidebarKeyDown}
@@ -3194,7 +3333,7 @@ function AppShellContent({
             <div className="flex h-full flex-col select-none">
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
-                {/* Primary create action follows the last Explore mode. */}
+                {/* Primary creation is intentionally stable: always starts a new chat. */}
                 <div className="px-2 pb-2 shrink-0">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -3204,112 +3343,88 @@ function AppShellContent({
                             <Button
                               variant="ghost"
                               onClick={handlePrimaryCreate}
-                              className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
+                              className="w-full justify-start gap-2 py-[7px] px-2 text-control font-normal rounded-control shadow-minimal bg-background"
                               data-tutorial="new-chat-button"
                             >
                               <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
-                              {exploreMode === 'browser'
-                                  ? t('browser.newPage', {
-                                      defaultValue: 'New Page',
-                                    })
-                                  : t('session.newSession')}
+                              新建会话
                             </Button>
                           </ContextMenuTrigger>
-                          {exploreMode === 'sessions' && (
-                            <StyledContextMenuContent>
-                              <ContextMenuProvider>
-                                <SidebarMenu type="newSession" />
-                              </ContextMenuProvider>
-                            </StyledContextMenuContent>
-                          )}
+                          <StyledContextMenuContent>
+                            <ContextMenuProvider>
+                              <SidebarMenu type="newSession" />
+                            </ContextMenuProvider>
+                          </StyledContextMenuContent>
                         </ContextMenu>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="right">
-                        {exploreMode === 'browser' ? t('browser.newPage', { defaultValue: 'New Page' }) : newChatHotkey}
+                        {newChatHotkey}
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                {/* Primary Nav: Explore | Sources, Skills | Settings */}
-                {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
-                <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
+                {/* Primary navigation: user-facing product areas only. */}
+                <div className="flex-1 overflow-y-auto min-h-0 pb-4">
                 <LeftSidebar
                   isCollapsed={false}
                   getItemProps={getSidebarItemProps}
                   focusedItemId={focusedSidebarItemId}
                   links={[
-                    // --- Primary Entry: Explore (Browser) ---
+                    {
+                          id: 'nav:sessions',
+                          title: t('sidebar.sessions', { defaultValue: '会话' }),
+                      icon: List,
+                          variant: isSessionsNavigation(navState) ? 'default' : 'ghost',
+                      onClick: handleSessionsClick,
+                    },
                     {
                           id: 'nav:browser',
                           title: t('sidebar.browser', {
-                            defaultValue: 'Explore',
+                            defaultValue: '浏览器',
                           }),
                       label: String(browserTabs.length),
                       icon: Compass,
-                          variant: isUnifiedExploreNavigation ? 'default' : 'ghost',
+                          variant: isBrowserNavigation(navState) ? 'default' : 'ghost',
                       onClick: handleBrowserClick,
                     },
-                        {
-                          id: 'separator:explore-resources',
-                          type: 'separator',
-                        },
-                    // --- Sources & Skills Section ---
                     {
-                          id: 'nav:sources',
-                          title: t('sidebar.sources'),
-                      label: String(sources.length),
-                      icon: DatabaseZap,
-                          variant: isSourcesNavigation(navState) && !sourceFilter ? 'default' : 'ghost',
-                      onClick: handleSourcesClick,
-                          dataTutorial: 'sources-nav',
-                      expandable: true,
-                      expanded: isExpanded('nav:sources'),
-                      onToggle: () => toggleExpanded('nav:sources'),
+                          id: 'nav:projects',
+                          title: t('sidebar.projects'),
+                      label: String(projects.length),
+                      icon: FolderKanban,
+                      // Highlight only when on Projects view itself, not when a child is "active" (jumped-to filter)
+                          variant: isProjectsNavigation(navState) ? 'default' : 'ghost',
+                      onClick: handleProjectsClick,
                       contextMenu: {
-                        type: 'sources',
-                        onAddSource: () => openAddSource(),
+                        type: 'projects' as const,
+                        onAddProject: openAddProject,
                       },
-                      items: [
-                        {
-                              id: 'nav:sources:api',
-                              title: t('sidebar.apis'),
-                          label: String(sourceTypeCounts.api),
-                          icon: Globe,
-                              variant: sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'api' ? 'default' : 'ghost',
-                          onClick: handleSourcesApiClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('api'),
-                            sourceType: 'api',
-                          },
-                        },
-                        {
-                              id: 'nav:sources:mcp',
-                              title: t('sidebar.mcps'),
-                          label: String(sourceTypeCounts.mcp),
-                          icon: <McpIcon className="h-3.5 w-3.5" />,
-                              variant: sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'mcp' ? 'default' : 'ghost',
-                          onClick: handleSourcesMcpClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('mcp'),
-                            sourceType: 'mcp',
-                          },
-                        },
-                        {
-                              id: 'nav:sources:local',
-                              title: t('sidebar.localFolders'),
-                          label: String(sourceTypeCounts.local),
-                          icon: FolderOpen,
-                              variant: sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'local' ? 'default' : 'ghost',
-                          onClick: handleSourcesLocalClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('local'),
-                            sourceType: 'local',
-                          },
-                        },
-                      ],
+                    },
+                    {
+                          id: 'nav:automations',
+                          title: t('sidebar.automations'),
+                      label: String(automations.length),
+                      icon: ListTodo,
+                          variant: isAutomationsNavigation(navState) && !automationFilter ? 'default' : 'ghost',
+                      onClick: handleAutomationsClick,
+                      contextMenu: {
+                        type: 'automations' as const,
+                        onAddAutomation: openAddAutomation,
+                      },
+                    },
+                    {
+                          id: 'nav:library',
+                          title: t('sidebar.library'),
+                      icon: Library,
+                      variant: isLibraryNavigation(navState) ? 'default' : 'ghost',
+                      onClick: handleLibraryClick,
+                    },
+                    {
+                      id: 'nav:dynamic',
+                      title: t('sidebar.dynamic', { defaultValue: '动态' }),
+                      icon: Inbox,
+                      variant: isDynamicNavigation(navState) ? 'default' : 'ghost',
+                      onClick: handleDynamicClick,
                     },
                     {
                           id: 'nav:skills',
@@ -3323,109 +3438,47 @@ function AppShellContent({
                         onAddSkill: openAddSkill,
                       },
                     },
-                    {
-                          id: 'nav:plugins',
-                          title: t('sidebar.plugins', {
-                            defaultValue: 'Plugins',
-                          }),
-                      label: String(plugins.length),
-                      icon: Plug,
-                          variant: isPluginsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handlePluginsClick,
-                    },
-                    {
-                          id: 'nav:projects',
-                          title: t('sidebar.projects'),
-                      label: String(projects.length),
-                      icon: FolderKanban,
-                      // Highlight only when on Projects view itself, not when a child is "active" (jumped-to filter)
-                          variant: isProjectsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleProjectsClick,
-                      expandable: projects.length > 0,
-                      expanded: isExpanded('nav:projects'),
-                      onToggle: () => toggleExpanded('nav:projects'),
-                      contextMenu: {
-                        type: 'projects' as const,
-                        onAddProject: openAddProject,
-                      },
-                          items: projects.map((p) => ({
-                        id: `nav:projects:${p.config.id}`,
-                        title: p.config.name,
-                        icon: FolderKanban,
-                        // Highlight when on allSessions view AND filter includes this project (the jump-to state)
-                            variant:
-                              sessionFilter?.kind === 'allSessions' && projectFilter.get(p.config.id) === 'include'
-                                ? ('default' as const)
-                                : ('ghost' as const),
-                        onClick: () => handleJumpToProjectSessions(p.config.id),
-                      })),
-                    },
-                    {
-                          id: 'nav:library',
-                          title: t('sidebar.library'),
-                      icon: Library,
-                      variant: isLibraryNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleLibraryClick,
-                    },
-                    {
-                          id: 'nav:automations',
-                          title: t('sidebar.automations'),
-                      label: String(automations.length),
-                      icon: ListTodo,
-                          variant: isAutomationsNavigation(navState) && !automationFilter ? 'default' : 'ghost',
-                      onClick: handleAutomationsClick,
+                    ...(SHOW_SIDEBAR_BOOKMARKS ? [{
+                      id: 'nav:bookmarks',
+                      title: t('sidebar.bookmarks', { defaultValue: '书签' }),
+                      label: String(sidebarBookmarks.length),
+                      icon: Star,
+                      variant: 'ghost' as const,
+                      onClick: () => toggleExpanded('nav:bookmarks'),
                       expandable: true,
-                      expanded: isExpanded('nav:automations'),
-                      onToggle: () => toggleExpanded('nav:automations'),
-                      contextMenu: {
-                        type: 'automations' as const,
-                        onAddAutomation: openAddAutomation,
-                      },
-                      items: [
-                        {
-                              id: 'nav:automations:scheduled',
-                              title: t('sidebar.scheduled'),
-                          label: String(automationTypeCounts.scheduled),
-                          icon: Clock,
-                              variant:
-                                automationFilter?.kind === 'type' && automationFilter.automationType === 'scheduled' ? 'default' : 'ghost',
-                          onClick: handleAutomationsScheduledClick,
-                              contextMenu: {
-                                type: 'automations' as const,
-                                onAddAutomation: openAddAutomation,
-                              },
-                        },
-                        {
-                              id: 'nav:automations:event',
-                              title: t('sidebar.eventBased'),
-                          label: String(automationTypeCounts.event),
-                          icon: Radio,
-                              variant:
-                                automationFilter?.kind === 'type' && automationFilter.automationType === 'event' ? 'default' : 'ghost',
-                          onClick: handleAutomationsEventClick,
-                              contextMenu: {
-                                type: 'automations' as const,
-                                onAddAutomation: openAddAutomation,
-                              },
-                        },
-                        {
-                              id: 'nav:automations:agentic',
-                              title: t('sidebar.agentic'),
-                          label: String(automationTypeCounts.agentic),
-                          icon: Bot,
-                              variant:
-                                automationFilter?.kind === 'type' && automationFilter.automationType === 'agentic' ? 'default' : 'ghost',
-                          onClick: handleAutomationsAgenticClick,
-                              contextMenu: {
-                                type: 'automations' as const,
-                                onAddAutomation: openAddAutomation,
-                              },
-                        },
-                      ],
-                    },
-                    // --- Separator ---
-                        { id: 'separator:skills-settings', type: 'separator' },
-                    // --- Settings ---
+                      expanded: isExpanded('nav:bookmarks'),
+                      onToggle: () => toggleExpanded('nav:bookmarks'),
+                      items: sidebarBookmarks.map((bookmark) => {
+                        const domain = getBookmarkDomain(bookmark.url)
+                        return {
+                          id: `nav:bookmark:${bookmark.id}`,
+                          title: (
+                            <span className="flex min-w-0 flex-col leading-tight">
+                              <span className="truncate text-[12px] text-foreground/85">{bookmark.title || domain}</span>
+                              <span className="truncate text-[10px] text-muted-foreground">{domain}</span>
+                            </span>
+                          ),
+                          tooltip: bookmark.url,
+                          icon: bookmark.favicon ? (
+                            <img src={bookmark.favicon} alt="" className="h-3.5 w-3.5 rounded-sm object-contain" />
+                          ) : Globe,
+                          iconColorable: !bookmark.favicon,
+                          variant: 'ghost' as const,
+                          compact: true,
+                          onClick: () => handleOpenBrowserUrl(bookmark.url),
+                        }
+                      }),
+                    }] : []),
+                  ]}
+                />
+                </div>
+                {/* Settings and release notes are a true viewport-bottom region. */}
+                <div className="shrink-0 -mt-px pt-px pb-1">
+                  <LeftSidebar
+                    isCollapsed={false}
+                    getItemProps={getSidebarItemProps}
+                    focusedItemId={focusedSidebarItemId}
+                    links={[
                     {
                           id: 'nav:settings',
                           title: t('sidebar.settings'),
@@ -3450,9 +3503,9 @@ function AppShellContent({
                     },
                   ]}
                 />
+                </div>
                 {/* Agent Tree: Hierarchical list of agents */}
                 {/* Agents section removed */}
-                </div>
               </div>
             </div>
           </div>
@@ -3464,56 +3517,7 @@ function AppShellContent({
               titleAlign="left"
               titleMenuBare
               titleMenuAlign="start"
-                title={
-                  isUnifiedExploreNavigation
-                    ? isBrowserNavigation(navState)
-                      ? t('explore.modeBrowser', { defaultValue: 'Web' })
-                      : t('explore.modeSessions', { defaultValue: 'Sessions' })
-                    : isSidebarVisible
-                      ? listTitle
-                      : undefined
-                }
-                titleMenu={
-                  isUnifiedExploreNavigation ? (
-                <>
-                      {[
-                        {
-                          mode: 'sessions' as const,
-                          label: t('explore.modeSessions', {
-                            defaultValue: 'Sessions',
-                          }),
-                          desc: t('explore.sessionsDesc', {
-                            defaultValue: 'Create, learn and explore',
-                          }),
-                        },
-                        {
-                          mode: 'browser' as const,
-                          label: t('explore.modeBrowser', {
-                            defaultValue: 'Web',
-                          }),
-                          desc: t('explore.browserDesc', {
-                            defaultValue: 'Browse the web',
-                          }),
-                        },
-                      ].map((option) => {
-                    const isActive = (isBrowserNavigation(navState) ? 'browser' : 'sessions') === option.mode
-                    return (
-                      <StyledDropdownMenuItem
-                        key={option.mode}
-                        onSelect={() => handleExploreModeChange(option.mode)}
-                        className="gap-3 py-2"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium">{option.label}</div>
-                          <div className="text-xs text-muted-foreground">{option.desc}</div>
-                        </div>
-                        {isActive && <Check className="h-4 w-4 text-foreground shrink-0" />}
-                      </StyledDropdownMenuItem>
-                    )
-                  })}
-                </>
-                  ) : undefined
-                }
+                title={isSidebarVisible ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
                 badge={
                   automationFilter?.automationType === 'scheduled' ? (
@@ -3531,7 +3535,7 @@ function AppShellContent({
                 }
               actions={
                 <>
-                    {isPluginsNavigation(navState) && <PluginListToggle value={pluginListKind} onChange={setPluginListKind} />}
+                  {isPluginsNavigation(navState) && <PluginListToggle value={pluginListKind} onChange={setPluginListKind} />}
                   {/* Browser mode filter menu — tabs/bookmarks/history/downloads */}
                   {isBrowserNavigation(navState) && (
                     <DropdownMenu>
@@ -3587,6 +3591,138 @@ function AppShellContent({
                       </StyledDropdownMenuContent>
                     </DropdownMenu>
                   )}
+                  {isBrowserNavigation(navState) && (
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip="新建网页"
+                      onClick={handleAddBrowserTab}
+                    />
+                  )}
+                  {isLibraryNavigation(navState) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <HeaderIconButton icon={<ListFilter className="h-4 w-4" />} tooltip="知识库工具与筛选" />
+                      </DropdownMenuTrigger>
+                      <StyledDropdownMenuContent align="end" light minWidth="min-w-[190px]">
+                        <StyledDropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent('craft:library-toggle-search'))}>
+                          <Search className="h-3.5 w-3.5" /><span>搜索</span>
+                        </StyledDropdownMenuItem>
+                        <StyledDropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent('craft:library-import'))}>
+                          <Upload className="h-3.5 w-3.5" /><span>导入文件</span>
+                        </StyledDropdownMenuItem>
+                        <StyledDropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent('craft:library-create-mind-map'))}>
+                          <BrainCircuit className="h-3.5 w-3.5" /><span>新建思维导图</span>
+                        </StyledDropdownMenuItem>
+                        <StyledDropdownMenuSeparator />
+                        {([
+                          ['all', '全部', routes.view.library()],
+                          ['recent', '最近', routes.view.libraryRecent()],
+                          ['archived', '已归档', routes.view.libraryArchived()],
+                        ] as const).map(([value, label, route]) => (
+                          <StyledDropdownMenuItem key={value} onClick={() => navigate(route)}>
+                            <span className="flex-1">{label}</span>
+                            {(navState.filter ?? 'all') === value && <Check className="h-3.5 w-3.5" />}
+                          </StyledDropdownMenuItem>
+                        ))}
+                      </StyledDropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {isLibraryNavigation(navState) && (
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip="新建知识文档"
+                      onClick={handleCreateLibraryDocument}
+                    />
+                  )}
+                  {isDynamicNavigation(navState) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <HeaderIconButton icon={<ListFilter className="h-4 w-4" />} tooltip="筛选动态" />
+                      </DropdownMenuTrigger>
+                      <StyledDropdownMenuContent align="end" light minWidth="min-w-[180px]">
+                        {([
+                          ['all', '全部'],
+                          ['unread', '未读'],
+                          ['read', '已读'],
+                        ] as const).map(([value, label]) => (
+                          <StyledDropdownMenuItem key={value} onClick={() => setDynamicFilter(value)}>
+                            <span className="flex-1">{label}</span>
+                            {dynamicFilter === value && <Check className="h-3.5 w-3.5" />}
+                          </StyledDropdownMenuItem>
+                        ))}
+                        <StyledDropdownMenuSeparator />
+                        {([
+                          ['actionable', '待处理'],
+                          ['automation', '自动化'],
+                          ['system', '系统'],
+                        ] as const).map(([value, label]) => (
+                          <StyledDropdownMenuItem key={value} onClick={() => setDynamicFilter(value)}>
+                            <span className="flex-1">{label}</span>
+                            {dynamicFilter === value && <Check className="h-3.5 w-3.5" />}
+                          </StyledDropdownMenuItem>
+                        ))}
+                        <StyledDropdownMenuSeparator />
+                        <StyledDropdownMenuItem onClick={() => {
+                          if (!activeWorkspaceId) return
+                          void window.electronAPI.getDynamicItems(activeWorkspaceId, 'all').then(items =>
+                            Promise.all(items.filter(item => !item.readAt).map(item =>
+                              window.electronAPI.markDynamicRead(activeWorkspaceId, item.id),
+                            )),
+                          ).then(() => requestDynamicRefresh(value => value + 1))
+                        }}>
+                          <MailOpen className="h-3.5 w-3.5" /><span>全部已读</span>
+                        </StyledDropdownMenuItem>
+                      </StyledDropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {isSkillsNavigation(navState) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <HeaderIconButton icon={<ListFilter className="h-4 w-4" />} tooltip="筛选能力" />
+                      </DropdownMenuTrigger>
+                      <StyledDropdownMenuContent align="end" light minWidth="min-w-[180px]">
+                        {([
+                          ['experts', '专家', Bot],
+                          ['skills', '技能', Puzzle],
+                          ['connectors', '连接器', Cable],
+                        ] as const).map(([value, label, Icon]) => (
+                          <StyledDropdownMenuItem key={value} onClick={() => setCapabilityNavigatorKind(value)}>
+                            <Icon className="h-3.5 w-3.5" />
+                            <span className="flex-1">{label}</span>
+                            {capabilityNavigatorKind === value && <Check className="h-3.5 w-3.5" />}
+                          </StyledDropdownMenuItem>
+                        ))}
+                        <StyledDropdownMenuSeparator />
+                        <StyledDropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent('craft:capability-open-marketplace'))}>
+                          <Compass className="h-3.5 w-3.5" /><span>发现能力</span>
+                        </StyledDropdownMenuItem>
+                      </StyledDropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {isSkillsNavigation(navState) && activeWorkspace && (
+                    <EditPopover
+                      trigger={
+                        <HeaderIconButton
+                          icon={<Plus className="h-4 w-4" />}
+                          tooltip={
+                            capabilityNavigatorKind === 'connectors'
+                              ? '新建连接器'
+                              : capabilityNavigatorKind === 'skills'
+                                ? '新建技能'
+                                : '新建专家'
+                          }
+                        />
+                      }
+                      {...getEditConfig(
+                        capabilityNavigatorKind === 'connectors'
+                          ? 'add-connector'
+                          : capabilityNavigatorKind === 'skills'
+                            ? 'add-skill'
+                            : 'add-expert',
+                        activeWorkspace.rootPath,
+                      )}
+                    />
+                  )}
                   {/* Filter dropdown - available in ALL chat views.
                       Shows user-added filters (removable) and pinned filters (non-removable, derived from route).
                       Pinned filters: state views pin a status, label views pin a label, flagged pins the flag. */}
@@ -3621,8 +3757,8 @@ function AppShellContent({
                           icon={<ListFilter className="h-4 w-4" />}
                               className={
                                 listFilter.size > 0 || labelFilter.size > 0 || projectFilter.size > 0
-                                  ? 'bg-accent/5 text-accent rounded-[8px] shadow-tinted'
-                                  : 'rounded-[8px]'
+                                  ? 'bg-accent/5 text-accent rounded-surface shadow-tinted'
+                                  : 'rounded-surface'
                               }
                               style={
                                 listFilter.size > 0 || labelFilter.size > 0 || projectFilter.size > 0
@@ -3675,7 +3811,7 @@ function AppShellContent({
                         {/* Search input — typing switches from hierarchical submenus to a flat filtered list.
                             stopPropagation prevents Radix from intercepting keys. Arrow/Enter handled for navigation. */}
                         <div className="px-1 pb-3 border-b border-foreground/5">
-                          <div className="bg-background rounded-[6px] shadow-minimal px-2 py-1.5">
+                          <div className="bg-background rounded-control shadow-minimal px-2 py-1.5">
                             <input
                               ref={filterDropdownInputRef}
                               type="text"
@@ -4288,7 +4424,7 @@ function AppShellContent({
                                             }}
                                             className={cn(
                                               // SVG sizing matches StyledDropdownMenuSubTrigger so icons render at the same size
-                                              "flex cursor-pointer select-none items-center gap-2 rounded-[4px] mx-1 px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+                                              "flex cursor-pointer select-none items-center gap-2 rounded-menu-item mx-1 px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
                                                   isHighlighted && 'bg-foreground/5',
                                                   isPinned && 'opacity-50 pointer-events-none',
                                             )}
@@ -4400,7 +4536,7 @@ function AppShellContent({
                                             }}
                                             className={cn(
                                               // SVG sizing matches StyledDropdownMenuSubTrigger so icons render at the same size
-                                              "flex cursor-pointer select-none items-center gap-2 rounded-[4px] mx-1 px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+                                              "flex cursor-pointer select-none items-center gap-2 rounded-menu-item mx-1 px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
                                                   isHighlighted && 'bg-foreground/5',
                                                   isPinned && 'opacity-50 pointer-events-none',
                                             )}
@@ -4439,19 +4575,6 @@ function AppShellContent({
                       )}
                     />
                   )}
-                  {/* Add Skill button (only for skills mode) */}
-                  {isSkillsNavigation(navState) && activeWorkspace && (
-                    <EditPopover
-                      trigger={
-                        <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
-                            tooltip={t('sidebarMenu.addSkill')}
-                          data-tutorial="add-skill-button"
-                        />
-                      }
-                      {...getEditConfig('add-skill', activeWorkspace.rootPath)}
-                    />
-                  )}
                   {isPluginsNavigation(navState) && activeWorkspaceId && pluginListKind === 'plugins' && (
                     <PluginInstallMenu
                       workspaceId={activeWorkspaceId}
@@ -4470,16 +4593,15 @@ function AppShellContent({
                   {/* Add Automation button (only for automations mode) */}
                   {isAutomationsNavigation(navState) && activeWorkspace && (
                     <EditPopover
-                        trigger={<HeaderIconButton icon={<Plus className="h-4 w-4" />} tooltip={t('sidebarMenu.addAutomation')} />}
+                      trigger={<HeaderIconButton icon={<Plus className="h-4 w-4" />} tooltip={t('sidebarMenu.addAutomation')} />}
                       {...getEditConfig('automation-config', activeWorkspace.rootPath)}
                     />
                   )}
                   {/* Add Project button (only for projects mode) */}
                   {isProjectsNavigation(navState) && activeWorkspace && (
-                    <HeaderIconButton
-                      icon={<Plus className="h-4 w-4" />}
-                        tooltip={t('sidebarMenu.addProject')}
-                      onClick={openAddProject}
+                    <EditPopover
+                      trigger={<HeaderIconButton icon={<Plus className="h-4 w-4" />} tooltip={t('sidebarMenu.addProject')} />}
+                      {...getEditConfig('add-project', activeWorkspace.rootPath)}
                     />
                   )}
                 </>
@@ -4499,15 +4621,7 @@ function AppShellContent({
               />
             )}
             {isSkillsNavigation(navState) && activeWorkspaceId && (
-              /* Skills List */
-              <SkillsListPanel
-                skills={skills}
-                workspaceId={activeWorkspaceId}
-                workspaceRootPath={activeWorkspace?.rootPath}
-                onSkillClick={handleSkillSelect}
-                onDeleteSkill={handleDeleteSkill}
-                selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
-              />
+              <CapabilityListPanel workspaceId={activeWorkspaceId} skills={skills} />
             )}
             {isPluginsNavigation(navState) && activeWorkspaceId && pluginListKind === 'plugins' && (
               <PluginsListPanel
@@ -4518,41 +4632,36 @@ function AppShellContent({
               />
             )}
               {isPluginsNavigation(navState) && pluginListKind === 'extensions' && <BrowserExtensionsListPanel />}
-            {isUnifiedExploreNavigation && isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
+            {isBrowserNavigation(navState) && browserNavigatorKind === 'tabs' && (
               <BrowserTabsListPanel
                 tabs={browserTabs}
                 selectedTabId={isBrowserNavigation(navState) ? (navState.details?.tabId ?? null) : null}
                 onTabClick={handleBrowserTabSelect}
                 onTabClose={handleCloseBrowserTab}
-                  onTabGoBack={(tabId) => {
-                    void window.electronAPI.browserPane.goBack(tabId)
-                  }}
-                  onTabGoForward={(tabId) => {
-                    void window.electronAPI.browserPane.goForward(tabId)
-                  }}
-                  onTabReload={(tabId) => {
-                    void window.electronAPI.browserPane.reload(tabId)
-                  }}
-                  onTabStop={(tabId) => {
-                    void window.electronAPI.browserPane.stop(tabId)
-                  }}
-                  onCopyLink={(tab) => {
-                    void handleCopyBrowserTabLink(tab)
-                  }}
-                  onToggleBookmark={handleToggleBrowserTabBookmark}
-                  onTogglePinned={handleToggleBrowserTabPinned}
-                  onToggleMuted={handleToggleBrowserTabMuted}
-                  onCloseOtherTabs={handleCloseOtherBrowserTabs}
-                  onCloseTabsBelow={handleCloseBrowserTabsBelow}
-                onShowTabMenu={(kind, tab) => {
-                  let origin: string | null = null
-                    try {
-                      origin = new URL(tab.url).origin
-                    } catch {
-                      /* Non-web URL. */
-                    }
-                  void window.electronAPI.browserPane.showToolbarMenu(kind, tab.id, origin)
+                onTabGoBack={(tabId) => {
+                  void window.electronAPI.browserPane.goBack(tabId)
                 }}
+                onTabGoForward={(tabId) => {
+                  void window.electronAPI.browserPane.goForward(tabId)
+                }}
+                onTabReload={(tabId) => {
+                  void window.electronAPI.browserPane.reload(tabId)
+                }}
+                onTabStop={(tabId) => {
+                  void window.electronAPI.browserPane.stop(tabId)
+                }}
+                onCopyLink={(tab) => {
+                  void handleCopyBrowserTabLink(tab)
+                }}
+                onToggleBookmark={handleToggleBrowserTabBookmark}
+                onTogglePinned={handleToggleBrowserTabPinned}
+                onToggleMuted={handleToggleBrowserTabMuted}
+                onCloseOtherTabs={handleCloseOtherBrowserTabs}
+                onCloseTabsBelow={handleCloseBrowserTabsBelow}
+                onShowTabMenu={(kind, tab) => {
+                  void window.electronAPI.browserPane.showToolbarMenu(kind, tab.id)
+                }}
+                lastAccessedAtById={browserTabLastAccessedAtById}
               />
             )}
             {isBrowserNavigation(navState) && browserNavigatorKind !== 'tabs' && (
@@ -4592,13 +4701,22 @@ function AppShellContent({
                 onToggleAutomation={handleToggleAutomation}
                 onDuplicateAutomation={handleDuplicateAutomation}
                 onDeleteAutomation={handleDeleteAutomation}
+                onAddAutomation={openAddAutomation}
                 selectedAutomationId={isAutomationsNavigation(navState) && navState.details ? navState.details.automationId : null}
                 workspaceRootPath={activeWorkspace?.rootPath}
               />
             )}
+            {isDynamicNavigation(navState) && activeWorkspaceId && (
+              <DynamicListPanel workspaceId={activeWorkspaceId} />
+            )}
             {isSettingsNavigation(navState) && (
               /* Settings Navigator */
-                <SettingsNavigator selectedSubpage={navState.subpage} onSelectSubpage={(subpage) => handleSettingsClick(subpage)} />
+              <SettingsNavigator
+                selectedSubpage={navState.subpage}
+                selectedSection={navState.section}
+                onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
+                onSelectSection={(subpage, section) => navigate(routes.view.settings(subpage, section))}
+              />
             )}
             {isSessionsNavigation(navState) && (
               /* Sessions List */
@@ -4652,7 +4770,7 @@ function AppShellContent({
                   workspaceId={activeWorkspaceId ?? undefined}
                   statusFilter={listFilter}
                   labelFilterMap={labelFilter}
-                    focusedSessionId={isUnifiedExploreHome || panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
+                    focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
                   activeChatMatchInfo={chatMatchInfo}
@@ -4668,7 +4786,9 @@ function AppShellContent({
           navigatorWidth={
             isAutoCompact
               ? sessionListWidth
-              : effectiveSidebarAndNavigatorHidden || isBoardView || !isSessionListVisible
+              : effectiveSidebarAndNavigatorHidden
+                || isBoardView
+                || !isSessionListVisible
                 ? 0
                 : sessionListWidth
           }
@@ -4875,6 +4995,25 @@ function AppShellContent({
             align="start"
             {...getEditConfig('add-skill', activeWorkspace.rootPath)}
           />
+          {/* Add Project EditPopover */}
+          <EditPopover
+            open={editPopoverOpen === 'add-project'}
+            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'add-project' : null)}
+            modal={true}
+            trigger={
+              <div
+                className="fixed w-0 h-0 pointer-events-none"
+                style={{
+                  left: sidebarWidth + 20,
+                  top: editPopoverAnchorY.current,
+                }}
+                aria-hidden="true"
+              />
+            }
+            side="bottom"
+            align="start"
+            {...getEditConfig('add-project', activeWorkspace.rootPath)}
+          />
           {/* Add Automation EditPopover - triggered from "Add Automation" context menu in automations */}
           <EditPopover
             open={editPopoverOpen === 'automation-config'}
@@ -4946,16 +5085,11 @@ function AppShellContent({
         onTransferComplete={handleTransferComplete}
       />
 
-      {/* Create Project dialog — prompts for a name so slugs stay meaningful */}
-      <CreateProjectDialog
-        open={createProjectDialogOpen}
-        onCancel={() => setCreateProjectDialogOpen(false)}
-        onSubmit={handleCreateProjectSubmit}
-      />
-
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
+      <WorkspaceSearchDialog workspaceId={activeWorkspaceId || undefined} open={workspaceSearchOpen} onOpenChange={setWorkspaceSearchOpen} />
+      </div>
     </AppShellProvider>
   )
 }

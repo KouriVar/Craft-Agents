@@ -294,6 +294,11 @@ html[data-theme-override]::before {
   pointer-events: none;
 }
 
+html[data-native-material='true'][data-theme-override]::before,
+html[data-native-material='true'][data-theme-mismatch]::before {
+  background: transparent;
+}
+
 /* Theme Mismatch - Solid background when theme doesn't support current mode
    e.g. dark-only theme in light mode. Uses foreground-10 for subtle contrast. */
 html[data-theme-mismatch]::before {
@@ -463,6 +468,7 @@ html[data-platform="windows"][data-font="inter"] {
   html, body, #root {
     height: 100%;
     overflow: hidden;
+    background: transparent;
   }
 
   body {
@@ -471,6 +477,120 @@ html[data-platform="windows"][data-font="inter"] {
     color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  .ca-window-shell {
+    --ca-shell-glass-tint-rgb: 244, 247, 249;
+    --ca-panel-glass-bg-rgb: 250, 250, 252;
+    --ca-panel-glass-alpha: 1;
+    --ca-panel-glass-saturate: 1;
+    background: transparent;
+  }
+
+  .dark .ca-window-shell {
+    --ca-shell-glass-tint-rgb: 35, 40, 50;
+    --ca-panel-glass-bg-rgb: 7, 10, 16;
+  }
+
+  .ca-topbar-surface {
+    background: transparent;
+  }
+
+  html[data-platform='windows'] .ca-window-shell {
+    --win-shell-background: rgb(var(--ca-shell-glass-tint-rgb));
+    --ca-windows-panel-surface: oklch(from var(--foreground-2) l c h / 1);
+    background: var(--win-shell-background);
+  }
+
+  html[data-platform='windows'] .ca-window-shell[data-windows-background-effect='enabled'] {
+    --win-shell-background: rgba(var(--ca-shell-glass-tint-rgb), 0.16);
+  }
+
+  html[data-platform='windows'].dark .ca-window-shell[data-windows-background-effect='enabled'] {
+    --win-shell-background: rgba(var(--ca-shell-glass-tint-rgb), 0.10);
+  }
+
+  /*
+   * Windows uses the native window material plus the single shell tint above.
+   * TopBar, workspace spacing, and the primary sidebar expose that same shell;
+   * none of them paints or blurs an independent glass rectangle.
+   */
+  html[data-platform='windows'] .ca-topbar-surface,
+  html[data-platform='windows'] .ca-window-shell .ca-workspace-shell,
+  html[data-platform='windows'] .ca-window-shell [data-focus-zone='sidebar'] {
+    background: transparent !important;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /*
+   * Navigator and content panels share one fully opaque theme surface on
+   * Windows. Forcing alpha to 1 also prevents scenic/custom theme alpha from
+   * leaking the desktop through either panel.
+   */
+  html[data-platform='windows'] .ca-window-shell [data-panel-role='navigator'],
+  html[data-platform='windows'] .ca-window-shell [data-panel-role='content'],
+  html[data-platform='windows'] .ca-window-shell [data-panel-role='right-sidebar'] > .panel-chrome-surface {
+    background: var(--ca-windows-panel-surface) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .ca-window-shell[data-panel-glass-intensity='subtle'] {
+    --ca-panel-glass-alpha: 0.82;
+    --ca-panel-glass-saturate: 1.05;
+  }
+
+  .ca-window-shell[data-panel-glass-intensity='medium'] {
+    --ca-panel-glass-alpha: 0.58;
+    --ca-panel-glass-saturate: 1.12;
+  }
+
+  .ca-window-shell[data-panel-glass-intensity='strong'] {
+    --ca-panel-glass-alpha: 0.34;
+    --ca-panel-glass-saturate: 1.18;
+  }
+
+  .ca-window-shell[data-panel-glass-intensity='max'] {
+    --ca-panel-glass-alpha: 0.16;
+    --ca-panel-glass-saturate: 1.24;
+  }
+
+  .dark .ca-window-shell[data-panel-glass-intensity='subtle'] {
+    --ca-panel-glass-alpha: 0.76;
+  }
+
+  .dark .ca-window-shell[data-panel-glass-intensity='medium'] {
+    --ca-panel-glass-alpha: 0.50;
+  }
+
+  .dark .ca-window-shell[data-panel-glass-intensity='strong'] {
+    --ca-panel-glass-alpha: 0.28;
+  }
+
+  .dark .ca-window-shell[data-panel-glass-intensity='max'] {
+    --ca-panel-glass-alpha: 0.10;
+  }
+
+  .ca-window-shell:is(
+    [data-panel-glass-intensity='subtle'],
+    [data-panel-glass-intensity='medium'],
+    [data-panel-glass-intensity='strong'],
+    [data-panel-glass-intensity='max']
+  ) .panel-glass-surface {
+    background: rgba(var(--ca-panel-glass-bg-rgb), var(--ca-panel-glass-alpha)) !important;
+    backdrop-filter: saturate(var(--ca-panel-glass-saturate));
+    -webkit-backdrop-filter: saturate(var(--ca-panel-glass-saturate));
+  }
+
+  .ca-window-shell[data-shell-glass-intensity='off'] .ca-workspace-shell {
+    background: rgb(var(--ca-shell-glass-tint-rgb));
+  }
+
+  .ca-window-shell[data-shell-glass-intensity='off'] [data-focus-zone='sidebar'] {
+    background: rgb(var(--ca-shell-glass-tint-rgb));
   }
 
   /* Scrollbar styling */
@@ -666,6 +786,33 @@ html[data-platform="windows"][data-font="inter"] {
     z-index: 2;
   }
 
+  .panel-chrome-surface.shadow-middle {
+    box-shadow: none;
+    outline: none;
+  }
+
+  .panel-stack-shell,
+  .panel-stack-shell > *,
+  .panel-chrome-surface {
+    border-color: transparent;
+    outline: none;
+  }
+
+  .panel-chrome-surface::before,
+  .panel-chrome-surface::after {
+    box-shadow: none;
+  }
+
+  .panel-chrome-surface.shadow-panel-focused {
+    box-shadow: none;
+    outline: none;
+  }
+
+  .panel-chrome-surface.shadow-panel-focused::before {
+    content: none;
+    display: none !important;
+  }
+
   .shadow-modal-small {
     box-shadow: var(--shadow-modal-small);
   }
@@ -736,25 +883,10 @@ html[data-scenic] .input-container {
    Uses a pseudo-element with a white linear gradient (40% at top, 5% at bottom).
    The mask-composite technique creates a border-only effect from a filled gradient. */
 html[data-scenic] .shadow-middle::before,
-html[data-scenic] .shadow-strong::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.1)
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-  mix-blend-mode: soft-light;
+html[data-scenic] .shadow-strong::before,
+html[data-scenic] .shadow-panel-focused::before {
+  content: none;
+  display: none !important;
 }
 
 /* Scenic mode: Ensure panel content is above the gradient border pseudo-element.
@@ -1446,11 +1578,12 @@ html.dark[data-scenic] .fullscreen-overlay-background {
    ========================================================================== */
 :root {
   --topbar-height: 48px;
-  --app-topbar-inset: var(--topbar-height);
+  --app-topbar-inset: calc(var(--topbar-height) + 6px);
 }
 @media (max-width: 768px) {
   :root {
     --topbar-height: 56px;
+    --app-topbar-inset: var(--topbar-height);
   }
 
   /* Bump TopBar icons from 18px → 20px in compact mode. Kept tight inside the

@@ -49,7 +49,7 @@ const NATIVE_VIEW_PAUSE_SELECTORS: ReadonlyArray<readonly [BrowserNativeViewPaus
   ['drawer', '[data-slot="drawer-content"][data-state="open"], [data-vaul-drawer][data-state="open"]'],
   [
     'menu',
-    '[data-slot="dropdown-menu-content"][data-state="open"]:not([data-native-view-passthrough="true"]), [data-slot="context-menu-content"][data-state="open"]:not([data-native-view-passthrough="true"]), [role="menu"][data-state="open"]:not([data-native-view-passthrough="true"])',
+    '[data-slot="dropdown-menu-content"][data-state="open"], [data-slot="context-menu-content"][data-state="open"], [role="menu"][data-state="open"]',
   ],
   [
     'popover',
@@ -58,6 +58,7 @@ const NATIVE_VIEW_PAUSE_SELECTORS: ReadonlyArray<readonly [BrowserNativeViewPaus
   ['select', '[data-slot="select-content"][data-state="open"]'],
   ['inline-menu', '[data-inline-menu]'],
   ['island-dialog', '[data-ca-island-dialog="true"][data-state="open"]'],
+  ['notification', '[data-sonner-toast][data-mounted="true"]:not([data-removed="true"])'],
 ]
 
 /** Returns semantic pause owners; Tooltip is intentionally excluded. */

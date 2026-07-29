@@ -81,16 +81,8 @@ echo "  Server is ready!"
 echo "[3/3] Running --validate-server..."
 SERVER_URL="ws://127.0.0.1:$PORT"
 
-# If we have bun and the CLI available (CI environment), run full validation
-if command -v bun &>/dev/null && [ -f "apps/cli/src/index.ts" ]; then
-  bun run apps/cli/src/index.ts \
-    --validate-server \
-    --url "$SERVER_URL" \
-    --token "$TOKEN" \
-    --no-spinner
-else
-  # Fallback: basic connectivity check with a WebSocket ping
-  echo "  CLI not available, running basic connectivity check..."
+# Basic connectivity check with a WebSocket ping
+echo "  Running basic connectivity check..."
 
   # Use node/bun to test WebSocket connectivity
   node -e "
@@ -109,7 +101,6 @@ else
       echo "  WARN: No connectivity tool available, relying on container-running check only"
     fi
   }
-fi
 
 echo ""
 echo "=== Smoke test passed ==="

@@ -27,7 +27,9 @@ export function useProjects(activeWorkspaceId: string | null | undefined): UsePr
     }
     try {
       const result = await window.electronAPI.getProjects(activeWorkspaceId)
-      const list = Array.isArray(result) ? (result as LoadedProject[]) : []
+      const list = Array.isArray(result)
+        ? (result as LoadedProject[]).filter((project) => !project.config.archivedAt)
+        : []
       setProjects(list)
       setProjectsAtom(list)
     } catch (err) {
@@ -45,7 +47,9 @@ export function useProjects(activeWorkspaceId: string | null | undefined): UsePr
     if (!activeWorkspaceId) return
     const off = window.electronAPI.onProjectsChanged((wsId: string, list: unknown) => {
       if (wsId !== activeWorkspaceId) return
-      const projects = Array.isArray(list) ? (list as LoadedProject[]) : []
+      const projects = Array.isArray(list)
+        ? (list as LoadedProject[]).filter((project) => !project.config.archivedAt)
+        : []
       setProjects(projects)
       setProjectsAtom(projects)
     })

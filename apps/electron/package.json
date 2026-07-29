@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/electron",
-  "version": "0.17.0",
+  "version": "0.20.0",
   "description": "Electron desktop app for Craft Agents",
   "main": "dist/main.cjs",
   "private": true,
@@ -29,6 +29,7 @@
     "start": "bun run build && electron .",
     "start:win": "bun run build:win && electron .",
     "dev": "vite dev",
+    "material:probe": "electron scripts/material-probe.cjs",
     "typecheck": "tsc --noEmit",
     "dist:mac": "bash scripts/build-dmg.sh arm64",
     "dist:mac:x64": "bash scripts/build-dmg.sh x64",

@@ -1,13 +1,13 @@
 /**
  * SettingsNavigator
  *
- * Navigator panel content for settings. Settings pages are grouped into a
- * compact, flat list so the hierarchy stays legible at sidebar width.
+ * Flat list of canonical settings pages from SETTINGS_MENU_ITEMS.
  */
 
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, AppWindow } from 'lucide-react'
+import { AppWindow, ChevronRight, MoreHorizontal } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -16,10 +16,11 @@ import {
 } from '@/components/ui/styled-dropdown'
 import { DropdownMenuProvider } from '@/components/ui/menu-context'
 import { cn } from '@/lib/utils'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SETTINGS_MENU_ITEMS } from '../../../shared/menu-schema'
 import { SETTINGS_ICONS } from '@/components/icons/SettingsIcons'
+import { LeftSidebar, type LinkItem } from '@/components/app-shell/LeftSidebar'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -33,8 +34,12 @@ interface SettingsNavigatorProps {
    * stands alone before the user drills into a subpage.
    */
   selectedSubpage: SettingsSubpage | null
+  /** Currently selected in-page section. */
+  selectedSection?: string
   /** Called when a subpage is selected */
   onSelectSubpage: (subpage: SettingsSubpage) => void
+  /** Called when a nested in-page section is selected. */
+  onSelectSection?: (subpage: SettingsSubpage, section: string) => void
 }
 
 interface SettingsItem {
@@ -43,23 +48,80 @@ interface SettingsItem {
   icon: React.ComponentType<{ className?: string }>
 }
 
-interface SettingsSection {
-  id: string
-  label: string
-  pages: SettingsSubpage[]
-}
-
 interface SettingsItemRowProps {
   item: SettingsItem
   isSelected: boolean
+  isExpanded: boolean
   onSelect: () => void
+  onToggle: () => void
+}
+
+interface SettingsSectionDefinition {
+  id: string
+  labelKey: string
+}
+
+const SETTINGS_SECTIONS: Partial<Record<SettingsSubpage, SettingsSectionDefinition[]>> = {
+  app: [
+    { id: 'notifications', labelKey: 'settings.notifications.title' },
+    { id: 'power', labelKey: 'settings.power.title' },
+    { id: 'diagnostics', labelKey: 'settings.diagnostics.title' },
+    { id: 'about', labelKey: 'settings.about.title' },
+  ],
+  interface: [
+    { id: 'appearance', labelKey: 'settings.appearance.title' },
+    { id: 'input', labelKey: 'settings.input.title' },
+    { id: 'layout', labelKey: 'settings.input.rightSidebar' },
+    { id: 'shortcuts', labelKey: 'settings.shortcuts.title' },
+    { id: 'kanban', labelKey: 'settings.appearance.kanbanBoard' },
+    { id: 'kanban-behavior', labelKey: 'settings.appearance.kanbanColumnStatus' },
+    { id: 'advanced-ui', labelKey: 'settings.interface.advancedUi' },
+  ],
+  profile: [
+    { id: 'about-me', labelKey: 'settings.preferences.title' },
+    { id: 'workspace', labelKey: 'settings.workspace.workspaceSettings' },
+    { id: 'workspace-appearance', labelKey: 'settings.appearance.workspaceThemes' },
+    { id: 'labels', labelKey: 'settings.labels.title' },
+  ],
+  ai: [
+    { id: 'defaults', labelKey: 'settings.ai.defaultSection' },
+    { id: 'workspace-overrides', labelKey: 'settings.ai.workspaceOverrides' },
+    { id: 'connections', labelKey: 'settings.ai.connections' },
+    { id: 'performance', labelKey: 'settings.ai.performance' },
+  ],
+  browser: [
+    { id: 'general', labelKey: 'settings.browser.general' },
+    { id: 'browsing-data', labelKey: 'settings.browser.browsingData' },
+    { id: 'bookmarks', labelKey: 'settings.bookmarks.title' },
+    { id: 'downloads', labelKey: 'settings.browser.downloads' },
+    { id: 'permissions', labelKey: 'settings.browser.permissions' },
+    { id: 'advanced', labelKey: 'settings.browser.advanced' },
+  ],
+  integrations: [
+    { id: 'messaging', labelKey: 'settings.messaging.title' },
+    { id: 'remote-access', labelKey: 'settings.server.remoteAccess' },
+    { id: 'tools', labelKey: 'settings.tools.title' },
+    { id: 'credentials', labelKey: 'settings.integrations.credentialsTitle' },
+    { id: 'proxy', labelKey: 'settings.network.title' },
+  ],
+  security: [
+    { id: 'agent-permissions', labelKey: 'settings.workspace.permissionsSection' },
+    { id: 'permission-rules', labelKey: 'settings.permissions.title' },
+    { id: 'privacy', labelKey: 'settings.privacy.title' },
+  ],
 }
 
 /**
  * SettingsItemRow - Individual settings item with dropdown menu
  * Tracks menu open state to keep "..." button visible when menu is open
  */
-function SettingsItemRow({ item, isSelected, onSelect }: SettingsItemRowProps) {
+function SettingsItemRow({
+  item,
+  isSelected,
+  isExpanded,
+  onSelect,
+  onToggle,
+}: SettingsItemRowProps) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const Icon = item.icon
@@ -70,7 +132,7 @@ function SettingsItemRow({ item, isSelected, onSelect }: SettingsItemRowProps) {
   }
 
   return (
-    <div className="group relative select-none" data-selected={isSelected || undefined}>
+    <div className="group/setting relative select-none" data-selected={isSelected || undefined}>
       <button
         type="button"
         onClick={onSelect}
@@ -84,7 +146,7 @@ function SettingsItemRow({ item, isSelected, onSelect }: SettingsItemRowProps) {
       >
         <Icon
           className={cn(
-            'h-[17px] w-[17px] shrink-0',
+            'h-[17px] w-[17px] shrink-0 transition-opacity group-hover/setting:opacity-0',
             isSelected ? 'text-foreground' : 'text-muted-foreground',
           )}
         />
@@ -93,9 +155,29 @@ function SettingsItemRow({ item, isSelected, onSelect }: SettingsItemRowProps) {
 
       <div
         data-touch-reveal="true"
+        className="absolute left-3 top-1/2 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/setting:opacity-100"
+      >
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={isExpanded ? t('menu.collapse') : t('menu.expand')}
+          aria-expanded={isExpanded}
+          className="flex h-[17px] w-[17px] items-center justify-center text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight
+            className={cn(
+              'h-4 w-4 transition-transform duration-200',
+              isExpanded && 'rotate-90',
+            )}
+          />
+        </button>
+      </div>
+
+      <div
+        data-touch-reveal="true"
         className={cn(
           'absolute right-1.5 top-1/2 z-10 -translate-y-1/2 transition-opacity',
-          menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          menuOpen ? 'opacity-100' : 'opacity-0 group-hover/setting:opacity-100',
         )}
       >
         <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
@@ -124,82 +206,73 @@ function SettingsItemRow({ item, isSelected, onSelect }: SettingsItemRowProps) {
 
 export default function SettingsNavigator({
   selectedSubpage,
+  selectedSection,
   onSelectSubpage,
+  onSelectSection,
 }: SettingsNavigatorProps) {
   const { t } = useTranslation()
 
   const settingsItems: SettingsItem[] = useMemo(() =>
     SETTINGS_MENU_ITEMS.map((item) => ({
       id: item.id,
-      label:
-        item.id === 'app'
-          ? t('shortcuts.category.general')
-          : item.id === 'server'
-            ? t('settings.workspace.advanced')
-            : t(item.labelKey),
+      label: t(item.labelKey),
       icon: SETTINGS_ICONS[item.id],
     })),
     [t]
   )
 
-  const itemsById = useMemo(
-    () => new Map(settingsItems.map((item) => [item.id, item])),
-    [settingsItems],
-  )
+  const effectiveSubpage = selectedSubpage ?? 'app'
+  const [expandedSubpage, setExpandedSubpage] = useState<SettingsSubpage | null>(effectiveSubpage)
 
-  const sections: SettingsSection[] = useMemo(() => [
-    {
-      id: 'application',
-      label: t('settings.group.application'),
-      pages: ['app', 'input', 'appearance', 'preferences'],
-    },
-    {
-      id: 'work',
-      label: t('settings.group.work'),
-      pages: ['ai', 'workspace', 'labels'],
-    },
-    {
-      id: 'connections',
-      label: t('settings.group.connections'),
-      pages: ['accounts', 'messaging'],
-    },
-    {
-      id: 'system',
-      label: t('settings.group.system'),
-      // privacy / cognition are first-class settings pages (v0.16+)
-      pages: ['privacy', 'permissions', 'cognition', 'server'],
-    },
-  ], [t])
+  useEffect(() => {
+    setExpandedSubpage(effectiveSubpage)
+  }, [effectiveSubpage])
 
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
-        <div className="space-y-5">
-          {sections.map((section) => {
-            const items = section.pages
-              .map((pageId) => itemsById.get(pageId))
-              .filter((item): item is SettingsItem => item != null)
-            if (items.length === 0) return null
+        <div className="space-y-0.5">
+          {settingsItems.map((item) => {
+            const sectionLinks: LinkItem[] = (SETTINGS_SECTIONS[item.id] ?? []).map((section) => ({
+              id: `settings:${item.id}:${section.id}`,
+              title: <span className="min-w-0 truncate">{t(section.labelKey)}</span>,
+              icon: <span className="h-1 w-1 rounded-full bg-current" />,
+              variant:
+                effectiveSubpage === item.id && selectedSection === section.id
+                  ? 'default'
+                  : 'ghost',
+              onClick: () => onSelectSection?.(item.id, section.id),
+            }))
+            const isExpanded = expandedSubpage === item.id
 
             return (
-              <section key={section.id} aria-labelledby={`settings-section-${section.id}`}>
-                <h2
-                  id={`settings-section-${section.id}`}
-                  className="px-3 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground/65"
-                >
-                  {section.label}
-                </h2>
-                <div className="space-y-0.5">
-                  {items.map((item) => (
-                    <SettingsItemRow
-                      key={item.id}
-                      item={item}
-                      isSelected={selectedSubpage === item.id}
-                      onSelect={() => onSelectSubpage(item.id)}
-                    />
-                  ))}
-                </div>
-              </section>
+              <div key={item.id} className="group/section">
+                <SettingsItemRow
+                  item={item}
+                  isSelected={effectiveSubpage === item.id}
+                  isExpanded={isExpanded}
+                  onSelect={() => {
+                    setExpandedSubpage(item.id)
+                    onSelectSubpage(item.id)
+                  }}
+                  onToggle={() => {
+                    setExpandedSubpage((current) => current === item.id ? null : item.id)
+                  }}
+                />
+                <AnimatePresence initial={false}>
+                  {isExpanded && sectionLinks.length > 0 && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
+                      animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 }}
+                      exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <LeftSidebar isCollapsed={false} isNested links={sectionLinks} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             )
           })}
         </div>

@@ -80,7 +80,7 @@ function normalizeServerConfig(basePath: string, value: unknown): SdkMcpServerCo
   const url = normalizeString(value.url);
   if (!url) return null;
   return {
-    type: type === 'sse' ? 'sse' : 'http',
+    type: 'http',
     url,
     headers: normalizeStringRecord(value.headers),
     bearerTokenEnvVar: normalizeString(value.bearerTokenEnvVar),

@@ -38,7 +38,8 @@ import {
 import type { ConfirmDialogSpec, FileDialogSpec, BrowserCapabilityRequest } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
-import type { ElectronAPI } from '../shared/types'
+import type { ElectronAPI, FileAttachment } from '../shared/types'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -220,8 +221,26 @@ function formatTransportReason(state: TransportConnectionState): string {
 
 // Log remote connection state changes to main process (visible in terminal + main.log).
 // Activates whenever the workspace connection is remote (thin client or remote workspace).
+let lastDynamicTransportStatus: TransportConnectionState['status'] | undefined
 client.onConnectionStateChanged((state) => {
   if (state.mode !== 'remote') return
+
+  // Dynamic Center is durable; emit only status transitions, never each retry
+  // tick. A broken remote connection remains actionable until the user handles
+  // it, while a recovery is informational.
+  if (lastDynamicTransportStatus !== state.status) {
+    const previous = lastDynamicTransportStatus
+    lastDynamicTransportStatus = state.status
+    const workspaceId = ipcRenderer.sendSync('__get-workspace-id') as string
+    if (workspaceId && (state.status === 'failed' || state.status === 'disconnected' || (state.status === 'connected' && previous && previous !== 'connected'))) {
+      void (api as any).createDynamicItem(workspaceId, {
+        kind: 'connection',
+        title: state.status === 'connected' ? 'Remote connection restored' : 'Remote connection needs attention',
+        body: state.status === 'connected' ? state.url : formatTransportReason(state),
+        requiresAction: state.status !== 'connected', priority: state.status === 'connected' ? 'normal' : 'high', source: {},
+      }).catch(() => {})
+    }
+  }
 
   const emitToMain = (level: 'info' | 'warn' | 'error', message: string) => {
     ipcRenderer.send('__transport:status', {
@@ -438,6 +457,26 @@ client.onConnectionStateChanged((state) => {
 
 // i18n: sync language changes to main process (for native menus/dialogs)
 ;(api as ElectronAPI).changeLanguage = (lang: string) => ipcRenderer.invoke('i18n:changeLanguage', lang)
+
+;(api as ElectronAPI).captureCurrentScreen = () => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.CURRENT)
+;(api as ElectronAPI).getDoubleCommandScreenshotEnabled = () => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.GET_SHORTCUT_ENABLED)
+;(api as ElectronAPI).setDoubleCommandScreenshotEnabled = (enabled: boolean) => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.SET_SHORTCUT_ENABLED, enabled)
+;(api as ElectronAPI).getDoubleCommandScreenshotHideApp = () => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.GET_HIDE_APP)
+;(api as ElectronAPI).setDoubleCommandScreenshotHideApp = (enabled: boolean) => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.SET_HIDE_APP, enabled)
+;(api as ElectronAPI).getDoubleCommandScreenshotStatus = () => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.GET_SHORTCUT_STATUS)
+;(api as ElectronAPI).getScreenCapturePermissionStatus = () => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.GET_PERMISSION_STATUS)
+;(api as ElectronAPI).openScreenCapturePermissionSettings = (permission) => ipcRenderer.invoke(RPC_CHANNELS.screenCapture.OPEN_PERMISSION_SETTINGS, permission)
+;(api as ElectronAPI).onScreenCapture = (callback) => {
+  const handler = (_event: IpcRendererEvent, result: { ok: true; attachment: FileAttachment } | { ok: false; error: string }) => callback(result)
+  ipcRenderer.on(RPC_CHANNELS.screenCapture.RESULT, handler)
+  return () => ipcRenderer.removeListener(RPC_CHANNELS.screenCapture.RESULT, handler)
+}
+ipcRenderer.on(RPC_CHANNELS.screenCapture.REQUESTED, () => {
+  void (api as ElectronAPI).captureCurrentScreen()
+})
+ipcRenderer.on(RPC_CHANNELS.screenCapture.SHORTCUT_STATUS, (_event, status: string) => {
+  window.dispatchEvent(new CustomEvent('craft:screen-capture-shortcut-status', { detail: status }))
+})
 
 // webUtils.getPathForFile: returns the absolute OS path of a File object obtained
 // from <input type="file"> or OS drag-drop. Returns null for Files fabricated from

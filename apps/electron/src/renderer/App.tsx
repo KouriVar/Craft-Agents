@@ -85,8 +85,9 @@ import { rendererLog } from '@/lib/logger'
 import { widgetDescriptorFromHostCommand } from '@/lib/widget-runtime/host-command'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
-import { DEFAULT_EXPLORE_SETTINGS, getExploreSettings, type ExploreSettings } from '@/lib/explore-settings'
+import { DEFAULT_TASK_REMINDER_SETTINGS, getTaskReminderSettings, type TaskReminderSettings } from '@/lib/task-reminder-settings'
 import { shouldNotifyTaskReminder } from '@/lib/task-reminders'
+import { dispatchFocusInputEvent } from '@/components/app-shell/input/focus-input-events'
 
 type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'ready'
 
@@ -762,7 +763,7 @@ export default function App() {
   const notifiedTaskReminders = useRef(new Set<string>())
   useEffect(() => {
     if (appState !== 'ready' || !windowWorkspaceId) return
-    let settings: ExploreSettings = DEFAULT_EXPLORE_SETTINGS
+    let settings: TaskReminderSettings = DEFAULT_TASK_REMINDER_SETTINGS
     let disposed = false
 
     const checkReminders = () => {
@@ -775,6 +776,9 @@ export default function App() {
         notifiedTaskReminders.current.add(key)
         const title = session.name || t('taskContinuity.reminderTitle', { defaultValue: '任务提醒' })
         const body = session.taskGoal || session.preview || t('taskContinuity.reminderBody', { defaultValue: '该继续处理这个任务了。' })
+        void window.electronAPI.createDynamicItem(windowWorkspaceId, {
+          kind: 'reminder', title, body, requiresAction: true, priority: 'normal', source: { sessionId: session.id },
+        }).catch(() => { /* Dynamic Center is best-effort; reminder acknowledgement still persists below. */ })
         if (isWindowFocused) {
           toast.info(title, {
             description: body,
@@ -783,8 +787,6 @@ export default function App() {
               onClick: () => navigate(routes.view.allSessions(session.id)),
             },
           })
-        } else {
-          void window.electronAPI.showNotification(title, body.slice(0, 100), windowWorkspaceId, session.id).catch(() => {})
         }
         void window.electronAPI.sessionCommand(session.id, { type: 'setTaskDetails', patch: { markReminderNotified: true } }).catch(() => {
           // The in-memory key still prevents repeat notifications in this run;
@@ -794,25 +796,25 @@ export default function App() {
     }
 
     const loadSettings = () => {
-      void getExploreSettings().then((next) => {
+      void getTaskReminderSettings().then((next) => {
         if (disposed) return
         settings = next
         checkReminders()
       })
     }
     const handleSettingsChanged = (event: Event) => {
-      const detail = (event as CustomEvent<ExploreSettings>).detail
+      const detail = (event as CustomEvent<TaskReminderSettings>).detail
       if (detail) settings = detail
       checkReminders()
     }
 
     loadSettings()
     const interval = window.setInterval(checkReminders, 30_000)
-    window.addEventListener('craft:explore-settings-changed', handleSettingsChanged)
+    window.addEventListener('craft:task-reminder-settings-changed', handleSettingsChanged)
     return () => {
       disposed = true
       window.clearInterval(interval)
-      window.removeEventListener('craft:explore-settings-changed', handleSettingsChanged)
+      window.removeEventListener('craft:task-reminder-settings-changed', handleSettingsChanged)
     }
   }, [appState, isWindowFocused, notificationsEnabled, store, t, windowWorkspaceId])
 
@@ -1649,6 +1651,46 @@ export default function App() {
     }
     schedulePersistDraft(sessionId)
   }, [schedulePersistDraft])
+
+  // The desktop capture path is intentionally draft-only: it appends to the
+  // selected existing session and leaves message dispatch under user control.
+  useEffect(() => window.electronAPI.onScreenCapture((result) => {
+    if (!result.ok) {
+      if (result.error === 'duplicate-capture-suppressed') return
+      toast.error(result.error || '截图失败')
+      return
+    }
+    void (async () => {
+      let sessionId = sessionSelection.selected
+      if (!sessionId) {
+        if (!windowWorkspaceId) throw new Error('没有可附加截图的当前会话')
+        const session = await handleCreateSession(windowWorkspaceId)
+        sessionId = session.id
+        navigate(routes.view.allSessions(session.id))
+      }
+      const existing = await hydrateDraftAttachments(sessionId)
+      const nextAttachments = [...existing, result.attachment]
+      handleAttachmentsChange(sessionId, nextAttachments)
+      window.dispatchEvent(new CustomEvent('craft:draft-attachments-updated', {
+        detail: { sessionId, attachments: nextAttachments },
+      }))
+      dispatchFocusInputEvent({ sessionId })
+      toast.success('截图已添加到输入框，尚未发送')
+    })().catch(() => toast.error('截图已捕获，但添加到输入框失败'))
+  }), [handleAttachmentsChange, handleCreateSession, hydrateDraftAttachments, navigate, sessionSelection.selected, windowWorkspaceId])
+
+  useEffect(() => {
+    const onShortcutStatus = (event: Event) => {
+      const status = (event as CustomEvent<string>).detail
+      if (status === 'accessibility-denied') {
+        toast.error('双 Command 截图需要在“系统设置 → 隐私与安全性 → 辅助功能”中允许 CraftAgent')
+      } else if (status === 'unavailable') {
+        toast.error('双 Command 截图快捷键不可用；请重新安装或检查 macOS 权限')
+      }
+    }
+    window.addEventListener('craft:screen-capture-shortcut-status', onShortcutStatus)
+    return () => window.removeEventListener('craft:screen-capture-shortcut-status', onShortcutStatus)
+  }, [])
 
   // Open new chat - creates session and selects it
   // Used by components via AppShellContext and for programmatic navigation

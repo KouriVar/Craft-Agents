@@ -56,7 +56,7 @@ import {
 } from '@/atoms/messaging'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import type { MessagingPlatformRuntimeInfo } from '../../../shared/types'
 
 export const meta: DetailsPageMeta = {
@@ -64,7 +64,7 @@ export const meta: DetailsPageMeta = {
   slug: 'messaging',
 }
 
-export default function MessagingSettingsPage() {
+export default function MessagingSettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const activeWorkspace = useActiveWorkspace()
   const setBindings = useSetAtom(setMessagingBindingsAtom)
@@ -95,11 +95,7 @@ export default function MessagingSettingsPage() {
 
   if (!activeWorkspace) return null
 
-  return (
-    <div className="flex h-full flex-col">
-      <PanelHeader title={t('settings.messaging.title')} />
-      <ScrollArea className="h-full">
-        <div className="space-y-6 px-5 py-7 max-w-3xl mx-auto">
+  const body = (
           <SettingsSection title={t('settings.messaging.title')}>
             <SettingsCard>
               <PlatformRow platform="lark" workspaceId={activeWorkspace.id} />
@@ -108,6 +104,16 @@ export default function MessagingSettingsPage() {
               <PlatformRow platform="wechat" workspaceId={activeWorkspace.id} />
             </SettingsCard>
           </SettingsSection>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className="flex h-full flex-col">
+      <PanelHeader title={t('settings.messaging.title')} />
+      <ScrollArea className="h-full">
+        <div className="space-y-6 px-5 py-7 max-w-3xl mx-auto">
+          {body}
         </div>
       </ScrollArea>
     </div>

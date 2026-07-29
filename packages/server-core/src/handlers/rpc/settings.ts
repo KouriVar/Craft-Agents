@@ -34,6 +34,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION,
   RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE,
   RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE,
+  RPC_CHANNELS.screenCapture.GET_HIDE_APP,
+  RPC_CHANNELS.screenCapture.SET_HIDE_APP,
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
   RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
@@ -303,6 +305,16 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE, async (_ctx, value: string) => {
     const { setBrowserOpenMode } = await import('@craft-agent/shared/config/storage')
     setBrowserOpenMode(value as 'sidebar' | 'window')
+  })
+
+  server.handle(RPC_CHANNELS.screenCapture.GET_HIDE_APP, async () => {
+    const { getDoubleCommandScreenshotHideApp } = await import('@craft-agent/shared/config/storage')
+    return getDoubleCommandScreenshotHideApp()
+  })
+
+  server.handle(RPC_CHANNELS.screenCapture.SET_HIDE_APP, async (_ctx, enabled: boolean) => {
+    const { setDoubleCommandScreenshotHideApp } = await import('@craft-agent/shared/config/storage')
+    setDoubleCommandScreenshotHideApp(enabled)
   })
 
   // Right sidebar follow session

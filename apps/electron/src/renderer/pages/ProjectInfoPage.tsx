@@ -8,12 +8,13 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAtomValue } from 'jotai'
-import { Brain, FolderKanban, FolderOpen, Play, Plus, Trash2, Upload } from 'lucide-react'
+import { FolderKanban, FolderOpen, Play, Plus, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { navigate, routes } from '@/lib/navigate'
 import { sessionMetaMapAtom } from '@/atoms/sessions'
 import { browserWorkspaceTabsAtom } from '@/atoms/browser-workspace'
+import { automationsAtom } from '@/atoms/automations'
 import { buildContinueTaskPrompt, findProjectResumeSession } from '@/lib/project-resume'
 import { findProjectBrowserTabs } from '@/lib/project-browser-tabs'
 import { setLastActiveProjectId } from '@/lib/last-active-project'
@@ -25,18 +26,22 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { PROJECT_COLOR_PALETTE } from '@/utils/project-colors'
 import { InlineColorPickerRow } from '@/components/ui/inline-color-picker-row'
+import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import type { LoadedProject, ProjectAsset } from '@craft-agent/shared/projects/types'
+import type { ExpertProfile } from '@craft-agent/shared/experts'
 import type { LibraryIndexEntry, CognitionEventSummary } from '@craft-agent/shared/protocol'
+import type { PausedProjectAutomation } from '@craft-agent/shared/automations'
 
 interface ProjectInfoPageProps {
   projectSlug: string
 }
 
-type TabKey = 'sessions' | 'assets' | 'memory' | 'settings' | 'activity'
+type TabKey = 'sessions' | 'knowledge' | 'files' | 'automations' | 'settings'
 
 export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const { t } = useTranslation()
@@ -44,6 +49,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const workspaceId = workspace?.id
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const browserTabs = useAtomValue(browserWorkspaceTabsAtom)
+  const automations = useAtomValue(automationsAtom)
   const { onCreateSession, onOpenFile, onSendMessage } = useAppShellContext()
 
   const [project, setProject] = useState<LoadedProject | null>(null)
@@ -56,10 +62,15 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const [editWorkingDir, setEditWorkingDir] = useState('')
   const [editDetails, setEditDetails] = useState('')
   const [editColor, setEditColor] = useState<string>('')
+  const [experts, setExperts] = useState<ExpertProfile[]>([])
+  const [editDefaultExpertId, setEditDefaultExpertId] = useState('')
+  const [editAvailableExpertIds, setEditAvailableExpertIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [memory, setMemory] = useState('')
   const [memoryLoaded, setMemoryLoaded] = useState(false)
   const [memorySaving, setMemorySaving] = useState(false)
+  const [restoreCandidates, setRestoreCandidates] = useState<PausedProjectAutomation[] | null>(null)
+  const [restoreSelection, setRestoreSelection] = useState<string[]>([])
   const [activity, setActivity] = useState<{
     docs: LibraryIndexEntry[]
     events: CognitionEventSummary[]
@@ -86,6 +97,10 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
       setEditWorkingDir(loaded.config.workingDirectory ?? '')
       setEditDetails(loaded.config.details ?? '')
       setEditColor(loaded.config.color ?? '')
+      setEditDefaultExpertId(loaded.config.defaultExpertId ?? '')
+      setEditAvailableExpertIds(loaded.config.availableExpertIds ?? [])
+      const availableExperts = await window.electronAPI.listExperts(workspaceId)
+      setExperts(availableExperts)
       // Workspace-scoped pointer for Explore/Today "Continue project" (no launch routing).
       setLastActiveProjectId(workspaceId, loaded.config.id)
     } catch (err) {
@@ -110,7 +125,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     }
   }, [workspaceId, loadProject])
 
-  // Load assets when entering Assets tab
+  // Load project files when entering the Files tab.
   const refreshAssets = useCallback(async () => {
     if (!workspaceId) return
     try {
@@ -122,11 +137,11 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   }, [workspaceId, projectSlug])
 
   useEffect(() => {
-    if (tab === 'assets') refreshAssets()
+    if (tab === 'files') refreshAssets()
   }, [tab, refreshAssets])
 
   useEffect(() => {
-    if (tab !== 'memory' || !workspaceId || memoryLoaded) return
+    if (tab !== 'settings' || !workspaceId || memoryLoaded) return
     void window.electronAPI.getProjectMemory(workspaceId, projectSlug)
       .then((value) => { setMemory(value); setMemoryLoaded(true) })
       .catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
@@ -149,12 +164,17 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     if (!project) return []
     const result: { id: string; name: string }[] = []
     for (const meta of sessionMetaMap.values()) {
-      if ((meta as { projectId?: string }).projectId === project.config.id) {
+      if ((meta as { projectId?: string }).projectId === project.config.id && !meta.parentSessionId) {
         result.push({ id: meta.id, name: meta.name ?? meta.id })
       }
     }
     return result
   }, [project, sessionMetaMap])
+
+  const projectAutomations = useMemo(
+    () => project ? automations.filter((automation) => automation.projectId === project.config.id) : [],
+    [automations, project],
+  )
 
   // Recent project sessions sorted by last activity (reuses sessionMetaMap,
   // no new session query). Falls back to createdAt when lastMessageAt is absent.
@@ -162,7 +182,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     if (!project) return [] as { id: string; name: string; ts: number }[]
     const result: { id: string; name: string; ts: number }[] = []
     for (const meta of sessionMetaMap.values()) {
-      if ((meta as { projectId?: string }).projectId === project.config.id) {
+      if ((meta as { projectId?: string }).projectId === project.config.id && !meta.parentSessionId) {
         result.push({
           id: meta.id,
           name: meta.name ?? meta.id,
@@ -200,11 +220,9 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     navigate(routes.view.allSessions(resumeSession.id))
   }, [resumeSession])
 
-  // Lazy-load Library docs + Cognition browser events for the Activity tab.
-  // Library list uses server-side projectId filter (v0.16.2); cognition events
-  // already support projectId + types filtering.
+  // Project knowledge is a filtered view of the unified knowledge library.
   useEffect(() => {
-    if (tab !== 'activity' || !workspaceId || !project) return
+    if (tab !== 'knowledge' || !workspaceId || !project) return
     if (activity.loadedFor === project.config.id) return
     let cancelled = false
     setActivity((prev) => ({ ...prev, loading: true }))
@@ -215,7 +233,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
           window.electronAPI.listCognitionEvents({
             workspaceId,
             projectId: project.config.id,
-            types: ['browser.page_opened'],
+          types: ['browser.page_opened'],
             limit: 5,
           }),
         ])
@@ -268,6 +286,8 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
         workingDirectory: editWorkingDir.trim() || undefined,
         details: editDetails.trim() || undefined,
         color: editColor.trim() || undefined,
+        defaultExpertId: editDefaultExpertId || undefined,
+        availableExpertIds: editAvailableExpertIds.length ? editAvailableExpertIds : undefined,
       })
       toast.success(t('projectInfo.saved'))
     } catch (err) {
@@ -276,7 +296,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     } finally {
       setSaving(false)
     }
-  }, [workspaceId, project, editName, editDescription, editWorkingDir, editDetails, editColor, t])
+  }, [workspaceId, project, editName, editDescription, editWorkingDir, editDetails, editColor, editDefaultExpertId, editAvailableExpertIds, t])
 
   const handleDeleteProject = useCallback(async () => {
     if (!workspaceId || !project) return
@@ -287,6 +307,27 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     } catch (err) {
       console.error('[ProjectInfoPage] Delete failed:', err)
       toast.error(t('projectInfo.deleteFailed'))
+    }
+  }, [workspaceId, project, t])
+
+  const handleArchiveProject = useCallback(async () => {
+    if (!workspaceId || !project) return
+    try {
+      const restoring = Boolean(project.config.archivedAt)
+      await window.electronAPI.updateProject(workspaceId, project.config.slug, {
+        archivedAt: project.config.archivedAt ? undefined : Date.now(),
+      })
+      if (restoring) {
+        const candidates = await window.electronAPI.listPausedProjectAutomations(workspaceId, project.config.slug)
+        setRestoreCandidates(candidates); setRestoreSelection(candidates.map((item) => item.id))
+      }
+      toast.success(project.config.archivedAt
+        ? t('projectInfo.unarchived', { defaultValue: 'Project restored' })
+        : t('projectInfo.archived', { defaultValue: 'Project archived' }))
+      if (!restoring) navigate(routes.view.projects())
+    } catch (err) {
+      console.error('[ProjectInfoPage] Archive failed:', err)
+      toast.error(t('projectInfo.saveFailed'))
     }
   }, [workspaceId, project, t])
 
@@ -320,6 +361,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   }, [workspaceId, project, refreshAssets, t])
 
   return (
+    <>
     <Info_Page
       loading={loading}
       error={error ?? undefined}
@@ -409,17 +451,17 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             <TabButton active={tab === 'sessions'} onClick={() => setTab('sessions')}>
               {t('projectInfo.tabSessions')}
             </TabButton>
-            <TabButton active={tab === 'assets'} onClick={() => setTab('assets')}>
-              {t('projectInfo.tabAssets')}
+            <TabButton active={tab === 'knowledge'} onClick={() => setTab('knowledge')}>
+              {t('library.title', { defaultValue: 'Knowledge' })}
             </TabButton>
-            <TabButton active={tab === 'memory'} onClick={() => setTab('memory')}>
-              {t('projectInfo.tabMemory', { defaultValue: 'Memory' })}
+            <TabButton active={tab === 'files'} onClick={() => setTab('files')}>
+              {t('projectInfo.tabFiles', { defaultValue: 'Files' })}
+            </TabButton>
+            <TabButton active={tab === 'automations'} onClick={() => setTab('automations')}>
+              {t('sidebar.automations', { defaultValue: 'Automations' })}
             </TabButton>
             <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
               {t('projectInfo.tabSettings')}
-            </TabButton>
-            <TabButton active={tab === 'activity'} onClick={() => setTab('activity')}>
-              {t('projectInfo.tabActivity', { defaultValue: 'Activity' })}
             </TabButton>
           </div>
 
@@ -456,10 +498,10 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             </Info_Section>
           )}
 
-          {/* Assets tab */}
-          {tab === 'assets' && (
+          {/* Files tab */}
+          {tab === 'files' && (
             <Info_Section
-              title={t('projectInfo.tabAssets')}
+              title={t('projectInfo.tabFiles', { defaultValue: 'Files' })}
               actions={
                 <label
                   className="inline-flex items-center gap-1 h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors cursor-pointer"
@@ -508,25 +550,46 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             </Info_Section>
           )}
 
-          {tab === 'memory' && (
+          {tab === 'automations' && (
             <Info_Section
-              title={t('projectInfo.tabMemory', { defaultValue: 'Long-term memory' })}
-              actions={<Button size="sm" onClick={() => void handleSaveMemory()} disabled={memorySaving}>{memorySaving ? t('common.saving') : t('common.save')}</Button>}
-            >
-              <div className="space-y-3 px-4 py-3">
-                <div className="flex items-start gap-2 rounded-lg bg-foreground-2 p-3 text-xs leading-5 text-muted-foreground">
-                  <Brain className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p>{t('projectInfo.memoryHelp', { defaultValue: 'CA retrieves this memory for every task in the project. Keep stable decisions, conventions, unresolved questions, and important context here; put newest or most important items first.' })}</p>
+              title={t('sidebar.automations', { defaultValue: 'Automations' })}
+              actions={
+                <div className="flex items-center gap-1">
+                  <EditPopover
+                    trigger={<Button size="sm" variant="ghost">{t('automations.addAutomation', { defaultValue: 'New automation' })}</Button>}
+                    {...getEditConfig('automation-config', workspace?.rootPath ?? '')}
+                    context={{
+                      ...getEditConfig('automation-config', workspace?.rootPath ?? '').context,
+                      context: `${getEditConfig('automation-config', workspace?.rootPath ?? '').context.context}\n\nCreate this automation for projectId "${project.config.id}". Every matcher you add must include projectId: "${project.config.id}".`,
+                    }}
+                    defaultValue={`Create a new automation scoped to projectId "${project.config.id}".`}
+                  />
+                  <Button size="sm" variant="ghost" onClick={() => navigate(routes.view.automations())}>
+                    {t('common.manage', { defaultValue: 'Manage' })}
+                  </Button>
                 </div>
-                <Textarea
-                  value={memory}
-                  onChange={(event) => setMemory(event.target.value)}
-                  rows={18}
-                  className="min-h-[320px] font-mono text-xs leading-5"
-                  placeholder={t('projectInfo.memoryPlaceholder', { defaultValue: '# Project memory\n\n- Decisions\n- Conventions\n- Open questions' })}
-                />
-                <div className="text-xs text-muted-foreground">MEMORY.md · {memory.length.toLocaleString()} characters</div>
-              </div>
+              }
+            >
+              {projectAutomations.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground">
+                  {t('automations.noAutomationsConfigured', { defaultValue: 'No automations for this project yet' })}
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/50">
+                  {projectAutomations.map((automation) => (
+                    <li key={automation.id} className="px-4 py-2">
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => navigate(routes.view.automations({ automationId: automation.id }))}
+                      >
+                        <div className="text-sm text-foreground">{automation.name}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{automation.summary}</div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Info_Section>
           )}
 
@@ -534,6 +597,26 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
           {tab === 'settings' && (
             <Info_Section title={t('projectInfo.tabSettings')}>
               <div className="space-y-4 px-4 py-3">
+                <Field
+                  label={t('projectInfo.tabMemory', { defaultValue: 'Project memory' })}
+                  hint={t('projectInfo.memoryHelp', { defaultValue: 'CA retrieves this memory for every task in the project. Keep stable decisions, conventions, unresolved questions, and important context here; put newest or most important items first.' })}
+                >
+                  <div className="space-y-2">
+                    <Textarea
+                      value={memory}
+                      onChange={(event) => setMemory(event.target.value)}
+                      rows={10}
+                      className="min-h-[180px] font-mono text-xs leading-5"
+                      placeholder={t('projectInfo.memoryPlaceholder', { defaultValue: '# Project memory\n\n- Decisions\n- Conventions\n- Open questions' })}
+                    />
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>MEMORY.md · {memory.length.toLocaleString()} characters</span>
+                      <Button size="sm" variant="outline" onClick={() => void handleSaveMemory()} disabled={memorySaving}>
+                        {memorySaving ? t('common.saving') : t('common.save')}
+                      </Button>
+                    </div>
+                  </div>
+                </Field>
                 <Field label={t('projectInfo.title')}>
                   <Input
                     value={editName}
@@ -586,15 +669,33 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
                     placeholder={t('projectInfo.detailsPlaceholder')}
                   />
                 </Field>
+                <Field label="默认专家" hint="此项目中新建会话会继承该专家；创建时可单独覆盖。">
+                  <select value={editDefaultExpertId} onChange={(event) => setEditDefaultExpertId(event.target.value)} className="flex h-control-md w-full rounded-control border border-foreground/15 bg-transparent px-3 text-sm">
+                    <option value="">通用助手</option>
+                    {experts.map(expert => <option key={expert.id} value={expert.id}>{expert.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="可用专家" hint="留空表示本项目可使用所有专家。">
+                  <div className="mt-1 space-y-1 rounded-control border border-foreground/15 p-3">
+                    {experts.length === 0 ? <p className="text-sm text-muted-foreground">尚未创建专家</p> : experts.map(expert => <label key={expert.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editAvailableExpertIds.includes(expert.id)} onChange={() => setEditAvailableExpertIds(current => current.includes(expert.id) ? current.filter(id => id !== expert.id) : [...current, expert.id])} />{expert.name}</label>)}
+                  </div>
+                </Field>
                 <div className="flex justify-between pt-2">
-                  <Button
-                    variant="ghost"
-                    onClick={handleDeleteProject}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />
-                    {t('projectInfo.deleteProject')}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" onClick={handleArchiveProject}>
+                      {project.config.archivedAt
+                        ? t('projectInfo.unarchive', { defaultValue: 'Restore project' })
+                        : t('projectInfo.archive', { defaultValue: 'Archive project' })}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={handleDeleteProject}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      {t('projectInfo.deleteProject')}
+                    </Button>
+                  </div>
                   <Button onClick={handleSaveSettings} disabled={saving}>
                     {saving ? t('common.saving') : t('common.save')}
                   </Button>
@@ -603,38 +704,21 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
             </Info_Section>
           )}
 
-          {/* Activity tab — recent sessions / docs / browser links for this project */}
-          {tab === 'activity' && (
-            <Info_Section title={t('projectInfo.tabActivity', { defaultValue: 'Activity' })}>
+          {/* Knowledge is a project-filtered view of the unified library. */}
+          {tab === 'knowledge' && (
+            <Info_Section title={t('library.title', { defaultValue: 'Knowledge' })}>
               {activity.loading ? (
                 <div className="px-4 py-6 text-sm text-muted-foreground">
                   {t('projectInfo.activityLoading', { defaultValue: 'Loading…' })}
                 </div>
-              ) : recentProjectSessions.length === 0
-                && activity.docs.length === 0
-                && activity.events.length === 0
-                && relatedBrowserTabs.length === 0 ? (
+              ) : activity.docs.length === 0 ? (
                 <div className="px-4 py-6 text-sm text-muted-foreground">
-                  {t('projectInfo.activityEmpty', { defaultValue: 'No recent activity' })}
+                  {t('library.empty', { defaultValue: 'No project knowledge yet' })}
                 </div>
               ) : (
                 <div className="divide-y divide-border/50">
-                  {/* Recent sessions */}
-                  {recentProjectSessions.length > 0 && (
-                    <ActivityGroup label={t('projectInfo.activitySessions', { defaultValue: 'Recent sessions' })}>
-                      {recentProjectSessions.map((s) => (
-                        <ActivityRow
-                          key={s.id}
-                          ts={s.ts}
-                          onClick={() => navigate(routes.view.allSessions(s.id))}
-                          primary={s.name}
-                        />
-                      ))}
-                    </ActivityGroup>
-                  )}
-                  {/* Recent library documents */}
                   {activity.docs.length > 0 && (
-                    <ActivityGroup label={t('projectInfo.activityDocs', { defaultValue: 'Recent documents' })}>
+                    <ActivityGroup label={t('library.title', { defaultValue: 'Knowledge' })}>
                       {activity.docs.map((d) => (
                         <ActivityRow
                           key={d.id}
@@ -643,62 +727,6 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
                           primary={d.title || d.id}
                         />
                       ))}
-                    </ActivityGroup>
-                  )}
-                  {/* Related open browser tabs (ownerSessionId → projectId) */}
-                  {relatedBrowserTabs.length > 0 && (
-                    <ActivityGroup label={t('projectInfo.activityRelatedTabs')}>
-                      {relatedBrowserTabs.map((tabItem) => (
-                        <ActivityRow
-                          key={tabItem.id}
-                          ts={0}
-                          onClick={() => navigate(routes.view.browser(tabItem.id))}
-                          primary={tabItem.title}
-                          secondary={tabItem.hostname ?? tabItem.url}
-                        />
-                      ))}
-                    </ActivityGroup>
-                  )}
-                  {/* Cognition browser links (may be empty until projectId is stamped) */}
-                  {activity.events.length > 0 && (
-                    <ActivityGroup label={t('projectInfo.activityLinks', { defaultValue: 'Recent links' })}>
-                      {activity.events.map((ev) => {
-                        const payload = ev.payload as {
-                          title?: string
-                          hostname?: string
-                          pathname?: string
-                          tabId?: string
-                          url?: string
-                        }
-                        const title = (typeof payload.title === 'string' && payload.title.trim())
-                          ? payload.title
-                          : ev.summary
-                        const host = typeof payload.hostname === 'string' ? payload.hostname : undefined
-                        const tabId = typeof payload.tabId === 'string' && payload.tabId.trim()
-                          ? payload.tabId.trim()
-                          : undefined
-                        const url = typeof payload.url === 'string' && payload.url.trim()
-                          ? payload.url.trim()
-                          : (host
-                              ? `https://${host}${typeof payload.pathname === 'string' ? payload.pathname : ''}`
-                              : undefined)
-                        const onOpen = tabId
-                          ? () => navigate(routes.view.browser(tabId))
-                          : url
-                            ? () => {
-                                void window.electronAPI.openUrl?.(url)
-                              }
-                            : undefined
-                        return (
-                          <ActivityRow
-                            key={ev.id}
-                            ts={ev.timestamp}
-                            primary={title}
-                            secondary={host}
-                            onClick={onOpen}
-                          />
-                        )
-                      })}
                     </ActivityGroup>
                   )}
                 </div>
@@ -733,6 +761,13 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
         </Info_Page.Content>
       )}
     </Info_Page>
+    <Dialog open={restoreCandidates !== null} onOpenChange={(open) => { if (!open) { setRestoreCandidates(null); navigate(routes.view.projects()) } }}>
+      <DialogContent><DialogHeader><DialogTitle>恢复项目自动化</DialogTitle><DialogDescription>只会显示因本次项目归档而暂停的规则。未选择的规则将保持暂停。</DialogDescription></DialogHeader>
+        <div className="max-h-64 space-y-2 overflow-y-auto">{restoreCandidates?.length ? restoreCandidates.map((item) => <label key={item.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={restoreSelection.includes(item.id)} onChange={() => setRestoreSelection((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />{item.name}<span className="text-xs text-muted-foreground">{item.event}</span></label>) : <p className="text-sm text-muted-foreground">没有待恢复的自动化。</p>}</div>
+        <DialogFooter><Button variant="outline" onClick={() => { setRestoreCandidates(null); navigate(routes.view.projects()) }}>保持暂停</Button><Button variant="outline" onClick={() => setRestoreSelection(restoreCandidates?.map((item) => item.id) ?? [])}>全部恢复</Button><Button disabled={!restoreSelection.length} onClick={async () => { if (!workspaceId || !project) return; const restored = await window.electronAPI.restoreProjectAutomations(workspaceId, project.config.slug, restoreSelection); toast.success(`已恢复 ${restored} 条项目自动化`); setRestoreCandidates(null); navigate(routes.view.projects()) }}>恢复所选</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

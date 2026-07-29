@@ -1,4 +1,4 @@
-import { readFile, writeFile, stat } from 'fs/promises'
+import { stat } from 'fs/promises'
 import { join } from 'path'
 import { RPC_CHANNELS, type FileAttachment, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
@@ -109,11 +109,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.DELETE,
   RPC_CHANNELS.sessions.GET_MESSAGES,
   RPC_CHANNELS.sessions.SEND_MESSAGE,
-  RPC_CHANNELS.sessions.GENERATE_EXPLORE_BRIEF,
-  RPC_CHANNELS.sessions.COMPLETE_AND_ARCHIVE,
   RPC_CHANNELS.sessions.CANCEL,
   RPC_CHANNELS.sessions.KILL_SHELL,
-  RPC_CHANNELS.tasks.GET_OUTPUT,
   RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
   RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL,
   RPC_CHANNELS.sessions.COMMAND,
@@ -121,8 +118,6 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.GET_PERMISSION_MODE_STATE,
   RPC_CHANNELS.sessions.SEARCH_CONTENT,
   RPC_CHANNELS.sessions.GET_FILES,
-  RPC_CHANNELS.sessions.GET_NOTES,
-  RPC_CHANNELS.sessions.SET_NOTES,
   RPC_CHANNELS.sessions.WATCH_FILES,
   RPC_CHANNELS.sessions.UNWATCH_FILES,
   RPC_CHANNELS.sessions.EXPORT,
@@ -260,16 +255,6 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     })
   })
 
-  server.handle(RPC_CHANNELS.sessions.GENERATE_EXPLORE_BRIEF, async (
-    _ctx,
-    request: import('@craft-agent/shared/protocol').ExploreBriefRequest,
-  ) => sessionManager.generateExploreBrief(request))
-
-  server.handle(RPC_CHANNELS.sessions.COMPLETE_AND_ARCHIVE, async (
-    _ctx,
-    request: import('@craft-agent/shared/protocol').CompleteAndArchiveRequest,
-  ) => sessionManager.completeAndArchive(request))
-
   // Cancel processing
   server.handle(RPC_CHANNELS.sessions.CANCEL, async (_ctx, sessionId: string, silent?: boolean) => {
     return sessionManager.cancelProcessing(sessionId, silent)
@@ -278,17 +263,6 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Kill background shell
   server.handle(RPC_CHANNELS.sessions.KILL_SHELL, async (_ctx, sessionId: string, shellId: string) => {
     return sessionManager.killShell(sessionId, shellId)
-  })
-
-  // Get background task output
-  server.handle(RPC_CHANNELS.tasks.GET_OUTPUT, async (_ctx, taskId: string) => {
-    try {
-      const output = await sessionManager.getTaskOutput(taskId)
-      return output
-    } catch (err) {
-      log.error('Failed to get task output:', err)
-      throw err
-    }
   })
 
   // Respond to a permission request (bash command approval)
@@ -349,8 +323,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         return sessionManager.setSessionLabels(sessionId, command.labels)
       case 'setProjectId':
         return sessionManager.setSessionProjectId(sessionId, command.projectId)
+      case 'setExpertId':
+        return sessionManager.setSessionExpertId(sessionId, command.expertId)
       case 'setKanbanColumn':
         return sessionManager.setKanbanColumn(sessionId, command.column)
+      case 'setPinned':
+        return sessionManager.setSessionPinned(sessionId, command.pinned)
       case 'setTaskDetails':
         return sessionManager.setTaskDetails(sessionId, command.patch)
       case 'createTaskCheckpoint':
@@ -391,6 +369,10 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         return sessionManager.markPendingPlanExecutionDispatched(sessionId)
       case 'clearPendingPlanExecution':
         return sessionManager.clearPendingPlanExecution(sessionId)
+      case 'editMessageAsBranch':
+        return sessionManager.editMessageAsBranch(sessionId, command.messageId, command.content)
+      case 'deleteMessageAsBranch':
+        return sessionManager.deleteMessageAsBranch(sessionId, command.messageId)
       case 'addAnnotation':
         return sessionManager.addMessageAnnotation(sessionId, command.messageId, command.annotation)
       case 'removeAnnotation':
@@ -518,37 +500,6 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Stop watching session files for the calling client
   server.handle(RPC_CHANNELS.sessions.UNWATCH_FILES, async (ctx) => {
     cleanupSessionFileWatchForClient(ctx.clientId)
-  })
-
-  // Get session notes (reads notes.md from session directory)
-  server.handle(RPC_CHANNELS.sessions.GET_NOTES, async (_ctx, sessionId: string) => {
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) return ''
-
-    try {
-      const notesPath = join(sessionPath, 'notes.md')
-      const content = await readFile(notesPath, 'utf-8')
-      return content
-    } catch {
-      // File doesn't exist yet - return empty string
-      return ''
-    }
-  })
-
-  // Set session notes (writes to notes.md in session directory)
-  server.handle(RPC_CHANNELS.sessions.SET_NOTES, async (_ctx, sessionId: string, content: string) => {
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) {
-      throw new Error(`Session not found: ${sessionId}`)
-    }
-
-    try {
-      const notesPath = join(sessionPath, 'notes.md')
-      await writeFile(notesPath, content, 'utf-8')
-    } catch (error) {
-      log.error('Failed to save session notes:', error)
-      throw error
-    }
   })
 
   // ============================================

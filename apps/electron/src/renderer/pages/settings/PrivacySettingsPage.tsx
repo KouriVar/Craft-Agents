@@ -20,7 +20,7 @@ import {
 } from '@/components/settings'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
+import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import type {
   PrivacyAccessLogEntryDto,
   PrivacyPermission3Dto,
@@ -167,7 +167,7 @@ function formatBytes(n: number): string {
 
 const ACCESS_LOG_VISIBLE = 10
 
-export default function PrivacySettingsPage() {
+export default function PrivacySettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const { activeWorkspaceId } = useAppShellContext()
   const [policy, setPolicy] = useState<PrivacyPolicyDto | null>(null)
@@ -275,15 +275,7 @@ export default function PrivacySettingsPage() {
   const privacyActive = Boolean(policy?.effectivePrivacyModeActive ?? policy?.privacyMode.active)
   const sourcesDisabled = !policy || busy || privacyActive
 
-  return (
-    <div className="h-full flex flex-col">
-      <PanelHeader
-        title={t('settings.privacy.title')}
-        actions={<HeaderMenu route={routes.view.settings('privacy')} />}
-      />
-      <div className="flex-1 min-h-0 mask-fade-y">
-        <ScrollArea className="h-full">
-          <div className="px-5 py-7 max-w-3xl mx-auto">
+  const body = (
             <div className="space-y-8">
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
@@ -300,13 +292,6 @@ export default function PrivacySettingsPage() {
                     checked={Boolean(policy?.contextAwarenessEnabled)}
                     disabled={!policy || busy}
                     onCheckedChange={(checked) => void savePatch({ contextAwarenessEnabled: checked })}
-                  />
-                  <SettingsToggle
-                    label={t('settings.privacy.todayUseContext')}
-                    description={t('settings.privacy.todayUseContextDesc')}
-                    checked={Boolean(policy?.today.useContext)}
-                    disabled={!policy || busy || !policy.contextAwarenessEnabled}
-                    onCheckedChange={(checked) => void savePatch({ today: { useContext: checked } })}
                   />
                   <SettingsToggle
                     label={t('settings.privacy.privacyMode')}
@@ -397,9 +382,14 @@ export default function PrivacySettingsPage() {
                 description={t('settings.privacy.sensitiveDesc')}
               >
                 <SettingsCard>
-                  <p className="px-4 py-3 text-sm text-muted-foreground">
-                    {t('settings.privacy.sensitiveBody')}
-                  </p>
+                  <SettingsRow
+                    label={t('settings.security.sensitiveAlwaysOn')}
+                    description={t('settings.privacy.sensitiveBody')}
+                  >
+                    <span className="inline-flex items-center rounded-md bg-foreground/[0.06] px-2 py-1 text-xs font-medium text-muted-foreground">
+                      {t('settings.security.alwaysOn')}
+                    </span>
+                  </SettingsRow>
                 </SettingsCard>
               </SettingsSection>
 
@@ -497,6 +487,20 @@ export default function PrivacySettingsPage() {
                 </SettingsCard>
               </SettingsSection>
             </div>
+  )
+
+  if (embedded) return body
+
+  return (
+    <div className="h-full flex flex-col">
+      <PanelHeader
+        title={t('settings.privacy.title')}
+        actions={<HeaderMenu route={routes.view.settings('privacy')} />}
+      />
+      <div className="flex-1 min-h-0 mask-fade-y">
+        <ScrollArea className="h-full">
+          <div className="px-5 py-7 max-w-3xl mx-auto">
+            {body}
           </div>
         </ScrollArea>
       </div>

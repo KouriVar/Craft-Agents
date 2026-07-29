@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AutomationSystem, type SessionMetadataSnapshot } from './automation-system.ts';
 import { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE } from './constants.ts';
+import { listDynamicItems } from '../dynamic/index.ts';
 
 describe('AutomationSystem', () => {
   let tempDir: string;
@@ -122,6 +123,20 @@ describe('AutomationSystem', () => {
       expect(system.getConfig()).toEqual({ automations: {} });
 
       await system.dispose();
+    });
+  });
+
+  describe('dynamic attention delivery', () => {
+    it('persists permission requests as non-silenceable actionable items and notifications as cognition', async () => {
+      const system = new AutomationSystem({ workspaceRootPath: tempDir, workspaceId: 'test-workspace' });
+      await system.eventBus.emit('PermissionRequest', { workspaceId: 'test-workspace', timestamp: Date.now(), sessionId: 'run-session', data: { requestId: 'req-1', message: 'Needs approval' } });
+      await system.eventBus.emit('Notification', { workspaceId: 'test-workspace', timestamp: Date.now(), sessionId: 'run-session', data: { title: 'Suggestion', message: 'Review result' } });
+      const items = listDynamicItems(tempDir)
+      expect(items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'permission', requiresAction: true, source: { sessionId: 'run-session', requestId: 'req-1' } }),
+        expect.objectContaining({ kind: 'cognition', title: 'Suggestion', requiresAction: false }),
+      ]))
+      await system.dispose()
     });
   });
 

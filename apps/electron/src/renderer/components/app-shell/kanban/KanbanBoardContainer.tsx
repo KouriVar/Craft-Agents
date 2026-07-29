@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { projectsAtom } from '@/atoms/projects'
-import { kanbanProjectFilterAtom, kanbanColumnStatusAtom, kanbanEditorTargetAtom } from '@/atoms/kanban'
+import { kanbanProjectFilterAtom, kanbanColumnStatusAtom } from '@/atoms/kanban'
 import { useNavigation } from '@/contexts/NavigationContext'
 import { useProjectColorTreatment } from '@/hooks/useProjectColorTreatment'
 import { useLabels } from '@/hooks/useLabels'
@@ -21,9 +21,6 @@ import { KanbanBoard } from './KanbanBoard'
 import { KANBAN_COLUMNS, statusToColumn } from './status-column'
 import { BoardListToggle } from './BoardListToggle'
 import { KanbanProjectFilter, type KanbanProjectFilterOption } from './KanbanProjectFilter'
-import { TaskEditor } from './TaskEditor'
-import { mergeSubtaskRows, type SpecNodeSummary, type SubtaskChildRow } from './subtask-merge'
-import type { SpecNode } from './task-spec-form'
 import type {
   KanbanColumnId,
   KanbanColumnMeta,
@@ -132,7 +129,6 @@ export function KanbanBoardContainer() {
   // Atom-backed (not local state) so the chat header's "Edit task" can set the target and
   // navigate here — the overlay is already open when the board mounts. Declared before the
   // spec fetch below, which refetches when the editor closes (a save may have changed specs).
-  const [editorTarget, setEditorTarget] = useAtom(kanbanEditorTargetAtom)
 
   const statusesById = React.useMemo(() => {
     const map = new Map<string, SessionStatus>()
@@ -184,57 +180,6 @@ export function KanbanBoardContainer() {
 
   const usingProjectColumns = !!editingProject?.config.kanbanColumns?.length
 
-  // ---------------------------------------------------------------------------
-  // Spec node summaries for spec-backed tiles, keyed by task slug. The tile merges
-  // these with live child sessions (see mergeSubtaskRows) so authored-but-never-run
-  // nodes show as pending rows. Refetched when the slug set changes and whenever the
-  // editor closes — a save/generate may have rewritten any task.yaml.
-  // ---------------------------------------------------------------------------
-  const [specNodesBySlug, setSpecNodesBySlug] = React.useState<ReadonlyMap<string, SpecNodeSummary[]>>(
-    () => new Map()
-  )
-
-  const specSlugsKey = React.useMemo(() => {
-    const slugs = new Set<string>()
-    for (const meta of metaMap.values()) {
-      if (meta.parentSessionId || meta.isArchived || meta.hidden || meta.taskDraft) continue
-      if (meta.taskSlug) slugs.add(meta.taskSlug)
-    }
-    return [...slugs].sort().join(',')
-  }, [metaMap])
-
-  const editorOpen = editorTarget != null
-  React.useEffect(() => {
-    if (!activeWorkspaceId || editorOpen) return
-    const slugs = specSlugsKey ? specSlugsKey.split(',') : []
-    if (slugs.length === 0) {
-      setSpecNodesBySlug(new Map())
-      return
-    }
-    let cancelled = false
-    void Promise.all(
-      slugs.map(async (slug): Promise<readonly [string, SpecNodeSummary[]]> => {
-        try {
-          const res = await window.electronAPI.getTask(activeWorkspaceId, slug)
-          const spec = res.spec as { defaults?: { model?: string }; nodes?: SpecNode[] } | undefined
-          const defaultModel = spec?.defaults?.model
-          return [
-            slug,
-            (spec?.nodes ?? []).map(n => ({ id: n.id, title: n.title || n.id, model: n.model ?? defaultModel })),
-          ]
-        } catch {
-          // Unreadable spec → empty node list: the tile falls back to children-only rows.
-          return [slug, []]
-        }
-      })
-    ).then(entries => {
-      if (!cancelled) setSpecNodesBySlug(new Map(entries))
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [activeWorkspaceId, specSlugsKey, editorOpen])
-
   const tasks = React.useMemo(() => {
     const childrenByParent = new Map<string, SessionMeta[]>()
     for (const meta of metaMap.values()) {
@@ -247,24 +192,19 @@ export function KanbanBoardContainer() {
     const result: KanbanTask[] = []
     for (const meta of metaMap.values()) {
       if (meta.parentSessionId) continue
-      if (meta.isArchived || meta.hidden || meta.taskDraft) continue
+      if (meta.isArchived || meta.hidden) continue
       const statusId = meta.sessionStatus ?? 'todo'
       // Placement is the persisted free-string column, else the status' default column.
       // Validity against the *active* column set is enforced by KanbanBoard (unknown
       // ids fall back to the first column), so no built-in-only guard is needed here.
       const column = meta.kanbanColumn ?? statusToColumn(statusId)
-      const children: SubtaskChildRow[] = (childrenByParent.get(meta.id) ?? []).map(child => ({
+      const subtasks = (childrenByParent.get(meta.id) ?? []).map(child => ({
         id: child.id,
+        sessionId: child.id,
         title: getSessionTitle(child),
         runState: deriveRunState(child, statusesById),
         model: child.model ?? DEFAULT_MODEL,
-        taskNodeId: child.taskNodeId,
-        createdAt: child.createdAt,
       }))
-      // Spec-backed tiles show one row per DAG node (bound to its latest child session,
-      // or pending when never run) plus unadopted quick-adds; plain tiles show children.
-      const specNodes = meta.taskSlug ? specNodesBySlug.get(meta.taskSlug) : undefined
-      const subtasks = mergeSubtaskRows(specNodes, children, DEFAULT_MODEL)
       result.push({
         id: meta.id,
         title: getSessionTitle(meta),
@@ -272,11 +212,7 @@ export function KanbanBoardContainer() {
         statusId,
         model: meta.model ?? DEFAULT_MODEL,
         projectId: meta.projectId,
-        taskSlug: meta.taskSlug,
         subtasks,
-        // With merged spec rows the list already contains every node, so it IS the
-        // denominator; the header count only backstops the not-yet-fetched window.
-        subtaskTotal: specNodes?.length ? undefined : meta.taskNodeCount,
         isFlagged: meta.isFlagged,
         isProcessing: meta.isProcessing,
         createdAt: meta.createdAt,
@@ -290,7 +226,7 @@ export function KanbanBoardContainer() {
       })
     }
     return result
-  }, [metaMap, statusesById, specNodesBySlug])
+  }, [metaMap, statusesById])
 
   // Project filter: empty selection = show all. While a filter is active, tiles
   // with no project are hidden (an explicit "No project" option is a later add).
@@ -340,21 +276,8 @@ export function KanbanBoardContainer() {
   const handleRunSubtasks = React.useCallback(
     (taskId: string) => {
       const meta = metaMap.get(taskId)
-      if (activeWorkspaceId && meta?.taskSlug) {
-        window.electronAPI
-          .runTask(activeWorkspaceId, { slug: meta.taskSlug, orchestratorSessionId: taskId })
-          .catch((err: unknown) => {
-            toast.error(t('tasks.toastRunFailed'), {
-              description: err instanceof Error ? err.message : String(err),
-            })
-          })
-        return
-      }
       for (const child of metaMap.values()) {
         if (child.parentSessionId !== taskId) continue
-        // Skip Conductor-owned children: the TaskRunner drives their lifecycle (prompts,
-        // status, retries). Dispatching them manually would double-run and race the runner.
-        if (child.taskRunId) continue
         if (deriveRunState(child, statusesById) !== 'pending') continue
         const prompt = child.name?.trim()
         if (!prompt) continue
@@ -513,53 +436,6 @@ export function KanbanBoardContainer() {
     [metaMap, labelConfigs, onJumpToTaskSessions, navigateToSession]
   )
 
-  const handleEditTask = React.useCallback(
-    (taskId: string) => {
-      const meta = metaMap.get(taskId)
-      setEditorTarget({
-        mode: 'edit',
-        sessionId: taskId,
-        taskSlug: meta?.taskSlug,
-        initialTitle: meta ? getSessionTitle(meta) : undefined,
-      })
-    },
-    [metaMap]
-  )
-
-  if (editorTarget && activeWorkspaceId) {
-    return (
-      <TaskEditor
-        workspaceId={activeWorkspaceId}
-        target={editorTarget}
-        onClose={() => setEditorTarget(null)}
-        onOpenSession={
-          editorTarget.mode === 'edit'
-            ? () => {
-                const sessionId = editorTarget.sessionId
-                setEditorTarget(null)
-                navigateToSession(sessionId)
-              }
-            : undefined
-        }
-        onOpenChildSession={(sessionId) => {
-          setEditorTarget(null)
-          navigateToSession(sessionId)
-        }}
-        onCreated={({ sessionId, taskLabelId, projectId: createdProjectId }) => {
-          // Same human-clearable scope as a tile click; no label (fail-soft) → plain open.
-          if (taskLabelId && onJumpToTaskSessions) {
-            onJumpToTaskSessions(sessionId, { labelId: taskLabelId, projectId: createdProjectId })
-          } else {
-            navigateToSession(sessionId)
-          }
-        }}
-        modelGroups={subtaskModelGroups}
-        modelToConnection={modelToConnection}
-        defaultModel={defaultSubtaskModel ?? DEFAULT_MODEL}
-      />
-    )
-  }
-
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-2.5">
@@ -577,7 +453,7 @@ export function KanbanBoardContainer() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setEditorTarget({ mode: 'create', initialProjectId: projectFilter[0] })}
+            onClick={() => void handleCreateTask(t('kanban.newTask'))}
             disabled={!activeWorkspaceId}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-[12.5px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.03] disabled:opacity-50"
           >
@@ -602,7 +478,6 @@ export function KanbanBoardContainer() {
           treatment={treatment}
           expandedTaskIds={expandedTaskIds}
           onTaskClick={openSessionScoped}
-          onEditTask={handleEditTask}
           onToggleSubtasks={handleToggleSubtasks}
           onSubtaskClick={(taskId, subtaskId) => openSessionScoped(subtaskId, metaMap.get(taskId)?.projectId)}
           onAddSubtask={handleAddSubtask}

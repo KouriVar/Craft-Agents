@@ -7,122 +7,24 @@
  * - Clicking notification navigates to the relevant session
  */
 
-import { Notification, app, BrowserWindow, nativeImage } from 'electron'
+import { app, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
 import { readFileSync } from 'fs'
 import { mainLog } from './logger'
 import { RPC_CHANNELS } from '../shared/types'
-import type { WindowManager } from './window-manager'
 import type { EventSink } from '@craft-agent/server-core/transport'
 
-type ClientResolver = (webContentsId: number) => string | undefined
-
-let windowManager: WindowManager | null = null
 let eventSink: EventSink | null = null
-let clientResolver: ClientResolver | null = null
+
+/** Register the internal event sink used only for renderer-side badge drawing. */
+export function setNotificationEventSink(sink: EventSink): void {
+  eventSink = sink
+}
 let baseIconPath: string | null = null
 let baseIconDataUrl: string | null = null
 let currentBadgeCount: number = 0
 let instanceNumber: number | null = null  // Multi-instance dev: instance number for dock badge
 
-/**
- * Initialize the notification service with window manager reference
- */
-export function initNotificationService(wm: WindowManager): void {
-  windowManager = wm
-}
-
-/**
- * Set the event sink for notification broadcasts (called after server creation).
- *
- * When a resolver is provided we can route session navigation events to a
- * single client instead of broadcasting to every window in the workspace.
- */
-export function setNotificationEventSink(sink: EventSink, resolver?: ClientResolver): void {
-  eventSink = sink
-  clientResolver = resolver ?? null
-}
-
-/**
- * Show a native notification for a new message
- *
- * @param title - Notification title (e.g., session name)
- * @param body - Notification body (e.g., message preview)
- * @param workspaceId - Workspace ID for navigation
- * @param sessionId - Session ID for navigation
- */
-export function showNotification(
-  title: string,
-  body: string,
-  workspaceId: string,
-  sessionId: string
-): void {
-  if (!Notification.isSupported()) {
-    mainLog.info('Notifications not supported on this platform')
-    return
-  }
-
-  const notification = new Notification({
-    title,
-    body,
-    // macOS-specific options
-    silent: false,
-    // Use the app icon
-    icon: undefined,  // Will use app icon by default on macOS
-  })
-
-  notification.on('click', () => {
-    mainLog.info('Notification clicked:', { workspaceId, sessionId })
-    handleNotificationClick(workspaceId, sessionId)
-  })
-
-  notification.show()
-  mainLog.info('Notification shown:', { title, sessionId })
-}
-
-/**
- * Handle notification click - focus window and navigate to session
- */
-function handleNotificationClick(workspaceId: string, sessionId: string): void {
-  if (!windowManager) {
-    mainLog.error('WindowManager not initialized for notification click')
-    return
-  }
-
-  // Find or create window for this workspace
-  let window = windowManager.getWindowByWorkspace(workspaceId)
-
-  if (!window) {
-    // Create a new window for this workspace
-    windowManager.createWindow({ workspaceId })
-    window = windowManager.getWindowByWorkspace(workspaceId)
-  }
-
-  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-    // Focus the window
-    if (window.isMinimized()) {
-      window.restore()
-    }
-    window.focus()
-
-    // Send navigation event to renderer to open the session.
-    // Prefer a single-client target to avoid cross-window navigation side effects.
-    if (eventSink) {
-      const clientId = clientResolver?.(window.webContents.id)
-      if (clientId) {
-        eventSink(RPC_CHANNELS.notification.NAVIGATE, { to: 'client', clientId }, {
-          workspaceId,
-          sessionId,
-        })
-      } else {
-        eventSink(RPC_CHANNELS.notification.NAVIGATE, { to: 'workspace', workspaceId }, {
-          workspaceId,
-          sessionId,
-        })
-      }
-    }
-  }
-}
 
 /**
  * Initialize the base icon for badge overlay

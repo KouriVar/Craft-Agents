@@ -112,7 +112,7 @@ function findInvalidProperties(
 export interface McpValidationConfig {
   /** MCP server URL */
   mcpUrl: string;
-  /** Transport type ('http' or 'sse'). Defaults to 'http'. */
+  /** Transport type. Defaults to 'http'. */
   mcpTransport?: McpTransport;
   /** Custom headers for MCP requests (merged before auth headers) */
   mcpHeaders?: Record<string, string>;

@@ -22,7 +22,7 @@ function isDiagnostic(value: unknown): value is PluginMcpServerDiagnostic {
   return typeof record.slug === 'string'
     && typeof record.pluginName === 'string'
     && typeof record.serverName === 'string'
-    && (record.transport === 'stdio' || record.transport === 'http' || record.transport === 'sse')
+    && (record.transport === 'stdio' || record.transport === 'http')
     && (record.state === 'ready' || record.state === 'error' || record.state === 'missing-dependency')
     && typeof record.checkedAt === 'number'
     && typeof record.durationMs === 'number';

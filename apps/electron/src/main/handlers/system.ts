@@ -50,7 +50,7 @@ export const GUI_HANDLED_CHANNELS = [
   RPC_CHANNELS.badge.REFRESH,
   RPC_CHANNELS.badge.SET_ICON,
   RPC_CHANNELS.window.GET_FOCUS_STATE,
-  RPC_CHANNELS.notification.SHOW,
+  RPC_CHANNELS.window.GET_MAXIMIZED_STATE,
   RPC_CHANNELS.notification.GET_ENABLED,
   RPC_CHANNELS.notification.SET_ENABLED,
   RPC_CHANNELS.menu.QUIT,
@@ -250,6 +250,37 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
         const result = await handleDeepLink(url, windowManager, server.push.bind(server), resolver, ctx.clientId)
         deps.platform.logger.info('[OPEN_URL] Deep link result:', result)
         return
+      }
+
+      const externalProtocol = classification.kind === 'safe-external' ? new URL(url).protocol : ''
+      if (deps.browserPaneManager && ['http:', 'https:'].includes(externalProtocol)) {
+        let behavior = deps.browserPaneManager.getBrowserSettings().linkOpenBehavior
+        if (behavior === 'ask') {
+          const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
+          const result = await dialog.showMessageBox({
+            type: 'question',
+            title: localeIsChinese ? '打开链接' : 'Open link',
+            message: url,
+            buttons: [
+              localeIsChinese ? 'CA 内置浏览器' : 'CA built-in browser',
+              localeIsChinese ? '系统默认浏览器' : 'System default browser',
+              localeIsChinese ? '取消' : 'Cancel',
+            ],
+            defaultId: 0,
+            cancelId: 2,
+            noLink: true,
+          })
+          if (result.response === 2) return
+          behavior = result.response === 0 ? 'internal' : 'system'
+        }
+        if (behavior === 'internal') {
+          deps.browserPaneManager.createInstance(undefined, {
+            show: true,
+            workspaceId: ctx.workspaceId ?? null,
+            initialUrl: url,
+          })
+          return
+        }
       }
 
       const result = await requestClientOpenExternal(server, ctx.clientId, url)
@@ -497,12 +528,6 @@ export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps):
     win?.webContents.selectAll()
   })
 
-  // Notifications
-  server.handle(RPC_CHANNELS.notification.SHOW, async (_ctx, title: string, body: string, workspaceId: string, sessionId: string) => {
-    const { showNotification } = await import('../notifications')
-    showNotification(title, body, workspaceId, sessionId)
-  })
-
   server.handle(RPC_CHANNELS.notification.GET_ENABLED, async () => {
     const { getNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     return getNotificationsEnabled()
@@ -512,10 +537,6 @@ export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps):
     const { setNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     setNotificationsEnabled(enabled)
 
-    if (enabled) {
-      const { showNotification } = await import('../notifications')
-      showNotification('Notifications enabled', 'You will be notified when tasks complete.', '', '')
-    }
   })
 
   // Badge and window focus
@@ -536,6 +557,11 @@ export function registerSystemGuiHandlers(server: RpcServer, deps: HandlerDeps):
   server.handle(RPC_CHANNELS.window.GET_FOCUS_STATE, async () => {
     const { isAnyWindowFocused } = require('../notifications')
     return isAnyWindowFocused()
+  })
+
+  server.handle(RPC_CHANNELS.window.GET_MAXIMIZED_STATE, async (ctx) => {
+    const win = windowManager?.getWindowByWebContentsId(ctx.webContentsId!)
+    return win?.isMaximized() ?? false
   })
 }
 

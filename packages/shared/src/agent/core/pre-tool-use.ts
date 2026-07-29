@@ -842,29 +842,13 @@ export function runPreToolUseChecks(ctx: PreToolUseInput): PreToolUseCheckResult
     wasModified = true;
   }
 
-  // 5b. Config-domain Bash guard (block direct labels/automations path operations unless using craft-agent)
-  if (FEATURE_FLAGS.craftAgentsCli && toolName === 'Bash') {
-    const configDomainBashRedirect = getConfigDomainBashRedirect(currentInput, workspaceRootPath, workingDirectory);
-    if (configDomainBashRedirect) {
-      return { type: 'block', reason: configDomainBashRedirect.message };
-    }
-  }
-
-  // 5c. Config file validation
+  // 5b. Config file validation
   const configResult = validateConfigWrite(toolName, currentInput, workspaceRootPath, onDebug);
   if (!configResult.valid) {
     return { type: 'block', reason: configResult.error! };
   }
 
-  // 5d. Config file CLI redirect (labels + automations)
-  if (FEATURE_FLAGS.craftAgentsCli) {
-    const cliRedirect = getConfigCliRedirect(toolName, currentInput, workspaceRootPath, workingDirectory);
-    if (cliRedirect) {
-      return { type: 'block', reason: cliRedirect.message };
-    }
-  }
-
-  // 5e. Skill qualification
+  // 5c. Skill qualification
   if (toolName === 'Skill') {
     const skillResult = qualifySkillName(
       currentInput,

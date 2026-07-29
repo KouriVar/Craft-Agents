@@ -97,33 +97,6 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
   // Prefer the human-readable intent over the opaque task ID for the chip label.
   const taskLabel = task.intent?.trim() ?? ''
 
-  const handleViewOutput = async () => {
-    try {
-      // Fetch task output via IPC (reads the file stored on task_completed).
-      const output = await window.electronAPI.getTaskOutput(task.id)
-
-      if (onShowTerminalOverlay) {
-        // Preferred path: show in the terminal overlay.
-        onShowTerminalOverlay({
-          command: task.intent || `${task.type} task`,
-          output: output || t('chat.noOutputYet'),
-          description: task.intent,
-          toolType: 'bash', // Use 'bash' for both shell and agent tasks
-        })
-      } else if (output) {
-        // Fallback when no overlay handler is wired: copy the full output to the
-        // clipboard so it's still retrievable. (Running tasks have no output yet.)
-        await navigator.clipboard?.writeText(output)
-        toast.success(t('toast.taskOutputCopied', 'Task output copied to clipboard'))
-      } else {
-        toast.info(t('chat.noOutputYet'))
-      }
-      setOpen(false)
-    } catch (err) {
-      toast.error(t('toast.failedToLoadTaskOutput'))
-    }
-  }
-
   const handleStopTask = () => {
     onKillTask(task.id)
     setOpen(false)
@@ -184,7 +157,7 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
         <button
           type="button"
           className={cn(
-            "h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px]",
+            "h-control-compact pl-2.5 pr-2 text-xs font-medium rounded-surface",
             "flex items-center gap-1.5 shrink-0 select-none",
             "transition-all shadow-minimal cursor-pointer",
             statusTint,
@@ -245,12 +218,6 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent align="start" sideOffset={4}>
-        {/* View Output - Primary action */}
-        <StyledDropdownMenuItem onClick={handleViewOutput}>
-          <ArrowUpRight />
-          {t('chat.viewOutput')}
-        </StyledDropdownMenuItem>
-
         {/* Dismiss - remove the chip (renderer-only; does not kill the task) */}
         <StyledDropdownMenuItem onClick={handleDismiss}>
           <X />

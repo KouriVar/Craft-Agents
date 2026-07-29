@@ -378,11 +378,11 @@ import { getWorkspaceSourcesPath } from '../workspaces/storage.ts';
 const SourceTypeSchema = z.enum(['mcp', 'api', 'local']);
 
 // MCP source supports two transport types:
-// - HTTP/SSE: requires url and authType
+// - HTTP: requires url and authType
 // - Stdio: requires command (and optional args, env)
 const McpSourceConfigSchema = z.object({
-  transport: z.enum(['http', 'sse', 'stdio']).optional(),
-  // HTTP/SSE fields
+  transport: z.enum(['http', 'stdio']).optional(),
+  // HTTP fields
   url: z.string().url().optional(),
   authType: z.enum(['oauth', 'bearer', 'none']).optional(),
   clientId: z.string().optional(),
@@ -390,7 +390,7 @@ const McpSourceConfigSchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
-  // Custom headers for HTTP/SSE transport (e.g., API keys, custom auth)
+  // Custom headers for HTTP transport (e.g., API keys, custom auth)
   headers: z.record(z.string(), z.string()).optional(),
   // Header names for credential-store auth (values stored in credential store as JSON)
   headerNames: z.array(z.string()).optional(),

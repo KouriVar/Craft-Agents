@@ -141,9 +141,9 @@ export function useNotifications({
   const [isWindowFocused, setIsWindowFocused] = useState(true)
   const onNavigateToSessionRef = useRef(onNavigateToSession)
 
-  // Check once whether this server has GUI notification channels (headless servers don't)
+  // Check once whether this server has GUI badge channels (headless servers don't)
   const hasGuiChannels = useMemo(
-    () => window.electronAPI.isChannelAvailable(RPC_CHANNELS.notification.SHOW),
+    () => window.electronAPI.isChannelAvailable(RPC_CHANNELS.notification.GET_ENABLED),
     [],
   )
 
@@ -162,17 +162,6 @@ export function useNotifications({
     // Subscribe to focus changes
     const cleanup = window.electronAPI.onWindowFocusChange((isFocused) => {
       setIsWindowFocused(isFocused)
-    })
-
-    return cleanup
-  }, [hasGuiChannels])
-
-  // Subscribe to notification navigation (when user clicks a notification)
-  useEffect(() => {
-    if (!hasGuiChannels) return
-
-    const cleanup = window.electronAPI.onNotificationNavigate((data) => {
-      onNavigateToSessionRef.current?.(data.sessionId)
     })
 
     return cleanup
@@ -214,28 +203,9 @@ export function useNotifications({
     return cleanup
   }, [hasGuiChannels])
 
-  // Show notification for a session
-  const showSessionNotification = useCallback((session: Session, messagePreview?: string) => {
-    // Don't show notification if disabled in settings
-    if (!enabled) return
-    // Don't show notification if window is focused
-    if (isWindowFocused) return
-    // Don't show if no workspace
-    if (!workspaceId) return
-    // Don't show if server doesn't have GUI notification handlers
-    if (!hasGuiChannels) return
-
-    // Get session title for notification
-    const title = session.name || 'New message'
-
-    // Get message preview (truncate if needed)
-    let body = messagePreview || 'Craft Agent has a new message for you'
-    if (body.length > 100) {
-      body = body.substring(0, 97) + '...'
-    }
-
-    window.electronAPI.showNotification(title, body, workspaceId, session.id)
-  }, [enabled, isWindowFocused, workspaceId, hasGuiChannels])
+  // Desktop notifications are intentionally disabled in v0.20. Dynamic Center
+  // becomes the durable in-app destination in Phase 8.
+  const showSessionNotification = useCallback((_session: Session, _messagePreview?: string) => {}, [])
 
   return {
     isWindowFocused,

@@ -17,7 +17,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { EntityRow } from '@/components/ui/entity-row'
-import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SessionSearchHeader } from '@/components/app-shell/SessionSearchHeader'
 import { AutomationMenu } from './AutomationMenu'
 import { BatchAutomationMenu } from './BatchAutomationMenu'
@@ -168,6 +167,7 @@ export interface AutomationsListPanelProps {
   onToggleAutomation?: (automationId: string) => void
   onTestAutomation?: (automationId: string) => void
   onDuplicateAutomation?: (automationId: string) => void
+  onAddAutomation?: () => void
   selectedAutomationId?: string | null
   workspaceRootPath?: string
   className?: string
@@ -181,6 +181,7 @@ export function AutomationsListPanel({
   onToggleAutomation,
   onTestAutomation,
   onDuplicateAutomation,
+  onAddAutomation,
   selectedAutomationId,
   workspaceRootPath,
   className,
@@ -261,16 +262,14 @@ export function AutomationsListPanel({
           description={t('automations.emptyDescription')}
           docKey="automations"
         >
-          {workspaceRootPath && (
-            <EditPopover
-              align="center"
-              trigger={
-                <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
-                  {t('automations.addAutomation')}
-                </button>
-              }
-              {...getEditConfig('automation-config', workspaceRootPath)}
-            />
+          {onAddAutomation && (
+            <button
+              type="button"
+              onClick={onAddAutomation}
+              className="inline-flex h-7 items-center rounded-surface bg-background px-3 text-xs font-medium shadow-minimal transition-colors hover:bg-foreground/[0.03]"
+            >
+              {t('automations.addAutomation')}
+            </button>
           )}
         </EntityListEmptyScreen>
       </div>

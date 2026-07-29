@@ -36,6 +36,13 @@ type ApiToChannelMapKeys = Exclude<
   | 'closeEmbeddedTerminal' // direct IPC to main process — terminal lifecycle cleanup
   | 'onEmbeddedTerminalData' // direct IPC listener — terminal stdout/stderr
   | 'onEmbeddedTerminalExit' // direct IPC listener — terminal exit
+  | 'captureCurrentScreen' // direct IPC to main process — creates an in-memory composer attachment
+  | 'onScreenCapture' // direct IPC listener — desktop capture result
+  | 'getDoubleCommandScreenshotEnabled' // direct IPC — local macOS shortcut preference
+  | 'setDoubleCommandScreenshotEnabled' // direct IPC — starts/stops the native listener
+  | 'getDoubleCommandScreenshotStatus' // direct IPC — native listener health
+  | 'getScreenCapturePermissionStatus' // direct IPC — macOS privacy authorization state
+  | 'openScreenCapturePermissionSettings' // direct IPC — opens macOS privacy settings
 > | BrowserPaneKeys
 type ChannelMapKeys = keyof typeof CHANNEL_MAP & string
 

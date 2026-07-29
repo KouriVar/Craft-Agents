@@ -26,6 +26,7 @@ import { useRef, useEffect } from 'react'
 import { useAtomValue } from 'jotai'
 import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
+import { isWindows } from '@/lib/platform'
 import { panelStackAtom, focusedPanelIdAtom, focusedPanelRouteAtom } from '@/atoms/panel-stack'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { isDetailNavState } from '@/lib/nav-helpers'
@@ -35,7 +36,6 @@ import { RightReviewSidebar } from './RightReviewSidebar'
 import { CompactPanelTransition } from './CompactPanelTransition'
 import {
   PANEL_GAP,
-  PANEL_EDGE_INSET,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
@@ -160,7 +160,8 @@ export function PanelStackContainer({
               data-panel-role="navigator"
               className={cn(
                 'h-full w-full overflow-hidden relative',
-                'bg-background shadow-middle',
+                'bg-background shadow-middle panel-chrome-surface',
+                !isWindows && 'panel-glass-surface',
               )}
               style={{
                 // Compact mode runs flush to the viewport floor — no rounded bottom.
@@ -203,7 +204,7 @@ export function PanelStackContainer({
     <div
       ref={scrollRef}
       data-mobile-menu-root="true"
-      className="flex-1 min-w-0 flex relative z-panel panel-scroll @container/shell"
+      className="flex-1 min-w-0 flex relative z-panel panel-scroll panel-stack-shell @container/shell"
       style={{
         overflowX: 'auto',
         overflowY: 'hidden',
@@ -218,7 +219,6 @@ export function PanelStackContainer({
       <motion.div
         className="flex h-full"
         initial={false}
-        animate={{ paddingLeft: !hasSidebar ? PANEL_EDGE_INSET : 0 }}
         transition={transition}
         style={{ gap: PANEL_GAP, flexGrow: 1, minWidth: 0 }}
       >
@@ -233,7 +233,7 @@ export function PanelStackContainer({
           }}
           transition={transition}
           className="h-full relative shrink-0"
-          style={{ overflowX: 'clip', overflowY: 'visible' }}
+          style={{ overflowX: 'visible', overflowY: 'visible' }}
         >
           <div className="h-full" style={{ width: sidebarWidth }}>
             {sidebarSlot}
@@ -252,7 +252,8 @@ export function PanelStackContainer({
           transition={transition}
           className={cn(
             'h-full overflow-hidden relative shrink-0 z-[2]',
-            'bg-background shadow-middle',
+            'bg-background shadow-middle panel-chrome-surface',
+            !isWindows && 'panel-glass-surface',
           )}
           style={{
             borderTopLeftRadius: RADIUS_INNER,
@@ -315,7 +316,10 @@ export function PanelStackContainer({
               />
             </div>
             <div
-              className="h-full bg-foreground-2 shadow-middle overflow-hidden"
+              className={cn(
+                'h-full bg-foreground-2 shadow-middle panel-chrome-surface overflow-hidden',
+                !isWindows && 'panel-glass-surface',
+              )}
               style={{
                 borderTopLeftRadius: RADIUS_INNER,
                 borderBottomLeftRadius: RADIUS_INNER,

@@ -13,18 +13,10 @@
 
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
-import type { KanbanColumnId, TaskEditorTarget } from '@/components/app-shell/kanban/types'
+import type { KanbanColumnId } from '@/components/app-shell/kanban/types'
 
 /** Selected project ids to filter the board by. Empty array = all projects. */
 export const kanbanProjectFilterAtom = atom<string[]>([])
-
-/**
- * The board pane's Task-editor overlay target (null = closed). An atom rather than
- * board-local state so surfaces outside the board — e.g. the chat header's
- * "Edit task" button — can point the editor at a session and then navigate to the
- * board route, where the overlay opens prefilled.
- */
-export const kanbanEditorTargetAtom = atom<TaskEditorTarget | null>(null)
 
 /**
  * Per-column color overrides (hex). A column absent from the map falls back to

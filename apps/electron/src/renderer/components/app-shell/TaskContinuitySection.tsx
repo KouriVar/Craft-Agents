@@ -97,7 +97,7 @@ export function TaskContinuitySection({ session }: { session: Session }) {
         )}
       </div>
 
-      <div className="rounded-[10px] border border-border/60 bg-background p-3 shadow-minimal" aria-busy={saving}>
+      <div className="rounded-touch border border-border/60 bg-background p-3 shadow-minimal" aria-busy={saving}>
         <label className="block text-[10px] font-medium text-muted-foreground">
           {t('taskContinuity.goal', { defaultValue: '当前目标' })}
         </label>

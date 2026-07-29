@@ -20,6 +20,7 @@ describe('default ContextAction handlers', () => {
   const sendMessage = mock((_id: string, _message: string) => {})
   const startLibrary = mock(async (_id: string) => {})
   const sessionCommand = mock(async (_id: string, _cmd: unknown) => {})
+  const savedWindow = (globalThis as { window?: unknown }).window
 
   beforeEach(() => {
     resetDefaultContextActionsForTests()
@@ -52,6 +53,11 @@ describe('default ContextAction handlers', () => {
   afterEach(() => {
     bindContextActionHost(null)
     resetDefaultContextActionsForTests()
+    if (savedWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window')
+    } else {
+      ;(globalThis as { window?: unknown }).window = savedWindow
+    }
   })
 
   it('registers the default Context Actions (without memory.save)', () => {

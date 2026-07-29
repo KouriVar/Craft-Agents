@@ -7,6 +7,8 @@
  */
 
 export const LIBRARY_DIR = 'library'
+/** v0.20 canonical on-disk name. `library` remains readable during migration. */
+export const KNOWLEDGE_DIR = 'knowledge'
 export const MANIFEST_FILE = 'manifest.json'
 export const INDEX_FILE = 'resources.index.json'
 export const DOCUMENTS_DIR = 'documents'
@@ -49,6 +51,19 @@ function normalizeFs(p: string): string {
 }
 
 export function libraryRoot(workspaceDataRoot: string): string {
+  // This helper deliberately keeps its old name for source compatibility.  The
+  // server migrates the old directory before first write; new data therefore
+  // always lands in `knowledge`.
+  return joinFs(workspaceDataRoot, KNOWLEDGE_DIR)
+}
+
+/** Canonical v0.20 name for new code. */
+export function knowledgeRoot(workspaceDataRoot: string): string {
+  return libraryRoot(workspaceDataRoot)
+}
+
+/** Read-only location used by the one-time Library -> Knowledge migration. */
+export function legacyLibraryRoot(workspaceDataRoot: string): string {
   return joinFs(workspaceDataRoot, LIBRARY_DIR)
 }
 

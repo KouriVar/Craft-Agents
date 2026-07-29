@@ -6,10 +6,18 @@ const originalDocument = globalThis.document
 
 afterEach(() => {
   setDismissibleLayerBridge(null)
-  if (originalDocument === undefined) {
-    Reflect.deleteProperty(globalThis, 'document')
-  } else {
-    ;(globalThis as unknown as { document: Document }).document = originalDocument
+  try {
+    if (originalDocument === undefined) {
+      Reflect.deleteProperty(globalThis, 'document')
+    } else {
+      Object.defineProperty(globalThis, 'document', {
+        value: originalDocument,
+        writable: true,
+        configurable: true,
+      })
+    }
+  } catch {
+    // globalThis may be frozen in full suite — best effort cleanup
   }
 })
 
@@ -23,43 +31,43 @@ describe('hasOpenOverlay', () => {
       handleEscape: () => true,
     })
 
-    ;(
-      globalThis as unknown as {
-        document: { querySelector: (_selector: string) => null }
-      }
-    ).document = {
-      querySelector: () => null,
-    }
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        querySelector: () => null,
+      },
+      writable: true,
+      configurable: true,
+    })
 
     expect(hasOpenOverlay()).toBe(true)
   })
 
   it('returns true when an island dialog is open', () => {
-    ;(
-      globalThis as unknown as {
-        document: { querySelector: (selector: string) => object | null }
-      }
-    ).document = {
-      querySelector: (selector: string) => {
-        if (selector.includes('[data-ca-island-dialog="true"][data-state="open"]')) {
-          return {}
-        }
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        querySelector: (selector: string) => {
+          if (selector.includes('[data-ca-island-dialog="true"][data-state="open"]')) {
+            return {}
+          }
 
-        return null
+          return null
+        },
       },
-    }
+      writable: true,
+      configurable: true,
+    })
 
     expect(hasOpenOverlay()).toBe(true)
   })
 
   it('returns false when no overlays are open', () => {
-    ;(
-      globalThis as unknown as {
-        document: { querySelector: (_selector: string) => null }
-      }
-    ).document = {
-      querySelector: () => null,
-    }
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        querySelector: () => null,
+      },
+      writable: true,
+      configurable: true,
+    })
 
     expect(hasOpenOverlay()).toBe(false)
   })
@@ -87,16 +95,13 @@ describe('detectNativeViewPauseReasons', () => {
     ).toEqual([])
   })
 
-  it('allows navigator-contained menus to keep the browser surface visible', () => {
-    const seenSelectors: string[] = []
+  it('pauses the native browser surface for navigator-contained menus', () => {
     const root = {
       querySelector: (selector: string) => {
-        seenSelectors.push(selector)
-        return null
+        return selector.includes('context-menu-content') ? {} : null
       },
     }
 
-    expect(detectNativeViewPauseReasons(root as unknown as Document)).toEqual([])
-    expect(seenSelectors.find((selector) => selector.includes('context-menu-content'))).toContain('data-native-view-passthrough')
+    expect(detectNativeViewPauseReasons(root as unknown as Document)).toEqual(['menu'])
   })
 })

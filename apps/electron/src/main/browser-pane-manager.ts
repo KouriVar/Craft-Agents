@@ -50,6 +50,11 @@ import {
   type BrowserDownloadRecord,
   type BrowserExtensionEntry,
   type BrowserPermissionEntry,
+  type BrowserSettings,
+  type BrowserClearDataRequest,
+  type BrowserSiteDataSummary,
+  type BrowserTabMenuAction,
+  type BrowserTabMenuRequest,
   type BrowserWorkspaceSnapshot,
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
@@ -57,7 +62,6 @@ import { CodedError } from '@craft-agent/shared/protocol'
 import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
 import type { BrowserCapabilityRequest, ScreenshotResultWire } from '@craft-agent/server-core/transport'
 import { BrowserProfileStore } from './browser-profile-store'
-import { BrowserPasswordVault } from './browser-password-vault'
 import { BrowserTabLifecycle } from './browser-tab-lifecycle'
 import { createBrowserAskAiSnapshot, reduceBrowserAskAiSnapshot } from './browser-ask-ai-state'
 import type { SessionEvent } from '@craft-agent/shared/protocol'
@@ -117,6 +121,7 @@ const ASK_AI_CHANNELS = {
   STATE: 'browser-new-tab:ask-ai-state',
 } as const
 const MAX_ASK_AI_PROMPT_LENGTH = 20_000
+const BOOKMARK_METADATA_TIMEOUT_MS = 5_000
 
 interface BrowserAskAiController {
   start(workspaceId: string, prompt: string): Promise<string>
@@ -311,6 +316,7 @@ interface CreateBrowserInstanceOptions {
   projectId?: string | null
   embeddedHostWebContentsId?: number
   initialUrl?: string
+  appearance?: 'light' | 'dark'
 }
 
 export interface BrowserScreenshotOptions {
@@ -448,6 +454,54 @@ interface LastBrowserAction {
 
 let instanceCounter = 0
 
+function sanitizeBookmarkTitle(title: string): string {
+  return title.replace(/[\r\n\t]+/g, ' ').trim()
+}
+
+function resolveBookmarkIcon(html: string, pageUrl: URL): string | null {
+  const links = html.match(/<link\b[^>]*>/gi) ?? []
+  for (const tag of links) {
+    const rel = readHtmlAttribute(tag, 'rel')?.toLowerCase() ?? ''
+    if (!rel.includes('icon')) continue
+    const href = readHtmlAttribute(tag, 'href')
+    if (!href) continue
+    try {
+      return new URL(href, pageUrl).toString()
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+async function fetchBookmarkMetadata(pageUrl: URL): Promise<{ title?: string; favicon?: string | null }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), BOOKMARK_METADATA_TIMEOUT_MS)
+  timeout.unref?.()
+  try {
+    const response = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: {
+        accept: 'text/html,application/xhtml+xml',
+        'user-agent': 'Mozilla/5.0 CraftAgent Bookmark Metadata',
+      },
+    })
+    const contentType = response.headers.get('content-type') ?? ''
+    if (!response.ok || !contentType.includes('html')) return {}
+    const html = await response.text()
+    const titleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)
+    const title = titleMatch ? sanitizeBookmarkTitle(decodeBookmarkHtml(titleMatch[1].replace(/\s+/g, ' '))) : undefined
+    return {
+      title,
+      favicon: resolveBookmarkIcon(html, pageUrl),
+    }
+  } catch {
+    return {}
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly tabLifecycle = new BrowserTabLifecycle<BrowserInstance>()
   private get instances(): Map<string, BrowserInstance> {
@@ -472,8 +526,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly profileStore = new BrowserProfileStore()
   private readonly permissionDecisions = new Map<string, boolean>()
   private readonly activeDownloads = new Map<string, { item: DownloadItem; instanceId: string }>()
-  private readonly passwordVault = new BrowserPasswordVault()
-  private readonly pendingCredentialPrompts = new Set<string>()
   private askAiController: BrowserAskAiController | null = null
   private isShuttingDown = false
 
@@ -556,8 +608,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
-    // Match background to current OS theme to prevent black/white flash on open
-    const bgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    // The embedded browser belongs to the app, so its blank surface follows
+    // the app's resolved appearance instead of the operating system setting.
+    const resolvedAppearance = options?.appearance ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+    const bgColor = resolvedAppearance === 'dark' ? '#2b292e' : '#fafafb'
 
     const window = new BrowserWindow({
       width: embeddedHostWindow ? 1 : 1200,
@@ -729,10 +783,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           this.markToolbarReady(instance, 'toolbar-load-finalized')
         }
       })
-    void this.loadEmptyStatePage(instance)
+    void this.loadEmptyStatePage(instance, resolvedAppearance)
       .then(async () => {
+        const browserSettings = this.profileStore.getSettings()
         const initialUrl = options?.initialUrl?.trim()
-        if (initialUrl && initialUrl !== 'about:blank') {
+          || (browserSettings.newTabBehavior === 'blank'
+            ? 'about:blank'
+            : browserSettings.newTabBehavior === 'custom'
+              ? browserSettings.customNewTabUrl
+              : '')
+        if (initialUrl === 'about:blank') {
+          await pageView.webContents.loadURL(initialUrl)
+        } else if (initialUrl) {
           await this.navigate(instance.id, initialUrl)
         }
       })
@@ -2075,25 +2137,27 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return this.profileStore.listBookmarks(workspaceId)
   }
 
-  addBookmark(
+  async addBookmark(
     workspaceId: string | null,
     input: {
       url: string
-      title: string
+      title?: string
       favicon?: string | null
       folderId?: string | null
     },
-  ): BrowserBookmarkEntry {
+  ): Promise<BrowserBookmarkEntry> {
     const parsed = new URL(input.url)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('Only HTTP(S) pages can be bookmarked.')
     }
+    const needsMetadata = !input.title?.trim() || input.favicon === undefined
+    const metadata = needsMetadata ? await fetchBookmarkMetadata(parsed) : {}
     const bookmark = this.profileStore.addBookmark({
       id: randomUUID(),
       workspaceId,
       url: parsed.toString(),
-      title: input.title.trim() || parsed.hostname,
-      favicon: input.favicon ?? null,
+      title: input.title?.trim() || metadata.title || parsed.hostname,
+      favicon: input.favicon ?? metadata.favicon ?? `${parsed.origin}/favicon.ico`,
       folderId: input.folderId ?? null,
       createdAt: Date.now(),
     })
@@ -2244,7 +2308,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         const title = decodeBookmarkHtml(anchorMatch[2].replace(/<[^>]+>/g, '')).trim() || parsed.hostname
         const favicon = readHtmlAttribute(anchorMatch[1], 'ICON')
         const folder = [...folderStack].reverse().find(Boolean) ?? null
-        this.addBookmark(workspaceId, {
+        await this.addBookmark(workspaceId, {
           url,
           title,
           favicon,
@@ -2265,6 +2329,143 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   clearHistory(workspaceId: string | null): void {
     this.profileStore.clearHistory(workspaceId)
     this.emitProfileChanged('history')
+  }
+
+  getBrowserSettings(): BrowserSettings {
+    const settings = this.profileStore.getSettings()
+    return {
+      ...settings,
+      downloadPath: settings.downloadPath || app.getPath('downloads'),
+    }
+  }
+
+  updateBrowserSettings(changes: Partial<BrowserSettings>): BrowserSettings {
+    const allowedKeys = new Set<keyof BrowserSettings>([
+      'linkOpenBehavior',
+      'newTabBehavior',
+      'customNewTabUrl',
+      'downloadPath',
+      'askDownloadLocation',
+      'permissionBehavior',
+    ])
+    for (const key of Object.keys(changes)) {
+      if (!allowedKeys.has(key as keyof BrowserSettings)) throw new Error(`Unsupported browser setting: ${key}`)
+    }
+    if (changes.linkOpenBehavior && !['internal', 'system', 'ask'].includes(changes.linkOpenBehavior)) {
+      throw new Error('Invalid link opening behavior.')
+    }
+    if (changes.newTabBehavior && !['default', 'blank', 'custom'].includes(changes.newTabBehavior)) {
+      throw new Error('Invalid new tab behavior.')
+    }
+    if (changes.permissionBehavior && !['ask', 'block'].includes(changes.permissionBehavior)) {
+      throw new Error('Invalid permission behavior.')
+    }
+    if (changes.customNewTabUrl) {
+      const parsed = new URL(changes.customNewTabUrl)
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Custom new tab URL must use HTTP or HTTPS.')
+      changes.customNewTabUrl = parsed.toString()
+    }
+    if (changes.downloadPath !== undefined) {
+      const candidate = changes.downloadPath.trim()
+      if (candidate && (!existsSync(candidate) || !statSync(candidate).isDirectory())) {
+        throw new Error('Download location must be an existing directory.')
+      }
+      changes.downloadPath = candidate
+    }
+    return this.getBrowserSettingsWithFallback(this.profileStore.updateSettings(changes))
+  }
+
+  async getBrowserCacheSize(): Promise<number> {
+    return session.fromPartition(SESSION_PARTITION).getCacheSize()
+  }
+
+  async clearBrowserData(workspaceId: string | null, request: BrowserClearDataRequest): Promise<void> {
+    if (!request || !['hour', 'day', 'week', 'four-weeks', 'all'].includes(request.timeRange)) {
+      throw new Error('Invalid browser data time range.')
+    }
+    const since = this.browserDataSince(request.timeRange)
+    if (request.history) {
+      this.profileStore.clearHistory(workspaceId, since)
+      this.emitProfileChanged('history')
+    }
+    if (request.downloads) {
+      this.profileStore.clearDownloads(workspaceId, since)
+      this.emitProfileChanged('downloads')
+    }
+    const dataTypes: Electron.ClearDataOptions['dataTypes'] = []
+    if (request.cookiesAndSiteData) {
+      dataTypes.push('cookies', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL')
+    }
+    if (request.cache) dataTypes.push('cache')
+    const browserSession = session.fromPartition(SESSION_PARTITION)
+    if (dataTypes.length > 0) {
+      await browserSession.clearData({ dataTypes })
+    }
+    if (request.cookiesAndSiteData) {
+      await browserSession.clearStorageData({ storages: ['cachestorage'] })
+    }
+    if (request.permissions) {
+      this.profileStore.clearPermissions()
+      this.permissionDecisions.clear()
+      this.emitProfileChanged('permissions')
+    }
+  }
+
+  async listBrowserSiteData(): Promise<BrowserSiteDataSummary[]> {
+    const cookies = await session.fromPartition(SESSION_PARTITION).cookies.get({})
+    const counts = new Map<string, number>()
+    for (const cookie of cookies) {
+      const domain = cookie.domain?.replace(/^\./, '').toLowerCase() ?? ''
+      if (!domain) continue
+      const origin = `${cookie.secure ? 'https' : 'http'}://${domain}`
+      counts.set(origin, (counts.get(origin) ?? 0) + 1)
+    }
+    return Array.from(counts, ([origin, cookieCount]) => ({ origin, cookieCount }))
+      .sort((a, b) => a.origin.localeCompare(b.origin))
+  }
+
+  async clearBrowserSiteData(origin: string): Promise<void> {
+    const normalized = this.normalizeBrowserOrigin(origin)
+    await session.fromPartition(SESSION_PARTITION).clearData({
+      origins: [normalized],
+      originMatchingMode: 'third-parties-included',
+      dataTypes: ['cookies', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL'],
+    })
+    await session.fromPartition(SESSION_PARTITION).clearStorageData({
+      origin: normalized,
+      storages: ['cachestorage'],
+    })
+    this.clearBrowserPermission(normalized)
+  }
+
+  async clearAllBrowserSiteData(): Promise<void> {
+    await session.fromPartition(SESSION_PARTITION).clearData({
+      dataTypes: ['cookies', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL'],
+    })
+    await session.fromPartition(SESSION_PARTITION).clearStorageData({ storages: ['cachestorage'] })
+  }
+
+  private getBrowserSettingsWithFallback(settings: BrowserSettings): BrowserSettings {
+    return { ...settings, downloadPath: settings.downloadPath || app.getPath('downloads') }
+  }
+
+  private browserDataSince(range: BrowserClearDataRequest['timeRange']): number {
+    const duration = {
+      hour: 60 * 60 * 1_000,
+      day: 24 * 60 * 60 * 1_000,
+      week: 7 * 24 * 60 * 60 * 1_000,
+      'four-weeks': 28 * 24 * 60 * 60 * 1_000,
+      all: Number.POSITIVE_INFINITY,
+    }[range]
+    return range === 'all' ? 0 : Date.now() - duration
+  }
+
+  private normalizeBrowserOrigin(value: string): string {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+      throw new Error('Site data can only be managed for an HTTP(S) origin.')
+    }
+    return parsed.origin
   }
 
   removeHistoryEntry(workspaceId: string | null, id: string): void {
@@ -2330,11 +2531,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.profileStore.clearPermission(origin, permission)
     if (permission) {
       this.permissionDecisions.delete(`${origin}|${permission}`)
+      this.emitProfileChanged('permissions')
       return
     }
     for (const key of Array.from(this.permissionDecisions.keys())) {
       if (key.startsWith(`${origin}|`)) this.permissionDecisions.delete(key)
     }
+    this.emitProfileChanged('permissions')
   }
 
   listExtensions(): BrowserExtensionEntry[] {
@@ -2586,7 +2789,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.profileStore.setExtensionPreference(extensionId, preference)
   }
 
-  showToolbarMenu(kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null): void {
+  showToolbarMenu(kind: 'extensions' | 'permissions', tabId?: string | null): void {
     const instance =
       (tabId ? this.instances.get(tabId) : null) ??
       Array.from(this.instances.values()).find((item) => item.isVisible) ??
@@ -2597,11 +2800,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const isChinese = app.getLocale().toLowerCase().startsWith('zh')
     let template: MenuItemConstructorOptions[]
 
-    if (kind === 'passwords') {
-      if (!instance || !origin) return
-      void this.showPasswordMenu(instance, origin)
-      return
-    }
     if (kind === 'extensions') {
       const extensions = this.listExtensions().filter((extension) => !extension.hidden)
       template =
@@ -2622,6 +2820,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
               },
             ]
     } else {
+      const origin = this.getBrowserTabOrigin(instance)
       if (!origin) return
       const entries = this.listBrowserPermissions(origin)
       template = [
@@ -2654,6 +2853,117 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     Menu.buildFromTemplate(template).popup({ window: host })
+  }
+
+  showTabMenu(hostWebContentsId: number, request: BrowserTabMenuRequest): Promise<BrowserTabMenuAction | null> {
+    const instance = this.instances.get(request.tabId)
+    const host =
+      this.windowManager?.getWindowByWebContentsId(hostWebContentsId) ??
+      instance?.embeddedHostWindow ??
+      instance?.window
+    if (!instance || !host || host.isDestroyed()) return Promise.resolve(null)
+
+    const isChinese = app.getLocale().toLowerCase().startsWith('zh')
+    const origin = this.getBrowserTabOrigin(instance)
+    const extensions = request.extensions.filter((extension) => extension.name.trim())
+    const label = {
+      back: isChinese ? '后退' : 'Back',
+      forward: isChinese ? '前进' : 'Forward',
+      reload: isChinese ? '重新加载' : 'Reload',
+      stop: isChinese ? '停止加载' : 'Stop loading',
+      copyLink: isChinese ? '复制链接' : 'Copy link',
+      addBookmark: isChinese ? '添加到书签' : 'Add to bookmarks',
+      removeBookmark: isChinese ? '从书签移除' : 'Remove bookmark',
+      pin: isChinese ? '固定标签页' : 'Pin tab',
+      unpin: isChinese ? '取消固定标签页' : 'Unpin tab',
+      mute: isChinese ? '网站静音' : 'Mute site',
+      unmute: isChinese ? '取消网站静音' : 'Unmute site',
+      openAssistant: isChinese ? '打开会话面板' : 'Open Session',
+      closeAssistant: isChinese ? '关闭会话面板' : 'Close Panel',
+      sitePermissions: isChinese ? '网站权限' : 'Site permissions',
+      extensions: isChinese ? '扩展' : 'Extensions',
+      noExtensions: isChinese ? '暂无浏览器扩展' : 'No browser extensions',
+      close: isChinese ? '关闭标签页' : 'Close tab',
+      closeOther: isChinese ? '关闭其他标签页' : 'Close other tabs',
+      closeBelow: isChinese ? '关闭下方标签页' : 'Close tabs below',
+    }
+
+    return new Promise((resolve) => {
+      let selected: BrowserTabMenuAction | null = null
+      const choose = (action: BrowserTabMenuAction) => {
+        selected = action
+      }
+      const template: MenuItemConstructorOptions[] = [
+        { label: label.back, enabled: instance.canGoBack, click: () => choose('back') },
+        { label: label.forward, enabled: instance.canGoForward, click: () => choose('forward') },
+        {
+          label: instance.isLoading ? label.stop : label.reload,
+          click: () => choose('reload-or-stop'),
+        },
+        { type: 'separator' },
+        { label: label.copyLink, enabled: request.hasWebUrl, click: () => choose('copy-link') },
+        {
+          label: request.isBookmarked ? label.removeBookmark : label.addBookmark,
+          enabled: request.hasWebUrl,
+          click: () => choose('toggle-bookmark'),
+        },
+        {
+          label: request.pinned ? label.unpin : label.pin,
+          click: () => choose('toggle-pinned'),
+        },
+        {
+          label: instance.pageView.webContents.isAudioMuted() ? label.unmute : label.mute,
+          enabled: request.hasWebUrl,
+          click: () => choose('toggle-muted'),
+        },
+        {
+          label: request.rightSidebarOpen ? label.closeAssistant : label.openAssistant,
+          click: () => choose('toggle-assistant'),
+        },
+        { type: 'separator' },
+        {
+          label: label.sitePermissions,
+          enabled: !!origin,
+          click: () => choose('site-permissions'),
+        },
+        {
+          label: label.extensions,
+          submenu: extensions.length > 0
+            ? extensions.map((extension) => ({
+                label: extension.name,
+                enabled: extension.hasAction,
+                click: () => choose(`extension:${extension.id}`),
+              }))
+            : [{ label: label.noExtensions, enabled: false }],
+        },
+        { type: 'separator' },
+        { label: label.close, click: () => choose('close') },
+        {
+          label: label.closeOther,
+          enabled: request.hasClosableOtherTabs,
+          click: () => choose('close-other-tabs'),
+        },
+        {
+          label: label.closeBelow,
+          enabled: request.hasClosableTabsBelow,
+          click: () => choose('close-tabs-below'),
+        },
+      ]
+
+      Menu.buildFromTemplate(template).popup({
+        window: host,
+        callback: () => resolve(selected),
+      })
+    })
+  }
+
+  private getBrowserTabOrigin(instance: BrowserInstance): string | null {
+    try {
+      const parsed = new URL(instance.currentUrl)
+      return /^https?:$/.test(parsed.protocol) ? parsed.origin : null
+    } catch {
+      return null
+    }
   }
 
   async openExtensionAction(extensionId: string, tabId?: string | null): Promise<void> {
@@ -3417,13 +3727,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return { url, title }
   }
 
-  private async loadEmptyStatePage(instance: BrowserInstance): Promise<void> {
+  private async loadEmptyStatePage(instance: BrowserInstance, appearance: 'light' | 'dark'): Promise<void> {
     if (VITE_DEV_SERVER_URL) {
-      await instance.pageView.webContents.loadURL(`${VITE_DEV_SERVER_URL}/${BROWSER_EMPTY_STATE_PAGE}`)
+      await instance.pageView.webContents.loadURL(`${VITE_DEV_SERVER_URL}/${BROWSER_EMPTY_STATE_PAGE}?appearance=${appearance}`)
       return
     }
 
-    await instance.pageView.webContents.loadFile(join(__dirname, `renderer/${BROWSER_EMPTY_STATE_PAGE}`))
+    await instance.pageView.webContents.loadFile(join(__dirname, `renderer/${BROWSER_EMPTY_STATE_PAGE}`), {
+      query: { appearance },
+    })
   }
 
   private async handleDeepLinkUrl(url: string): Promise<void> {
@@ -3658,22 +3970,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return inst.embeddedToolbarMode === 'fixed'
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.SHOW_EMBEDDED_MENU, (event, instanceId: string, kind: 'extensions' | 'permissions' | 'passwords') => {
+    ipcMain.handle(TOOLBAR_CHANNELS.SHOW_EMBEDDED_MENU, (event, instanceId: string, kind: 'extensions' | 'permissions') => {
       const inst = findInstance(instanceId, event)
       if (!inst) return
-      let origin: string | null = null
-      try {
-        origin = new URL(inst.currentUrl).origin
-      } catch {
-        // Non-web pages do not expose site permissions.
-      }
-      this.showToolbarMenu(kind, inst.id, origin)
-    })
-
-    ipcMain.on('browser-credentials:captured', (event, payload: { origin?: string; username?: string; password?: string }) => {
-      const instance = this.getInstanceByWebContentsId(event.sender.id)
-      if (!instance) return
-      void this.handleCapturedCredential(instance, payload)
+      this.showToolbarMenu(kind, inst.id)
     })
 
     ipcMain.handle(TOOLBAR_CHANNELS.TOGGLE_BOOKMARK, (event, instanceId: string) => {
@@ -3682,14 +3982,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const existing = this.profileStore.listBookmarks(inst.workspaceId).find((entry) => entry.url === inst.currentUrl)
       if (existing) {
         this.profileStore.removeBookmark(inst.workspaceId, existing.id)
+        this.pushToolbarState(inst)
       } else {
-        this.addBookmark(inst.workspaceId, {
+        void this.addBookmark(inst.workspaceId, {
           url: inst.currentUrl,
           title: inst.title,
           favicon: inst.favicon,
-        })
+        }).then(() => this.pushToolbarState(inst))
       }
-      this.pushToolbarState(inst)
     })
 
     ipcMain.handle(INSTALL_STORE_EXTENSION_CHANNEL, async (event, storeUrl: string) => {
@@ -4555,150 +4855,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.persistDownload(instance, entry)
   }
 
-  private async handleCapturedCredential(
-    instance: BrowserInstance,
-    payload: { origin?: string; username?: string; password?: string },
-  ): Promise<void> {
-    const origin = payload.origin?.trim() ?? ''
-    const username = payload.username?.trim().slice(0, 512) ?? ''
-    const password = payload.password ?? ''
-    if (!origin || !username || !password || password.length > 4096) return
-    try {
-      const parsed = new URL(origin)
-      const pageOrigin = new URL(instance.pageView.webContents.getURL()).origin
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== pageOrigin) return
-    } catch {
-      return
-    }
-    const promptKey = `${origin}\n${username}`
-    if (this.pendingCredentialPrompts.has(promptKey)) return
-    this.pendingCredentialPrompts.add(promptKey)
-    try {
-      const existing = (await this.passwordVault.list(origin)).find((credential) => credential.username === username)
-      const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-      const host = instance.embeddedHostWindow ?? instance.window
-      const result = await dialog.showMessageBox(host, {
-        type: 'question',
-        title: localeIsChinese ? '保存密码' : 'Save password',
-        message: localeIsChinese
-          ? `${existing ? '更新' : '保存'} ${username} 在 ${new URL(origin).hostname} 的密码？`
-          : `${existing ? 'Update' : 'Save'} the password for ${username} on ${new URL(origin).hostname}?`,
-        detail:
-          this.passwordVault.getBackend() === 'icloud-keychain'
-            ? localeIsChinese
-              ? '密码将安全存入 iCloud 钥匙串，并可在您的设备间同步。'
-              : 'The password will be stored in iCloud Keychain and can sync across your devices.'
-            : localeIsChinese
-              ? '密码将使用系统密码库加密保存在本机。'
-              : 'The password will be encrypted locally by the operating-system password vault.',
-        buttons: [localeIsChinese ? (existing ? '更新' : '保存') : existing ? 'Update' : 'Save', localeIsChinese ? '暂不' : 'Not now'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      })
-      if (result.response === 0) await this.passwordVault.save({ origin, username, password })
-    } finally {
-      setTimeout(() => this.pendingCredentialPrompts.delete(promptKey), 2_000)
-    }
-  }
-
-  private async offerPasswordFill(instance: BrowserInstance): Promise<void> {
-    let origin: string
-    try {
-      const parsed = new URL(instance.pageView.webContents.getURL())
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return
-      origin = parsed.origin
-    } catch {
-      return
-    }
-    if (instance.credentialOfferUrl === instance.currentUrl) return
-    const hasPasswordField = await instance.pageView.webContents
-      .executeJavaScript(`Boolean(document.querySelector('input[type="password"]'))`, true)
-      .catch(() => false)
-    if (!hasPasswordField) return
-    const credentials = await this.passwordVault.list(origin)
-    if (credentials.length === 0) return
-    instance.credentialOfferUrl = instance.currentUrl
-    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    const choices = credentials.slice(0, 8)
-    const cancelLabel = localeIsChinese ? '暂不填充' : 'Not now'
-    const host = instance.embeddedHostWindow ?? instance.window
-    const result = await dialog.showMessageBox(host, {
-      type: 'question',
-      title: localeIsChinese ? '填充已保存的密码' : 'Fill saved password',
-      message: localeIsChinese ? `选择 ${new URL(origin).hostname} 的登录账号` : `Choose an account for ${new URL(origin).hostname}`,
-      buttons: [...choices.map((credential) => credential.username), cancelLabel],
-      defaultId: 0,
-      cancelId: choices.length,
-      noLink: true,
-    })
-    const selected = choices[result.response]
-    if (selected) await this.fillSavedCredential(instance, selected.id)
-  }
-
-  private async fillSavedCredential(instance: BrowserInstance, id: string): Promise<void> {
-    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    const credential = await this.passwordVault.reveal(id, localeIsChinese ? '使用已保存的网页登录信息' : 'Use your saved website login')
-    let pageOrigin: string
-    try {
-      pageOrigin = new URL(instance.pageView.webContents.getURL()).origin
-    } catch {
-      return
-    }
-    if (credential.origin !== pageOrigin) throw new Error('Saved password origin does not match the current page.')
-    instance.pageView.webContents.send('browser-credentials:fill', {
-      username: credential.username,
-      password: credential.password,
-    })
-  }
-
-  private async showPasswordMenu(instance: BrowserInstance, origin: string): Promise<void> {
-    const host = instance.embeddedHostWindow ?? instance.window
-    if (host.isDestroyed()) return
-    const localeIsChinese = app.getLocale().toLowerCase().startsWith('zh')
-    const credentials = await this.passwordVault.list(origin)
-    const template: MenuItemConstructorOptions[] =
-      credentials.length > 0
-      ? credentials.map((credential) => ({
-          label: credential.username,
-          submenu: [
-            {
-              label: localeIsChinese ? '使用 Touch ID 填充' : 'Fill with Touch ID',
-                click: () => {
-                  void this.fillSavedCredential(instance, credential.id)
-                },
-            },
-            {
-              label: localeIsChinese ? '删除' : 'Delete',
-                click: () => {
-                  void this.passwordVault.remove(credential.id)
-                },
-            },
-          ],
-        }))
-        : [
-            {
-              label: localeIsChinese ? '此网站没有已保存的密码' : 'No saved passwords for this site',
-              enabled: false,
-            },
-          ]
-    template.push(
-      { type: 'separator' },
-      {
-        label:
-          this.passwordVault.getBackend() === 'icloud-keychain'
-            ? localeIsChinese
-              ? 'iCloud 钥匙串同步已启用'
-              : 'iCloud Keychain sync enabled'
-            : localeIsChinese
-              ? '系统加密密码库'
-              : 'System-encrypted password vault',
-        enabled: false,
-      },
-    )
-    Menu.buildFromTemplate(template).popup({ window: host })
-  }
-
   private getExtensionActionPath(manifest: any): string | null {
     const popup =
       manifest?.action?.default_popup ??
@@ -4882,11 +5038,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const instance = this.getInstanceByWebContentsId(wcId)
       if (!instance) return
 
-      // Auto-save: set a deterministic path so Electron doesn't show a native dialog
-      const downloadsDir = this.resolveDownloadsDir(instance)
+      const browserSettings = this.getBrowserSettings()
+      const downloadsDir = browserSettings.downloadPath
       const filename = this.uniqueFilename(downloadsDir, item.getFilename())
       const savePath = join(downloadsDir, filename)
-      item.setSavePath(savePath)
+      if (!browserSettings.askDownloadLocation) item.setSavePath(savePath)
 
       const downloadId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const started: BrowserDownloadEntry = {
@@ -5005,6 +5161,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         }
 
         if (!promptable.has(permission)) {
+          this.logPermissionDecision('request', permission, origin)
+          callback(false)
+          return
+        }
+        if (this.profileStore.getSettings().permissionBehavior === 'block') {
           this.logPermissionDecision('request', permission, origin)
           callback(false)
           return
@@ -5145,7 +5306,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     pageWc.on('dom-ready', () => {
       this.installThemeObserver(instance)
       void this.extractThemeColor(instance)
-      void this.offerPasswordFill(instance)
     })
 
     pageWc.on('before-input-event', (_event, _input) => {

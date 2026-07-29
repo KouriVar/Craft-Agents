@@ -9,9 +9,17 @@ import { DEFAULT_NAVIGATION_STATE, getNavigationStateKey, parseNavigationStateKe
 import { routes } from '../routes'
 
 describe('browser routes', () => {
-  test('uses Explore as the default app destination', () => {
+  test('uses Sessions as the default app destination', () => {
     expect(routes.view.browser()).toBe('browser')
-    expect(DEFAULT_NAVIGATION_STATE).toEqual({ navigator: 'browser', details: null })
+    expect(DEFAULT_NAVIGATION_STATE).toEqual({ navigator: 'sessions', filter: { kind: 'allSessions' }, details: null })
+  })
+
+  test('redirects legacy Explore routes to Sessions', () => {
+    expect(parseRouteToNavigationState('explore')).toEqual({
+      navigator: 'sessions',
+      filter: { kind: 'allSessions' },
+      details: null,
+    })
   })
 
   test('parses the browser navigator route', () => {

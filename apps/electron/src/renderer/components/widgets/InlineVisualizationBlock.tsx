@@ -167,12 +167,12 @@ export function InlineVisualizationBlock({ descriptor, sessionId }: InlineVisual
             style={{ height }}
           />
         ) : error ? (
-          <div className="flex min-h-28 items-center justify-center gap-2 rounded-[8px] bg-foreground/3 px-4 py-6 text-center text-[13px] text-destructive/80 shadow-minimal">
+          <div className="flex min-h-28 items-center justify-center gap-2 rounded-surface bg-foreground/3 px-4 py-6 text-center text-control text-destructive/80 shadow-minimal">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         ) : (
-          <div className="flex min-h-28 items-center justify-center px-4 py-6 text-[13px] text-muted-foreground">
+          <div className="flex min-h-28 items-center justify-center px-4 py-6 text-control text-muted-foreground">
             {t('common.loading')}
           </div>
         )}

@@ -63,15 +63,19 @@ export interface RetryQueueEntry {
 
 export interface RetrySchedulerOptions {
   workspaceRootPath: string;
+  /** Called only after the bounded retry budget is exhausted. */
+  onFinalFailure?: (entry: RetryQueueEntry, result: WebhookActionResult) => void | Promise<void>;
 }
 
 export class RetryScheduler {
   private readonly workspaceRootPath: string;
+  private readonly onFinalFailure?: RetrySchedulerOptions['onFinalFailure'];
   private timer: ReturnType<typeof setInterval> | null = null;
   private processing = false;
 
   constructor(options: RetrySchedulerOptions) {
     this.workspaceRootPath = options.workspaceRootPath;
+    this.onFinalFailure = options.onFinalFailure;
   }
 
   /**
@@ -216,6 +220,7 @@ export class RetryScheduler {
           } catch (e) {
             log.debug(`[RetryScheduler] Failed to write history: ${e}`);
           }
+          try { await this.onFinalFailure?.(entry, result); } catch (e) { log.debug(`[RetryScheduler] Final failure callback failed: ${e}`); }
           // Don't add to remaining — drop from queue
         } else {
           // Still retryable — schedule next deferred attempt

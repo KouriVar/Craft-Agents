@@ -43,6 +43,7 @@ export const SESSION_PERSISTENT_FIELDS = [
   // Archive
   'isArchived', 'archivedAt',
   // Branching
+  'branchFromSessionId',
   'branchFromMessageId',
   'branchFromSdkSessionId',
   'branchFromSessionPath',
@@ -55,15 +56,11 @@ export const SESSION_PERSISTENT_FIELDS = [
   'triggeredBy',
   // Project binding (workspace-scoped grouping)
   'projectId',
+  'isPinned',
   // Kanban: task/subtask hierarchy + board column
   'parentSessionId',
   'kanbanColumn',
   // Tasks Conductor: link a session back to the task spec / run / DAG node that owns it
-  'taskSlug',
-  'taskRunId',
-  'taskNodeId',
-  'taskNodeCount',
-  'taskDraft',
   // Long-running task continuity (session-backed tasks)
   'taskGoal',
   'taskPriority',
@@ -201,6 +198,11 @@ export interface SessionConfig {
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
   /**
+   * Source session id for this branch. Kept with branchFromMessageId so the
+   * branch graph remains auditable after the source is no longer loaded.
+   */
+  branchFromSessionId?: string;
+  /**
    * Message ID this session was branched from.
    * Branching semantics are a hard cutoff: model context must not include parent messages after this message.
    */
@@ -233,20 +235,18 @@ export interface SessionConfig {
   triggeredBy?: { automationName?: string; event?: string; timestamp?: number };
   /** Workspace-scoped project id this session belongs to (undefined = unbound). */
   projectId?: string;
+  expertId?: string;
+  /** Keep this session above unpinned sessions in list views. */
+  isPinned?: boolean;
   /** Parent session id — when set, this session is a subtask of the parent (undefined = top-level task). */
   parentSessionId?: string;
   /** Kanban board column id ('todo' | 'in-progress' | 'done'). Drag-to-move target; independent of sessionStatus. */
   kanbanColumn?: string;
   /** Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes). */
-  taskSlug?: string;
   /** Tasks Conductor: id of the run that spawned this child session (child nodes only). */
-  taskRunId?: string;
   /** Tasks Conductor: id of the DAG node this child session executes (child nodes only). */
-  taskNodeId?: string;
   /** Tasks Conductor: total DAG node count (orchestrator only) — board progress denominator that stays stable while children spawn lazily. */
-  taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
-  taskDraft?: boolean;
   /** User-visible objective for this long-running session task. */
   taskGoal?: string;
   /** Lightweight priority used by Today and proactive ordering. */
@@ -345,6 +345,10 @@ export interface SessionHeader {
   isArchived?: boolean;
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
+  /** Source session id for this branch; retained for tree traversal and audit. */
+  branchFromSessionId?: string;
+  /** Message id in the source session used as this branch's cutoff. */
+  branchFromMessageId?: string;
   /** One-shot hidden summary injected on the first turn after a remote transfer. */
   transferredSessionSummary?: string;
   /** Whether the transferred-session summary has already been injected. */
@@ -353,20 +357,18 @@ export interface SessionHeader {
   triggeredBy?: { automationName?: string; event?: string; timestamp?: number };
   /** Workspace-scoped project id this session belongs to (undefined = unbound). */
   projectId?: string;
+  expertId?: string;
+  /** Keep this session above unpinned sessions in list views. */
+  isPinned?: boolean;
   /** Parent session id — when set, this session is a subtask of the parent (undefined = top-level task). */
   parentSessionId?: string;
   /** Kanban board column id ('todo' | 'in-progress' | 'done'). Drag-to-move target; independent of sessionStatus. */
   kanbanColumn?: string;
   /** Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes). */
-  taskSlug?: string;
   /** Tasks Conductor: id of the run that spawned this child session (child nodes only). */
-  taskRunId?: string;
   /** Tasks Conductor: id of the DAG node this child session executes (child nodes only). */
-  taskNodeId?: string;
   /** Tasks Conductor: total DAG node count (orchestrator only) — board progress denominator that stays stable while children spawn lazily. */
-  taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
-  taskDraft?: boolean;
   taskGoal?: string;
   taskPriority?: TaskPriority;
   taskDueAt?: number;
@@ -453,23 +455,22 @@ export interface SessionMetadata {
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
   /** Message ID that this session was branched from (hard context cutoff marker). */
+  branchFromSessionId?: string;
   branchFromMessageId?: string;
   /** Workspace-scoped project id this session belongs to (undefined = unbound). */
   projectId?: string;
+  expertId?: string;
+  /** Keep this session above unpinned sessions in list views. */
+  isPinned?: boolean;
   /** Parent session id — when set, this session is a subtask of the parent (undefined = top-level task). */
   parentSessionId?: string;
   /** Kanban board column id ('todo' | 'in-progress' | 'done'). Drag-to-move target; independent of sessionStatus. */
   kanbanColumn?: string;
   /** Tasks Conductor: slug of the task spec this session belongs to (orchestrator + child nodes). */
-  taskSlug?: string;
   /** Tasks Conductor: id of the run that spawned this child session (child nodes only). */
-  taskRunId?: string;
   /** Tasks Conductor: id of the DAG node this child session executes (child nodes only). */
-  taskNodeId?: string;
   /** Tasks Conductor: total DAG node count (orchestrator only) — board progress denominator that stays stable while children spawn lazily. */
-  taskNodeCount?: number;
   /** Tasks Conductor: generate-time draft orchestrator. Hidden from the board until adopted (promoted) by createTask. */
-  taskDraft?: boolean;
   taskGoal?: string;
   taskPriority?: TaskPriority;
   taskDueAt?: number;

@@ -238,10 +238,9 @@ export function isRefreshableSource(source: LoadedSource): boolean {
 /**
  * MCP transport type for sources
  * - 'http': HTTP-based MCP server (URL endpoint)
- * - 'sse': Server-Sent Events MCP server (URL endpoint)
  * - 'stdio': Local subprocess MCP server (spawned command)
  */
-export type McpTransport = 'http' | 'sse' | 'stdio';
+export type McpTransport = 'http' | 'stdio';
 
 /**
  * MCP-specific configuration
@@ -253,15 +252,15 @@ export interface McpSourceConfig {
    */
   transport?: McpTransport;
 
-  // === HTTP/SSE transport fields ===
+  // === HTTP transport fields ===
   /**
-   * URL endpoint for HTTP or SSE transport.
-   * Required when transport is 'http' or 'sse' (or undefined).
+   * URL endpoint for HTTP transport.
+   * Required when transport is 'http' (or undefined).
    */
   url?: string;
 
   /**
-   * Authentication type for HTTP/SSE servers.
+   * Authentication type for HTTP servers.
    */
   authType?: SourceMcpAuthType;
 
@@ -519,12 +518,6 @@ export interface LoadedSource {
    * Used for credential lookups: source_oauth::{workspaceId}::{sourceSlug}
    */
   workspaceId: string;
-
-  /**
-   * Whether this is a built-in source (e.g., craft-agents-docs).
-   * Built-in sources are always available and not shown in the sources UI.
-   */
-  isBuiltin?: boolean;
 
   /**
    * Pre-computed path to local icon file (icon.svg, icon.png, etc.) if it exists.

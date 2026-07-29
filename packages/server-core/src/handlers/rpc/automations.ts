@@ -1,11 +1,14 @@
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { randomBytes } from 'node:crypto'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
-import { appendAutomationHistoryEntry } from '@craft-agent/shared/automations/history-store'
+import { appendAutomationHistoryEntry, ensureAutomationHistorySchema } from '@craft-agent/shared/automations/history-store'
 import { AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER } from '@craft-agent/shared/automations/constants'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import { inferAutomationWithModel } from '../../automations/automation-inference'
+import { migrateAutomationConfigSchema } from '@craft-agent/shared/migrations'
 
 // History file name — matches AUTOMATIONS_HISTORY_FILE from @craft-agent/shared/automations/constants
 const HISTORY_FILE = 'automations-history.jsonl'
@@ -22,7 +25,7 @@ function withConfigMutex<T>(workspaceRoot: string, fn: () => Promise<T>): Promis
 }
 
 // Shared helper: resolve workspace, read automations.json, validate matcher, mutate, write back
-interface AutomationsConfigJson { automations?: Record<string, Record<string, unknown>[]>; [key: string]: unknown }
+interface AutomationsConfigJson { schemaVersion?: 1; automations?: Record<string, Record<string, unknown>[]>; [key: string]: unknown }
 async function withAutomationMatcher(workspaceId: string, eventName: string, matcherIndex: number, mutate: (matchers: Record<string, unknown>[], index: number, config: AutomationsConfigJson, genId: () => string) => void) {
   const workspace = getWorkspaceByNameOrId(workspaceId)
   if (!workspace) throw new Error('Workspace not found')
@@ -30,6 +33,7 @@ async function withAutomationMatcher(workspaceId: string, eventName: string, mat
   await withConfigMutex(workspace.rootPath, async () => {
     const { resolveAutomationsConfigPath, generateShortId } = await import('@craft-agent/shared/automations/resolve-config-path')
     const configPath = resolveAutomationsConfigPath(workspace.rootPath)
+    migrateAutomationConfigSchema(configPath)
 
     const raw = await readFile(configPath, 'utf-8')
     const config = JSON.parse(raw)
@@ -56,6 +60,8 @@ async function withAutomationMatcher(workspaceId: string, eventName: string, mat
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.automations.GET,
+  RPC_CHANNELS.automations.CREATE,
+  RPC_CHANNELS.automations.INFER,
   RPC_CHANNELS.automations.TEST,
   RPC_CHANNELS.automations.SET_ENABLED,
   RPC_CHANNELS.automations.DUPLICATE,
@@ -79,6 +85,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     try {
       const { resolveAutomationsConfigPath } = await import('@craft-agent/shared/automations/resolve-config-path')
       const configPath = resolveAutomationsConfigPath(workspace.rootPath)
+      migrateAutomationConfigSchema(configPath)
       log.info(`AUTOMATIONS_GET: Reading config from: ${configPath}`)
       const content = await readFile(configPath, 'utf-8')
       const parsed = JSON.parse(content)
@@ -93,6 +100,45 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
       log.error(`AUTOMATIONS_GET: Error loading automations:`, error)
       throw error
     }
+  })
+
+  // v0.20 creation boundary: a draft must have been explicitly confirmed by
+  // the client before it can become an executable matcher.
+  server.handle(RPC_CHANNELS.automations.CREATE, async (_ctx, workspaceId: string, draft: import('@craft-agent/shared/automations').AutomationDraft) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+    const { confirmAutomationDraft, generateShortId, resolveAutomationsConfigPath } = await import('@craft-agent/shared/automations')
+    const confirmed = confirmAutomationDraft(draft)
+    const eventBySource = { 'session-status': 'SessionStatusChange', 'file-change': 'FileChange', 'project-change': 'ProjectChange', messaging: 'MessagingReceived', webhook: 'WebhookReceived', 'webpage-change': 'WebPageChange' } as const
+    const event = confirmed.trigger.type === 'schedule' ? 'SchedulerTick' : eventBySource[confirmed.trigger.source]
+    const matcher: Record<string, unknown> = {
+      id: generateShortId(), name: confirmed.name, permissionMode: confirmed.permissionMode,
+      retryLimit: confirmed.retryLimit,
+      actions: [{ type: 'prompt', prompt: confirmed.execution }],
+    }
+    if (confirmed.trigger.type === 'schedule') matcher.cron = confirmed.trigger.cadence === 'cron' ? confirmed.trigger.value : confirmed.trigger.cadence === 'at' ? `0 ${confirmed.trigger.value.split(':')[0] ?? '9'} * * *` : '0 9 * * *'
+    if (confirmed.trigger.type === 'event' && confirmed.trigger.rule && confirmed.trigger.source !== 'webpage-change') matcher.matcher = confirmed.trigger.rule
+    // The monitor itself evaluates the page rule and emits only on a detected
+    // change; a regex matcher here would incorrectly filter that event again.
+    if (confirmed.trigger.type === 'event' && confirmed.trigger.source === 'webpage-change') matcher.webMonitor = { url: confirmed.trigger.url!, rule: confirmed.trigger.rule!, frequencyMinutes: confirmed.trigger.frequencyMinutes! }
+    const webhookSecret = confirmed.trigger.type === 'event' && confirmed.trigger.source === 'webhook' ? randomBytes(24).toString('hex') : undefined
+    if (webhookSecret) matcher.inboundWebhook = { secret: webhookSecret }
+    await withConfigMutex(workspace.rootPath, async () => {
+      const path = resolveAutomationsConfigPath(workspace.rootPath)
+      const migration = migrateAutomationConfigSchema(path)
+      let config: AutomationsConfigJson = migration === 'missing'
+        ? { schemaVersion: 1, automations: {} }
+        : JSON.parse(await readFile(path, 'utf8')) as AutomationsConfigJson
+      config.schemaVersion = 1; config.automations ??= {}; (config.automations[event] ??= []).push(matcher)
+      await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+    })
+    return { id: matcher.id as string, event, ...(webhookSecret ? { inboundWebhook: { secret: webhookSecret, path: `/webhooks/${encodeURIComponent(workspaceId)}/${matcher.id as string}` } } : {}) }
+  })
+
+  server.handle(RPC_CHANNELS.automations.INFER, async (_ctx, workspaceId: string, description: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+    return inferAutomationWithModel({ workspace, platform: deps.platform, description })
   })
 
   server.handle(RPC_CHANNELS.automations.TEST, async (_ctx, payload: import('@craft-agent/shared/protocol').TestAutomationPayload) => {
@@ -237,16 +283,21 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     const clampedLimit = Math.max(1, Math.min(limit, AUTOMATION_HISTORY_MAX_RUNS_PER_MATCHER))
     const historyPath = join(workspace.rootPath, HISTORY_FILE)
     try {
+      ensureAutomationHistorySchema(workspace.rootPath)
       const content = await readFile(historyPath, 'utf-8')
       const lines = content.trim().split('\n').filter(Boolean)
 
       return lines
-        .map(line => { try { return JSON.parse(line) } catch { return null } })
+        .map(line => {
+          try { return JSON.parse(line) }
+          catch { throw new Error(`自动化运行审计数据已损坏，原文件已保留：${historyPath}`) }
+        })
         .filter((e): e is HistoryEntry => e?.id === automationId)
         .slice(-clampedLimit)
         .reverse()
-    } catch {
-      return [] // File doesn't exist yet
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
     }
   })
 

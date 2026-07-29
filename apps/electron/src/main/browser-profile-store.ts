@@ -7,6 +7,7 @@ import type {
   BrowserDownloadRecord,
   BrowserHistoryEntry,
   BrowserPermissionEntry,
+  BrowserSettings,
   BrowserWorkspaceSnapshot,
 } from '../shared/types'
 
@@ -18,7 +19,7 @@ interface StoredExtensionPreference {
 }
 
 interface StoredBrowserProfile {
-  version: 3
+  version: 4
   bookmarks: BrowserBookmarkEntry[]
   bookmarkFolders: BrowserBookmarkFolder[]
   history: BrowserHistoryEntry[]
@@ -27,10 +28,20 @@ interface StoredBrowserProfile {
   extensionPreferences: StoredExtensionPreference[]
   permissions: BrowserPermissionEntry[]
   browserWorkspaces: Record<string, BrowserWorkspaceSnapshot>
+  settings: BrowserSettings
+}
+
+const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
+  linkOpenBehavior: 'system',
+  newTabBehavior: 'default',
+  customNewTabUrl: '',
+  downloadPath: '',
+  askDownloadLocation: false,
+  permissionBehavior: 'ask',
 }
 
 const EMPTY_PROFILE: StoredBrowserProfile = {
-  version: 3,
+  version: 4,
   bookmarks: [],
   bookmarkFolders: [],
   history: [],
@@ -39,6 +50,7 @@ const EMPTY_PROFILE: StoredBrowserProfile = {
   extensionPreferences: [],
   permissions: [],
   browserWorkspaces: {},
+  settings: DEFAULT_BROWSER_SETTINGS,
 }
 
 const MAX_HISTORY_ENTRIES = 5_000
@@ -159,9 +171,9 @@ export class BrowserProfileStore {
     this.save()
   }
 
-  clearHistory(workspaceId: string | null): void {
+  clearHistory(workspaceId: string | null, since = 0): void {
     const profile = this.load()
-    profile.history = profile.history.filter((entry) => entry.workspaceId !== workspaceId)
+    profile.history = profile.history.filter((entry) => entry.workspaceId !== workspaceId || entry.visitedAt < since)
     this.save()
   }
 
@@ -190,9 +202,9 @@ export class BrowserProfileStore {
     this.save()
   }
 
-  clearDownloads(workspaceId: string | null): void {
+  clearDownloads(workspaceId: string | null, since = 0): void {
     const profile = this.load()
-    profile.downloads = profile.downloads.filter((entry) => entry.workspaceId !== workspaceId)
+    profile.downloads = profile.downloads.filter((entry) => entry.workspaceId !== workspaceId || entry.timestamp < since)
     this.save()
   }
 
@@ -267,6 +279,22 @@ export class BrowserProfileStore {
     this.save()
   }
 
+  clearPermissions(): void {
+    this.load().permissions = []
+    this.save()
+  }
+
+  getSettings(): BrowserSettings {
+    return { ...this.load().settings }
+  }
+
+  updateSettings(changes: Partial<BrowserSettings>): BrowserSettings {
+    const profile = this.load()
+    profile.settings = { ...profile.settings, ...changes }
+    this.save()
+    return { ...profile.settings }
+  }
+
   loadWorkspaceState(workspaceId: string): BrowserWorkspaceSnapshot {
     const snapshot = this.load().browserWorkspaces[workspaceId]
     if (!snapshot) return { version: 1, activeTabId: null, tabs: [], updatedAt: 0 }
@@ -308,7 +336,7 @@ export class BrowserProfileStore {
       if (existsSync(this.filePath)) {
         const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as Partial<StoredBrowserProfile>
         this.profile = {
-          version: 3,
+          version: 4,
           bookmarks: Array.isArray(parsed.bookmarks)
             ? parsed.bookmarks.map((entry) => ({
                 ...entry,
@@ -322,6 +350,7 @@ export class BrowserProfileStore {
           extensionPreferences: Array.isArray(parsed.extensionPreferences) ? parsed.extensionPreferences : [],
           permissions: Array.isArray(parsed.permissions) ? parsed.permissions : [],
           browserWorkspaces: parsed.browserWorkspaces && typeof parsed.browserWorkspaces === 'object' ? parsed.browserWorkspaces : {},
+          settings: { ...DEFAULT_BROWSER_SETTINGS, ...(parsed.settings ?? {}) },
         }
         return this.profile
       }

@@ -116,7 +116,7 @@ export function TaskTile({
   const canRunSubtasks =
     !hasRunningSubtasks &&
     !task.isProcessing &&
-    task.subtasks.some(s => s.runState === 'pending' && (task.taskSlug ? true : !!s.sessionId))
+    task.subtasks.some(s => s.runState === 'pending' && !!s.sessionId)
 
   // Live treatment: an in-flight turn on a tile parked in the active column,
   // gated by the user's live-pulse preference.
@@ -281,7 +281,7 @@ export function TaskTile({
                     className={cn('h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-90')}
                     strokeWidth={2}
                   />
-                  <SubtaskProgress subtasks={task.subtasks} total={task.subtaskTotal} accent={accent} className="min-w-0 flex-1" />
+                  <SubtaskProgress subtasks={task.subtasks} accent={accent} className="min-w-0 flex-1" />
                 </button>
                 {onRunSubtasks && (
                   <button

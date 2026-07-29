@@ -15,41 +15,30 @@ import type { ComponentType } from 'react'
 import type { SettingsSubpage } from '../../../shared/settings-registry'
 
 import AppSettingsPage from './AppSettingsPage'
+import InterfaceSettingsPage from './InterfaceSettingsPage'
+import ProfileSettingsPage from './ProfileSettingsPage'
 import AiSettingsPage from './AiSettingsPage'
-import AccountsSettingsPage from './AccountsSettingsPage'
-import AppearanceSettingsPage from './AppearanceSettingsPage'
-import ExploreSettingsPage from './ExploreSettingsPage'
-import PrivacySettingsPage from './PrivacySettingsPage'
+import BrowserSettingsPage from './BrowserSettingsPage'
+import IntegrationsSettingsPage from './IntegrationsSettingsPage'
+import SecuritySettingsPage from './SecuritySettingsPage'
 import CognitionDebugPage from './CognitionDebugPage'
-import InputSettingsPage from './InputSettingsPage'
-import WorkspaceSettingsPage from './WorkspaceSettingsPage'
-import PermissionsSettingsPage from './PermissionsSettingsPage'
-import LabelsSettingsPage from './LabelsSettingsPage'
-import MessagingSettingsPage from './MessagingSettingsPage'
-import ServerSettingsPage from './ServerSettingsPage'
-import ShortcutsPage from './ShortcutsPage'
-import PreferencesPage from './PreferencesPage'
 
 /**
  * Map of settings subpage IDs to their page components.
  * TypeScript will error if a page from SETTINGS_PAGES is missing here.
+ *
+ * Legacy page components (Appearance, Input, etc.) remain importable for reuse
+ * inside composite pages but are not registered in this map.
  */
 export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = {
   app: AppSettingsPage,
+  interface: InterfaceSettingsPage,
+  profile: ProfileSettingsPage,
   ai: AiSettingsPage,
-  accounts: AccountsSettingsPage,
-  appearance: AppearanceSettingsPage,
-  explore: ExploreSettingsPage,
-  privacy: PrivacySettingsPage,
+  browser: BrowserSettingsPage,
+  integrations: IntegrationsSettingsPage,
+  security: SecuritySettingsPage,
   cognition: CognitionDebugPage,
-  input: InputSettingsPage,
-  workspace: WorkspaceSettingsPage,
-  permissions: PermissionsSettingsPage,
-  labels: LabelsSettingsPage,
-  messaging: MessagingSettingsPage,
-  server: ServerSettingsPage,
-  shortcuts: ShortcutsPage,
-  preferences: PreferencesPage,
 }
 
 /**

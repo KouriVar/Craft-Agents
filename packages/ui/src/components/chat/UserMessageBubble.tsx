@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Clock } from 'lucide-react'
+import { Clock, Pencil, Trash2 } from 'lucide-react'
 import type { StoredAttachment, ContentBadge } from '@craft-agent/core'
 import { normalizePath } from '@craft-agent/core/utils'
 import { cn } from '../../lib/utils'
@@ -321,6 +321,10 @@ export interface UserMessageBubbleProps {
   isQueued?: boolean
   /** Compact mode - reduces padding for popover embedding */
   compactMode?: boolean
+  /** Edit action supplied by the session host. */
+  onEdit?: () => void
+  /** Delete action supplied by the session host. */
+  onDelete?: () => void
 }
 
 /** Minimum visible duration of the "Queued" chip. Both backends ack
@@ -338,6 +342,8 @@ export function UserMessageBubble({
   badges,
   isQueued,
   compactMode,
+  onEdit,
+  onDelete,
 }: UserMessageBubbleProps) {
   const { t } = useTranslation()
   const hasAttachments = attachments && attachments.length > 0
@@ -484,12 +490,19 @@ export function UserMessageBubble({
           separate pill below — keeps the chat to one bubble per message
           while the chip and pulsing icon make the waiting state obvious
           (#616 follow-up). */}
-      <div
-        className={cn(
-          "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
-          compactMode ? "px-4 py-2" : "px-5 py-3.5"
+      <div className="group relative max-w-[80%]">
+        {(onEdit || onDelete) && (
+          <div className="absolute -left-16 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {onEdit && <button type="button" onClick={onEdit} className="rounded p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground" aria-label="Edit message"><Pencil className="h-3.5 w-3.5" /></button>}
+            {onDelete && <button type="button" onClick={onDelete} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete message"><Trash2 className="h-3.5 w-3.5" /></button>}
+          </div>
         )}
-      >
+        <div
+          className={cn(
+            "bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
+            compactMode ? "px-4 py-2" : "px-5 py-3.5"
+          )}
+        >
         {showQueued && (
           <div
             className="flex items-center gap-1.5 text-foreground/55 mb-1.5"
@@ -513,6 +526,7 @@ export function UserMessageBubble({
             </Markdown>
           )
         }
+        </div>
       </div>
     </div>
   )

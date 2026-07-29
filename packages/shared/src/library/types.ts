@@ -3,7 +3,7 @@
  * Independent of packages/shared/src/resources (ResourceBundle).
  */
 
-export type LibraryDocumentStatus = 'active' | 'archived'
+export type LibraryDocumentStatus = 'active' | 'archived' | 'trashed'
 export type LibrarySyncStatus = 'clean' | 'pending' | 'conflict'
 
 export type LibraryDocumentTemplateId =
@@ -111,6 +111,8 @@ export interface DocumentMeta {
   createdAt: number
   updatedAt: number
   archivedAt?: number
+  /** Set when the document is in the recoverable 30-day trash. */
+  trashedAt?: number
   status: LibraryDocumentStatus
   bodyPath: string
   templateId?: LibraryDocumentTemplateId
@@ -158,7 +160,7 @@ export interface LibraryResourcesIndex {
 
 export interface LibraryListQuery {
   workspaceId: string
-  filter?: 'all' | 'recent' | 'archived'
+  filter?: 'all' | 'recent' | 'archived' | 'trash'
   search?: string
   /** Exact project-id filter. Omit/empty → no project filtering (back-compat). */
   projectId?: string

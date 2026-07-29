@@ -1,22 +1,8 @@
 import { atom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
 import type { BrowserInstanceInfo } from '../../shared/types'
-import * as storage from '@/lib/local-storage'
 
 export type BrowserWorkspaceTab = BrowserInstanceInfo
 export type BrowserNavigatorKind = 'tabs' | 'bookmarks' | 'history' | 'downloads'
-
-/**
- * Explore is the unified work entry. It hosts two perspectives over the same
- * workspace: a sessions view (reusing SessionList) and a browser view (reusing
- * the browser tabs/collections). The mode switch in the navigator header swaps
- * between them without splitting Explore into separate modules.
- */
-export type ExploreMode = 'sessions' | 'browser'
-export const exploreModeAtom = atomWithStorage<ExploreMode>(
-  storage.getKeyString(storage.KEYS.exploreMode),
-  storage.get<ExploreMode>(storage.KEYS.exploreMode, 'sessions'),
-)
 
 export const BROWSER_NEW_TAB_URL = 'about:blank'
 
@@ -32,6 +18,7 @@ export type BrowserNativeViewPauseReason =
   | 'inline-menu'
   | 'island-dialog'
   | 'whats-new'
+  | 'notification'
 
 /** Active owners of the native-view pause. Reasons make overlap diagnosable. */
 export const browserNativeViewPauseReasonsAtom = atom<ReadonlySet<BrowserNativeViewPauseReason>>(

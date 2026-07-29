@@ -301,6 +301,9 @@ export function createProject(
     workingDirectory: input.workingDirectory,
     details: input.details,
     colorTheme: input.colorTheme,
+    color: input.color,
+    defaultExpertId: input.defaultExpertId,
+    availableExpertIds: input.availableExpertIds,
     createdAt: now,
     updatedAt: now,
   };

@@ -52,6 +52,7 @@ function fusionFor(
 describe('Context Suggestion Engine (fusion input)', () => {
   const sendMessage = mock((_id: string, _message: string) => {})
   const startLibrary = mock(async (_id: string) => {})
+  const savedWindow = (globalThis as { window?: unknown }).window
 
   beforeEach(() => {
     resetDefaultContextActionsForTests()
@@ -71,6 +72,11 @@ describe('Context Suggestion Engine (fusion input)', () => {
   afterEach(() => {
     bindContextActionHost(null)
     resetDefaultContextActionsForTests()
+    if (savedWindow === undefined) {
+      Reflect.deleteProperty(globalThis, 'window')
+    } else {
+      ;(globalThis as { window?: unknown }).window = savedWindow
+    }
   })
 
   it('ranks session.continue above library.createFromSession from fusion snapshot', () => {

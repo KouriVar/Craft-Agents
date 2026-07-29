@@ -1,9 +1,9 @@
 import type { SessionMeta } from '@/atoms/sessions'
-import { isInQuietHours, type ExploreSettings } from './explore-settings'
+import { isInQuietHours, type TaskReminderSettings } from './task-reminder-settings'
 
 export function shouldNotifyTaskReminder(
   session: SessionMeta,
-  settings: Pick<ExploreSettings, 'remindersEnabled' | 'quietHoursStart' | 'quietHoursEnd'>,
+  settings: Pick<TaskReminderSettings, 'remindersEnabled' | 'quietHoursStart' | 'quietHoursEnd'>,
   now = Date.now(),
 ): boolean {
   if (!settings.remindersEnabled || session.hidden || session.isArchived || !session.taskReminderAt) return false

@@ -17,6 +17,7 @@ import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSetAtom } from 'jotai'
 import { cn } from '@/lib/utils'
+import { isWindows } from '@/lib/platform'
 import { X, ChevronLeft, PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { closePanelAtom, focusedPanelIdAtom, type PanelStackEntry } from '@/atoms/panel-stack'
@@ -143,6 +144,8 @@ export function PanelSlot({
         data-compact={isCompact || undefined}
         className={cn(
           'h-full overflow-hidden relative @container/panel',
+          'panel-chrome-surface',
+          !isWindows && 'panel-glass-surface',
           !isOnly && isFocusedPanel ? 'shadow-panel-focused z-[1]' : 'shadow-middle z-0',
           'bg-foreground-2',
         )}

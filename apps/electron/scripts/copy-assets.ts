@@ -11,13 +11,26 @@
  * Run: bun scripts/copy-assets.ts
  */
 
-import { cpSync, copyFileSync, mkdirSync } from 'fs';
+import { cpSync, copyFileSync, mkdirSync, chmodSync } from 'fs';
 import { join } from 'path';
+import { execFileSync } from 'child_process';
 
 // Copy all resources (icons, themes, docs, permissions, tool-icons, etc.)
 cpSync('resources', 'dist/resources', { recursive: true });
 
 console.log('✓ Copied resources/ → dist/resources/');
+
+if (process.platform === 'darwin') {
+  const source = join('resources', 'native', 'double-command-listener.swift');
+  const output = join('dist', 'resources', 'native', 'double-command-listener');
+  try {
+    execFileSync('xcrun', ['swiftc', source, '-o', output], { stdio: 'inherit' });
+    chmodSync(output, 0o755);
+    console.log('✓ Built native double-Command listener');
+  } catch {
+    console.warn('⚠ Native double-Command listener was not built; screenshot shortcut will report unavailable');
+  }
+}
 
 mkdirSync(join('dist', 'resources', 'vendor', 'xterm'), { recursive: true });
 copyFileSync(

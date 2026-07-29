@@ -3,7 +3,10 @@ import {
   type BrowserPaneBounds,
   type BrowserPaneCreateOptions,
   type BrowserEmptyStateLaunchPayload,
+  type BrowserTabMenuRequest,
   type BrowserWorkspaceSnapshot,
+  type BrowserSettings,
+  type BrowserClearDataRequest,
 } from '../../shared/types'
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
@@ -48,12 +51,20 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.browserPane.RETRY_DOWNLOAD,
   RPC_CHANNELS.browserPane.LIST_PERMISSIONS,
   RPC_CHANNELS.browserPane.CLEAR_PERMISSION,
+  RPC_CHANNELS.browserPane.GET_SETTINGS,
+  RPC_CHANNELS.browserPane.UPDATE_SETTINGS,
+  RPC_CHANNELS.browserPane.GET_CACHE_SIZE,
+  RPC_CHANNELS.browserPane.CLEAR_DATA,
+  RPC_CHANNELS.browserPane.LIST_SITE_DATA,
+  RPC_CHANNELS.browserPane.CLEAR_SITE_DATA,
+  RPC_CHANNELS.browserPane.CLEAR_ALL_SITE_DATA,
   RPC_CHANNELS.browserPane.LIST_EXTENSIONS,
   RPC_CHANNELS.browserPane.INSTALL_EXTENSION,
   RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE,
   RPC_CHANNELS.browserPane.REMOVE_EXTENSION,
   RPC_CHANNELS.browserPane.OPEN_EXTENSION_ACTION,
   RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU,
+  RPC_CHANNELS.browserPane.SHOW_TAB_MENU,
   RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE,
   RPC_CHANNELS.browserPane.LAUNCH,
   RPC_CHANNELS.browserPane.SNAPSHOT,
@@ -87,6 +98,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
           workspaceId,
           embeddedHostWebContentsId: ctx.webContentsId ?? undefined,
           initialUrl: input.initialUrl,
+          appearance: input.appearance,
         })
         browserPaneManager.bindSession(id, input.bindToSessionId, {
           workspaceId,
@@ -104,6 +116,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       workspaceId,
       embeddedHostWebContentsId: input?.embedded ? (ctx.webContentsId ?? undefined) : undefined,
       initialUrl: input?.initialUrl,
+      appearance: input?.appearance,
     })
   })
 
@@ -193,7 +206,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       ctx,
       entry: {
         url: string
-        title: string
+        title?: string
         favicon?: string | null
         folderId?: string | null
       },
@@ -286,6 +299,26 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     browserPaneManager.clearBrowserPermission(origin, permission)
   })
 
+  server.handle(RPC_CHANNELS.browserPane.GET_SETTINGS, () => browserPaneManager.getBrowserSettings())
+  server.handle(RPC_CHANNELS.browserPane.UPDATE_SETTINGS, (_ctx, changes: Partial<BrowserSettings>) => {
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Invalid browser settings.')
+    return browserPaneManager.updateBrowserSettings(changes)
+  })
+  server.handle(RPC_CHANNELS.browserPane.GET_CACHE_SIZE, () => browserPaneManager.getBrowserCacheSize())
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_DATA, (ctx, request: BrowserClearDataRequest) => {
+    if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('Invalid clear data request.')
+    for (const key of ['history', 'downloads', 'cookiesAndSiteData', 'cache', 'permissions'] as const) {
+      if (typeof request[key] !== 'boolean') throw new Error(`Invalid clear data option: ${key}`)
+    }
+    return browserPaneManager.clearBrowserData(ctx.workspaceId ?? null, request)
+  })
+  server.handle(RPC_CHANNELS.browserPane.LIST_SITE_DATA, () => browserPaneManager.listBrowserSiteData())
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_SITE_DATA, (_ctx, origin: string) => {
+    if (typeof origin !== 'string' || origin.length > 2_048) throw new Error('Invalid site origin.')
+    return browserPaneManager.clearBrowserSiteData(origin)
+  })
+  server.handle(RPC_CHANNELS.browserPane.CLEAR_ALL_SITE_DATA, () => browserPaneManager.clearAllBrowserSiteData())
+
   server.handle(RPC_CHANNELS.browserPane.LIST_EXTENSIONS, () => browserPaneManager.listExtensions())
   server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION, (_ctx, path: string) => browserPaneManager.installExtension(path))
   server.handle(RPC_CHANNELS.browserPane.INSTALL_EXTENSION_FROM_STORE, (_ctx, urlOrId: string) =>
@@ -297,10 +330,13 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   })
   server.handle(
     RPC_CHANNELS.browserPane.SHOW_TOOLBAR_MENU,
-    (_ctx, kind: 'extensions' | 'permissions' | 'passwords', tabId?: string | null, origin?: string | null) => {
-    browserPaneManager.showToolbarMenu(kind, tabId, origin)
+    (_ctx, kind: 'extensions' | 'permissions', tabId?: string | null) => {
+    browserPaneManager.showToolbarMenu(kind, tabId)
     },
   )
+  server.handle(RPC_CHANNELS.browserPane.SHOW_TAB_MENU, (ctx, request: BrowserTabMenuRequest) => {
+    return browserPaneManager.showTabMenu(ctx.webContentsId!, request)
+  })
   server.handle(
     RPC_CHANNELS.browserPane.SET_EXTENSION_PREFERENCE,
     (_ctx, extensionId: string, preference: { pinned?: boolean; hidden?: boolean; order?: number }) => {

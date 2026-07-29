@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils'
 // ============================================
 
 export interface SettingsSectionProps {
+  /** Stable anchor used by settings navigation. */
+  id?: string
   /** Section title */
   title: string
   /** Optional description below title (supports ReactNode for inline links) */
@@ -35,6 +37,7 @@ export interface SettingsSectionProps {
  * </SettingsSection>
  */
 export function SettingsSection({
+  id,
   title,
   description,
   children,
@@ -43,7 +46,7 @@ export function SettingsSection({
   action,
 }: SettingsSectionProps) {
   return (
-    <section className={cn('space-y-3', className)}>
+    <section id={id} className={cn('scroll-mt-14 space-y-3', className)}>
       <div className="flex items-start justify-between gap-4 pl-1">
         <div className="space-y-0.5">
           <h3

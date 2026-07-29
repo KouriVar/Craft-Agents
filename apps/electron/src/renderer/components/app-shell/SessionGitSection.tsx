@@ -115,7 +115,7 @@ export function SessionGitSection({
         </div>
 
         {status && (
-          <div className="overflow-hidden rounded-[10px] border border-border/60 bg-foreground/[0.02]">
+          <div className="overflow-hidden rounded-touch border border-border/60 bg-foreground/[0.02]">
             <div className="flex min-w-0 items-center gap-2 px-3 py-2.5">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-foreground/[0.05] text-muted-foreground">
                 <GitBranch className="h-3.5 w-3.5" />
@@ -159,7 +159,7 @@ export function SessionGitSection({
                         key={`${file.path}-${file.indexStatus}-${file.worktreeStatus}`}
                         type="button"
                         onClick={() => void run('diff', { type: 'diff', path: file.path, staged: file.staged }, t('chat.changes'))}
-                        className="flex h-7 w-full items-center gap-2 rounded-[6px] px-2 text-left text-xs transition-colors hover:bg-foreground/[0.05]"
+                        className="flex h-7 w-full items-center gap-2 rounded-control px-2 text-left text-xs transition-colors hover:bg-foreground/[0.05]"
                         title={file.path}
                       >
                         <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', file.staged ? 'bg-success' : 'bg-warning')} />

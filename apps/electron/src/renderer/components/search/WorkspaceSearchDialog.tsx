@@ -1,0 +1,12 @@
+import { useEffect, useState } from 'react'
+import type { SearchIndexEntry } from '@craft-agent/shared/search-index'
+import { Search } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { navigate, routes } from '@/lib/navigate'
+
+export function WorkspaceSearchDialog({ workspaceId, open, onOpenChange }: { workspaceId?: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [query, setQuery] = useState(''); const [entries, setEntries] = useState<SearchIndexEntry[]>([])
+  useEffect(() => { if (!workspaceId || !query.trim()) { setEntries([]); return }; const timer = setTimeout(() => { void window.electronAPI.searchWorkspace({ workspaceId, query }).then(result => setEntries(result.entries)).catch(() => setEntries([])) }, 120); return () => clearTimeout(timer) }, [workspaceId, query])
+  const openResult = (entry: SearchIndexEntry) => { onOpenChange(false); if (entry.kind === 'session') navigate(routes.view.allSessions(entry.id.replace(/^session:/, ''))); else if (entry.kind === 'knowledge') navigate(routes.view.library(entry.id.replace(/^knowledge:/, ''))); else if (entry.kind === 'project') navigate(routes.view.projects(entry.id.replace(/^project:/, ''))); else if (entry.kind === 'skill' || entry.kind === 'expert') navigate(routes.view.skills()); else if (entry.kind === 'setting-command') navigate(routes.view.settings()); }
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-xl p-0"><DialogHeader className="sr-only"><DialogTitle>搜索</DialogTitle></DialogHeader><div className="flex items-center gap-2 border-b border-border px-4 py-3"><Search className="size-4 text-muted-foreground" /><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索会话、知识、文件、项目、历史、技能和设置…" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div><div className="max-h-[60vh] overflow-y-auto p-2">{query && entries.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">未找到结果</p>}{entries.map(entry => <button key={entry.id} type="button" onClick={() => openResult(entry)} className="flex w-full flex-col rounded-control px-3 py-2 text-left hover:bg-muted"><span className="text-sm">{entry.title}</span><span className="text-xs text-muted-foreground">{entry.kind}</span></button>)}</div></DialogContent></Dialog>
+}

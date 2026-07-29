@@ -21,6 +21,18 @@ function createConfig(): BackendConfig {
 }
 
 describe('PiAgent subprocess error handling', () => {
+  it('does not misclassify a disabled model as a transient service error', () => {
+    const agent = new PiAgent(createConfig())
+
+    const parsed = (agent as any).parsePiError(
+      new Error('Service API error: Model is disabled by this service'),
+    )
+
+    expect(parsed.code).toBe('model_disabled')
+    expect(parsed.canRetry).toBe(false)
+    agent.destroy()
+  })
+
   it('maps raw HTML subprocess errors to typed proxy_error events', () => {
     const agent = new PiAgent(createConfig())
 
