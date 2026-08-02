@@ -30,6 +30,7 @@ describe('Windows background structure', () => {
   it('paints one shell while leaving the top bar and primary sidebar transparent', () => {
     expect(cssSource).toContain(
       "html[data-platform='windows'] .ca-window-shell {\n" +
+      '    --ca-windows-window-radius: 12px;\n' +
       '    --win-shell-background: rgb(var(--ca-shell-glass-tint-rgb));\n' +
       '    --ca-windows-panel-surface: oklch(from var(--foreground-2) l c h / 1);\n' +
       '    background: var(--win-shell-background);',
@@ -56,7 +57,7 @@ describe('Windows background structure', () => {
     expect(cssSource).not.toContain(
       "[data-panel-role='navigator'] {\n    background: var(--win-shell-background)",
     )
-    expect(panelStackSource.match(/!isWindows && 'panel-glass-surface'/g)).toHaveLength(3)
+    expect(panelStackSource.match(/!isWindows && 'panel-glass-surface'/g)).toHaveLength(4)
     expect(panelSlotSource).toContain("!isWindows && 'panel-glass-surface'")
   })
 })

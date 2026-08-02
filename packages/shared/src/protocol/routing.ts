@@ -37,6 +37,8 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.window.SET_TRAFFIC_LIGHTS,
   RPC_CHANNELS.window.FOCUS_STATE,
   RPC_CHANNELS.window.GET_FOCUS_STATE,
+  RPC_CHANNELS.window.MAXIMIZED_STATE,
+  RPC_CHANNELS.window.GET_MAXIMIZED_STATE,
 
   // screenCapture — Electron desktop capture and macOS shortcut state
   RPC_CHANNELS.screenCapture.CURRENT,
@@ -169,6 +171,8 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION,
   RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE,
   RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE,
+  RPC_CHANNELS.input.GET_FILE_REVIEW_OPEN_MODE,
+  RPC_CHANNELS.input.SET_FILE_REVIEW_OPEN_MODE,
 
   // power — local power management
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
@@ -252,6 +256,14 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.browserPane.INTERACTED,
   RPC_CHANNELS.browserPane.SET_AUDIO_MUTED,
   RPC_CHANNELS.browserPane.PROFILE_CHANGED,
+  RPC_CHANNELS.browserPane.GET_SETTINGS,
+  RPC_CHANNELS.browserPane.UPDATE_SETTINGS,
+  RPC_CHANNELS.browserPane.GET_CACHE_SIZE,
+  RPC_CHANNELS.browserPane.CLEAR_DATA,
+  RPC_CHANNELS.browserPane.LIST_SITE_DATA,
+  RPC_CHANNELS.browserPane.CLEAR_SITE_DATA,
+  RPC_CHANNELS.browserPane.CLEAR_ALL_SITE_DATA,
+  RPC_CHANNELS.browserPane.SHOW_TAB_MENU,
 
   // gitbash — Windows-specific local
   RPC_CHANNELS.gitbash.CHECK,
@@ -386,6 +398,8 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL,
   RPC_CHANNELS.settings.GET_MULTIMODAL_MODEL,
   RPC_CHANNELS.settings.SET_MULTIMODAL_MODEL,
+  RPC_CHANNELS.settings.GET_DEFAULT_AGENT_RUNTIME,
+  RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME,
 
   // pi — provider config on workspace server
   RPC_CHANNELS.pi.GET_API_KEY_PROVIDERS,
