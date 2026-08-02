@@ -101,6 +101,13 @@ export function isImageAttachment(attachment: Pick<FileAttachment, 'type' | 'mim
   return attachment.type === 'image' || attachment.mimeType?.startsWith('image/') === true
 }
 
+/** Whether images should be converted to text before reaching the active model. */
+export function shouldUseMultimodalFallback(connection: LlmConnection | null, modelId: string): boolean {
+  if (!connection) return false
+  if (isCompatProvider(connection.providerType)) return !modelSupportsImages(connection, modelId)
+  return connection.piAuthProvider === 'deepseek' || modelId.toLowerCase().includes('deepseek')
+}
+
 /**
  * Enforce saved custom-endpoint image capability at send time. The session can
  * still persist/display image attachments, but they are not passed to text-only

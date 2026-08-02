@@ -41,7 +41,9 @@ export type {
 import type { Workspace, AuthType } from '@craft-agent/core/types';
 
 // Import LLM connection types and constants
-import type { LlmConnection } from './llm-connections.ts';
+import type { LlmConnection, MultimodalModelSelection } from './llm-connections.ts';
+import type { AgentRuntime } from '../agent/runtime-types.ts';
+import { isAgentRuntime } from '../agent/runtime-types.ts';
 import { isValidProviderAuthCombination, getDefaultModelsForConnection, getDefaultModelForConnection, isPiProvider, toBedrockNativeId, type LlmProviderType } from './llm-connections.ts';
 import {
   getModelProvider,
@@ -57,6 +59,8 @@ export interface StoredConfig {
   llmConnections?: LlmConnection[];
   defaultLlmConnection?: string;  // Slug of default connection for new sessions
   defaultThinkingLevel?: ThinkingLevel;  // App-level default thinking level for new sessions
+  defaultAgentRuntime?: AgentRuntime;  // Agent engine used by newly created sessions
+  multimodalModel?: MultimodalModelSelection;  // Vision fallback for text-only chat models
 
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
@@ -77,6 +81,7 @@ export interface StoredConfig {
   rightSidebarMode?: 'manual' | 'auto' | 'always';  // Right sidebar opening behavior
   rightSidebarFollowSession?: boolean;  // Preserve right sidebar state while switching sessions
   browserOpenMode?: 'sidebar' | 'window';  // Manual browser launch target
+  fileReviewOpenMode?: 'fullscreen' | 'sidebar';  // File preview and review presentation
   // Power settings
   keepAwakeWhileRunning?: boolean;  // Prevent screen sleep while sessions are running (default: false)
   // Tool metadata
@@ -132,6 +137,7 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     rightSidebarMode: 'manual',
     rightSidebarFollowSession: false,
     browserOpenMode: 'sidebar',
+    fileReviewOpenMode: 'fullscreen',
     keepAwakeWhileRunning: false,
     richToolDescriptions: true,
     extendedPromptCache: false,
@@ -538,6 +544,26 @@ export function setBrowserOpenMode(value: 'sidebar' | 'window'): void {
   const config = loadStoredConfig();
   if (!config) return;
   config.browserOpenMode = value;
+  saveConfig(config);
+}
+
+/**
+ * Get where previewable files open. Defaults to the existing fullscreen
+ * presentation so upgrades preserve current behavior.
+ */
+export function getFileReviewOpenMode(): 'fullscreen' | 'sidebar' {
+  const config = loadStoredConfig();
+  if (config?.fileReviewOpenMode !== undefined) {
+    return config.fileReviewOpenMode;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.fileReviewOpenMode;
+}
+
+export function setFileReviewOpenMode(value: 'fullscreen' | 'sidebar'): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.fileReviewOpenMode = value;
   saveConfig(config);
 }
 
@@ -1716,6 +1742,7 @@ export function clearDismissedUpdateVersion(): void {
 // Re-export types for convenience (imports are at top of file)
 export type {
   LlmConnection,
+  MultimodalModelSelection,
   LlmProviderType,
   LlmAuthType,
   LlmConnectionWithStatus,
@@ -3008,6 +3035,44 @@ export function setDefaultThinkingLevel(level: ThinkingLevel): boolean {
   if (!config) return false;
 
   config.defaultThinkingLevel = level;
+  saveConfig(config);
+  return true;
+}
+
+/** Get the agent engine used for newly created sessions. */
+export function getDefaultAgentRuntime(): AgentRuntime | null {
+  const value = loadStoredConfig()?.defaultAgentRuntime;
+  return isAgentRuntime(value) ? value : null;
+}
+
+/** Persist the agent engine used for newly created sessions. */
+export function setDefaultAgentRuntime(runtime: AgentRuntime): boolean {
+  const config = loadStoredConfig();
+  if (!config) return false;
+  config.defaultAgentRuntime = runtime;
+  saveConfig(config);
+  return true;
+}
+
+/** Get the visual model used to describe images for text-only chat models. */
+export function getMultimodalModel(): MultimodalModelSelection | null {
+  const value = loadStoredConfig()?.multimodalModel;
+  if (!value?.connectionSlug?.trim() || !value.model?.trim()) return null;
+  return { connectionSlug: value.connectionSlug, model: value.model };
+}
+
+/** Persist or clear the app-level visual model fallback. */
+export function setMultimodalModel(selection: MultimodalModelSelection | null): boolean {
+  const config = loadStoredConfig();
+  if (!config) return false;
+  if (selection) {
+    config.multimodalModel = {
+      connectionSlug: selection.connectionSlug.trim(),
+      model: selection.model.trim(),
+    };
+  } else {
+    delete config.multimodalModel;
+  }
   saveConfig(config);
   return true;
 }

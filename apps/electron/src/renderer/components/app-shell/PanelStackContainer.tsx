@@ -24,7 +24,7 @@
 
 import { useRef, useEffect } from 'react'
 import { useAtomValue } from 'jotai'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { isWindows } from '@/lib/platform'
 import { panelStackAtom, focusedPanelIdAtom, focusedPanelRouteAtom } from '@/atoms/panel-stack'
@@ -55,6 +55,8 @@ interface PanelStackContainerProps {
   sidebarWidth: number
   navigatorSlot: React.ReactNode
   navigatorWidth: number
+  /** Render the navigator as the only main content surface instead of a middle column. */
+  navigatorAsContent?: boolean
   isSidebarAndNavigatorHidden: boolean
   isRightSidebarVisible?: boolean
   rightSidebarWidth: number
@@ -74,6 +76,7 @@ export function PanelStackContainer({
   sidebarWidth,
   navigatorSlot,
   navigatorWidth,
+  navigatorAsContent = false,
   isSidebarAndNavigatorHidden,
   isRightSidebarVisible,
   rightSidebarWidth,
@@ -115,8 +118,9 @@ export function PanelStackContainer({
   // Desktop: navigator is shown when AppShell asks for it. Compact: navigator
   // is always mounted (transform-hidden when detail-focused) so the slide can
   // animate both slots in lockstep.
-  const hasNavigator = isCompact ? navigatorWidth > 0 : navigatorWidth > 0
-  const isLeftEdge = !hasSidebar && !hasNavigator
+  const hasNavigator = navigatorWidth > 0
+  const hasNavigatorColumn = hasNavigator && !navigatorAsContent
+  const isLeftEdge = !hasSidebar && !hasNavigatorColumn
 
   // Auto-scroll to newly pushed content panel (desktop multi-panel only).
   // Compact mode is single-panel so there's nothing to scroll into view.
@@ -204,7 +208,7 @@ export function PanelStackContainer({
     <div
       ref={scrollRef}
       data-mobile-menu-root="true"
-      className="flex-1 min-w-0 flex relative z-panel panel-scroll panel-stack-shell @container/shell"
+      className="flex-1 min-w-0 flex relative z-panel panel-scroll scrollbar-hide panel-stack-shell @container/shell"
       style={{
         overflowX: 'auto',
         overflowY: 'hidden',
@@ -228,12 +232,19 @@ export function PanelStackContainer({
           initial={false}
           animate={{
             width: hasSidebar ? sidebarWidth : 0,
-            marginRight: hasSidebar ? 0 : -PANEL_GAP,
+            // The primary rail and the surface beside it are one continuous
+            // workspace. Cancel the shared panel gap at this seam, regardless
+            // of whether that surface is a navigator or conversation panel.
+            marginRight: -PANEL_GAP,
             opacity: hasSidebar ? 1 : 0,
           }}
           transition={transition}
           className="h-full relative shrink-0"
-          style={{ overflowX: 'visible', overflowY: 'visible' }}
+          style={{
+            overflowX: 'visible',
+            overflowY: 'visible',
+            pointerEvents: hasSidebar ? 'auto' : 'none',
+          }}
         >
           <div className="h-full" style={{ width: sidebarWidth }}>
             {sidebarSlot}
@@ -241,7 +252,7 @@ export function PanelStackContainer({
         </motion.div>
 
         {/* === NAVIGATOR SLOT === */}
-        <motion.div
+        {!navigatorAsContent && <motion.div
           data-panel-role="navigator"
           initial={false}
           animate={{
@@ -256,8 +267,8 @@ export function PanelStackContainer({
             !isWindows && 'panel-glass-surface',
           )}
           style={{
-            borderTopLeftRadius: RADIUS_INNER,
-            borderBottomLeftRadius: !hasSidebar ? RADIUS_EDGE : RADIUS_INNER,
+            borderTopLeftRadius: hasSidebar ? 0 : RADIUS_INNER,
+            borderBottomLeftRadius: hasSidebar ? 0 : RADIUS_EDGE,
             borderTopRightRadius: RADIUS_INNER,
             borderBottomRightRadius: RADIUS_INNER,
           }}
@@ -265,10 +276,27 @@ export function PanelStackContainer({
           <div className="h-full" style={{ width: navigatorWidth }}>
             {navigatorSlot}
           </div>
-        </motion.div>
+        </motion.div>}
 
         {/* === CONTENT PANELS WITH SASHES === */}
-        {visiblePanels.length === 0 ? (
+        {navigatorAsContent ? (
+          <motion.div
+            data-panel-role="content-list"
+            initial={false}
+            className={cn(
+              'h-full min-w-0 flex-1 overflow-hidden relative bg-foreground-2 shadow-middle panel-chrome-surface',
+              !isWindows && 'panel-glass-surface',
+            )}
+            style={{
+              borderTopLeftRadius: RADIUS_INNER,
+              borderBottomLeftRadius: RADIUS_INNER,
+              borderTopRightRadius: RADIUS_INNER,
+              borderBottomRightRadius: RADIUS_EDGE,
+            }}
+          >
+            {navigatorSlot}
+          </motion.div>
+        ) : visiblePanels.length === 0 ? (
           <div className="flex-1 flex items-center justify-center" />
         ) : (
           visiblePanels.map((entry, index) => (
@@ -286,51 +314,62 @@ export function PanelStackContainer({
           ))
         )}
 
-        {/* === RIGHT REVIEW SIDEBAR === */}
-        {effectiveRightSidebarVisible && (
-          <motion.div
-            data-panel-role="right-sidebar"
-            initial={false}
-            animate={{ width: rightSidebarWidth, opacity: 1 }}
-            transition={transition}
-            className="h-full relative shrink-0"
-            style={{ overflowX: 'visible', overflowY: 'visible' }}
-          >
-            {/* Native resize handle — same interaction/geometry as AppShell sidebars. */}
-            <div
-              ref={rightSidebarHandleRef}
-              onMouseDown={onRightSidebarResizeStart}
-              onMouseMove={onRightSidebarHandleMove}
-              onMouseLeave={onRightSidebarHandleLeave}
-              className="absolute cursor-col-resize z-panel flex justify-center"
-              style={{
-                width: PANEL_SASH_HIT_WIDTH,
-                top: PANEL_STACK_VERTICAL_OVERFLOW,
-                bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-                left: -(PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH,
-              }}
+        {/* === RIGHT REVIEW SIDEBAR ===
+            AnimatePresence keeps the panel around only for its exit motion.
+            Once closed it is fully removed, so an invisible fixed-width child
+            cannot inflate the horizontal scroll area. */}
+        <AnimatePresence initial={false}>
+          {effectiveRightSidebarVisible && (
+            <motion.div
+              key="right-review-sidebar"
+              data-panel-role="right-sidebar"
+              initial={{ width: 0, marginLeft: -PANEL_GAP, opacity: 0, x: 18 }}
+              animate={{ width: rightSidebarWidth, marginLeft: 0, opacity: 1, x: 0 }}
+              exit={{ width: 0, marginLeft: -PANEL_GAP, opacity: 0, x: 18 }}
+              transition={transition}
+              className="h-full relative shrink-0"
+              style={{ overflowX: 'visible', overflowY: 'visible' }}
             >
+              {/* Native resize handle — same interaction/geometry as AppShell sidebars. */}
               <div
-                className="h-full"
-                style={{ ...rightSidebarHandleStyle, width: PANEL_SASH_LINE_WIDTH }}
-              />
-            </div>
-            <div
-              className={cn(
-                'h-full bg-foreground-2 shadow-middle panel-chrome-surface overflow-hidden',
-                !isWindows && 'panel-glass-surface',
-              )}
-              style={{
-                borderTopLeftRadius: RADIUS_INNER,
-                borderBottomLeftRadius: RADIUS_INNER,
-                borderTopRightRadius: RADIUS_EDGE,
-                borderBottomRightRadius: RADIUS_EDGE,
-              }}
-            >
-              <RightReviewSidebar />
-            </div>
-          </motion.div>
-        )}
+                ref={rightSidebarHandleRef}
+                onMouseDown={onRightSidebarResizeStart}
+                onMouseMove={onRightSidebarHandleMove}
+                onMouseLeave={onRightSidebarHandleLeave}
+                className="absolute cursor-col-resize z-panel flex justify-center"
+                style={{
+                  width: PANEL_SASH_HIT_WIDTH,
+                  top: PANEL_STACK_VERTICAL_OVERFLOW,
+                  bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+                  left: -(PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH,
+                }}
+              >
+                <div
+                  className="h-full"
+                  style={{ ...rightSidebarHandleStyle, width: PANEL_SASH_LINE_WIDTH }}
+                />
+              </div>
+              <motion.div
+                className={cn(
+                  'h-full w-full min-w-0 bg-foreground-2 shadow-middle panel-chrome-surface overflow-hidden',
+                  !isWindows && 'panel-glass-surface',
+                )}
+                initial={{ scale: 0.985 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.985 }}
+                transition={transition}
+                style={{
+                  borderTopLeftRadius: RADIUS_INNER,
+                  borderBottomLeftRadius: RADIUS_INNER,
+                  borderTopRightRadius: RADIUS_EDGE,
+                  borderBottomRightRadius: RADIUS_EDGE,
+                }}
+              >
+                <RightReviewSidebar />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   )

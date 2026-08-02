@@ -7,8 +7,8 @@ import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger 
 import { basename, dirname, join } from 'path'
 import { existsSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { randomUUID } from 'node:crypto'
-import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary, resolveKeepBackgroundTasksAlive } from '@craft-agent/shared/agent'
+import { createHash, randomUUID } from 'node:crypto'
+import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary, resolveKeepBackgroundTasksAlive, normalizeCodexModelId } from '@craft-agent/shared/agent'
 import {
   resolveSessionConnection,
   createBackendFromConnection,
@@ -20,7 +20,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars, resolveMidStreamBehavior, getPersistedUiLanguage, resolveTitleLanguageName } from '@craft-agent/shared/config'
+import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, getDefaultAgentRuntime, getMultimodalModel, resetManagedAnthropicAuthEnvVars, resolveMidStreamBehavior, getPersistedUiLanguage, resolveTitleLanguageName } from '@craft-agent/shared/config'
 import type { MidStreamBehavior } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
@@ -105,7 +105,7 @@ import { ensureLabelsExist, ensureTaskItemLabel } from '@craft-agent/shared/labe
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { createDynamicItem } from '@craft-agent/shared/dynamic'
-import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput, isImageAttachment, shouldUseMultimodalFallback } from './runtime-config'
 import { buildTaskCheckpointContent } from './task-checkpoint'
 import { getCognitionService, flushAllCognitionServices, maybeEmitGitChangesPresent } from '../cognition'
 
@@ -116,6 +116,11 @@ export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
 let _platform: PlatformServices | null = null
+
+// Small process-local cache: repeated sends or retries with the same image set
+// should not pay for vision twice. Oldest entry is evicted first.
+const multimodalDescriptionCache = new Map<string, string>()
+const MULTIMODAL_CACHE_LIMIT = 128
 
 // Scoped logger — upgraded from console fallback when setSessionPlatform() is called.
 // Named `sessionLog` so all ~30 existing call sites remain unchanged.
@@ -935,6 +940,7 @@ interface ManagedSession {
   model?: string
   // LLM connection slug for this session (locked after first message)
   llmConnection?: string
+  agentRuntime?: import('@craft-agent/shared/agent/runtime-types').AgentRuntime
   // Whether the connection is locked (cannot be changed after first agent creation)
   connectionLocked?: boolean
   // Thinking level for this session ('off', 'think', 'max')
@@ -2814,6 +2820,11 @@ export class SessionManager implements ISessionManager {
     // defaults and the workspace remains the final fallback.
     const defaultModel = expertForSession?.model ?? wsConfig?.defaults?.model
     const effectiveConnectionSlug = options?.llmConnection ?? expertForSession?.connectionSlug
+    const requestedAgentRuntime = options?.agentRuntime
+      ?? this.sessions.get(options?.branchFromSessionId ?? '')?.agentRuntime
+      ?? parentSession?.agentRuntime
+      ?? getDefaultAgentRuntime()
+      ?? undefined
     const assignedConnectorIds = [...new Set([...(expertForSession?.connectorIds ?? []), ...capabilityAssignment.connectorIds])]
     const expertConnectorSlugs = assignedConnectorIds.length
       ? loadAllSources(workspaceRootPath)
@@ -2847,9 +2858,12 @@ export class SessionManager implements ISessionManager {
       sessionConnectionSlug: effectiveConnectionSlug,
       workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
       managedModel: resolvedModelOption,
+      agentRuntime: requestedAgentRuntime,
     })
+    const resolvedAgentRuntime = requestedAgentRuntime
+      ?? (targetBackendContext.provider === 'anthropic' ? 'claude' : targetBackendContext.provider)
     const targetProviderType = targetBackendContext.connection?.providerType
-      ?? (targetBackendContext.provider === 'pi' ? 'pi' : 'anthropic')
+      ?? (targetBackendContext.provider === 'anthropic' ? 'anthropic' : 'pi')
     const targetPiAuthProvider = targetBackendContext.connection?.piAuthProvider
 
     // Resolve working directory from options:
@@ -2913,7 +2927,7 @@ export class SessionManager implements ISessionManager {
       branchFromSessionPath?: string
       branchFromSdkCwd?: string
       branchFromSdkTurnId?: string
-      sourceProvider?: 'anthropic' | 'pi'
+      sourceProvider?: 'anthropic' | 'pi' | 'codex'
     } | undefined
 
     if (options?.branchFromSessionId || options?.branchFromMessageId) {
@@ -2956,9 +2970,10 @@ export class SessionManager implements ISessionManager {
         sessionConnectionSlug: sourceManaged?.llmConnection || sourceSession.llmConnection,
         workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
         managedModel: sourceManaged?.model || sourceSession.model,
+        agentRuntime: sourceManaged?.agentRuntime || sourceSession.agentRuntime,
       })
       const sourceProviderType = sourceBackendContext.connection?.providerType
-        ?? (sourceBackendContext.provider === 'pi' ? 'pi' : 'anthropic')
+        ?? (sourceBackendContext.provider === 'anthropic' ? 'anthropic' : 'pi')
       const sourcePiAuthProvider = sourceBackendContext.connection?.piAuthProvider
 
       const providerMismatch = sourceBackendContext.provider !== targetBackendContext.provider
@@ -3106,6 +3121,7 @@ export class SessionManager implements ISessionManager {
       // The workspace-default fallback stays dynamic — freezing it into the header would
       // pin every ordinary session to the defaults as of its creation time.
       enabledSourceSlugs: options?.enabledSourceSlugs,
+      agentRuntime: resolvedAgentRuntime,
     })
 
     // Branch: copy messages from source session up to and including the branch point
@@ -3200,6 +3216,7 @@ export class SessionManager implements ISessionManager {
       workingDirectory: resolvedWorkingDir,
       model: resolvedModel,
       llmConnection: effectiveConnectionSlug,
+      agentRuntime: resolvedAgentRuntime,
       thinkingLevel: defaultThinkingLevel,
       systemPromptPreset: expertPrompt || options?.systemPromptPreset,
       enabledSourceSlugs: defaultEnabledSourceSlugs,
@@ -3419,6 +3436,7 @@ export class SessionManager implements ISessionManager {
       sessionConnectionSlug: managed.llmConnection,
       workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
       managedModel: managed.model,
+      agentRuntime: managed.agentRuntime,
     })
     const connection = backendContext.connection
     const sigInput = {
@@ -3564,6 +3582,7 @@ export class SessionManager implements ISessionManager {
       sessionConnectionSlug: managed.llmConnection,
       workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
       managedModel: managed.model,
+      agentRuntime: managed.agentRuntime,
     })
     const connection = backendContext.connection
     const sigInput = {
@@ -3667,6 +3686,7 @@ export class SessionManager implements ISessionManager {
         sdkCwd: managed.sdkCwd,
         model: managed.model,
         llmConnection: managed.llmConnection,
+        agentRuntime: managed.agentRuntime,
         permissionMode: managed.permissionMode,
         previousPermissionMode: managed.previousPermissionMode,
         projectId: managed.projectId,
@@ -4453,6 +4473,7 @@ export class SessionManager implements ISessionManager {
         const session = await this.createSession(managed.workspace.id, {
           name: request.name,
           llmConnection: request.llmConnection ?? managed.llmConnection,
+          agentRuntime: managed.agentRuntime,
           model: request.model ?? managed.model,
           enabledSourceSlugs: request.enabledSourceSlugs ?? managed.enabledSourceSlugs,
           permissionMode: request.permissionMode ?? managed.permissionMode,
@@ -4516,6 +4537,9 @@ export class SessionManager implements ISessionManager {
           const targetId = sessionId ?? managed.id
           const session = this.sessions.get(targetId)
           if (!session) return null
+          const connection = session.llmConnection
+            ? getLlmConnection(session.llmConnection)
+            : null
           return {
             id: session.id,
             name: session.name ?? session.id,
@@ -4525,8 +4549,11 @@ export class SessionManager implements ISessionManager {
             createdAt: session.createdAt ?? 0,
             workingDirectory: session.workingDirectory,
             projectId: session.projectId,
-            llmConnection: session.llmConnection,
-            model: session.model,
+            llmConnection: connection?.name ?? session.llmConnection,
+            model: session.agentRuntime === 'codex' && session.model
+              ? normalizeCodexModelId(session.model)
+              : session.model,
+            agentRuntime: session.agentRuntime,
             isActive: session.agent != null,
           }
         },
@@ -6045,6 +6072,97 @@ export class SessionManager implements ISessionManager {
     }
   }
 
+  /**
+   * Describe image attachments with the user-selected multimodal connection.
+   * This is the in-process equivalent of codex-deepseek-vision's proxy rewrite:
+   * credentials stay in Craft Agent and only the resulting text reaches the
+   * text-only primary model.
+   */
+  private async describeImagesForTextOnlyModel(
+    managed: ManagedSession,
+    images: FileAttachment[],
+  ): Promise<{ text: string; model: string }> {
+    const selection = getMultimodalModel()
+    if (!selection) {
+      throw new Error('当前模型不支持图片。请先在设置 → 模型 → 多模态模型中选择一个视觉模型。')
+    }
+    if (!_platform) throw new Error('Multimodal model runtime is not initialized')
+
+    const cacheKey = createHash('sha256')
+      .update(selection.connectionSlug)
+      .update('\0')
+      .update(selection.model)
+      .update('\0')
+      .update(images.map(image => `${image.name}:${image.mimeType}:${image.base64 ?? image.path}`).join('\0'))
+      .digest('hex')
+    const cached = multimodalDescriptionCache.get(cacheKey)
+    if (cached) return { text: cached, model: selection.model }
+
+    const context = resolveBackendContext({
+      sessionConnectionSlug: selection.connectionSlug,
+      managedModel: selection.model,
+    })
+    if (!context.connection) {
+      throw new Error(`多模态连接已不存在: ${selection.connectionSlug}`)
+    }
+
+    const now = Date.now()
+    const visionAgent = createBackendFromResolvedContext({
+      context,
+      hostRuntime: {
+        appRootPath: _platform.appRootPath,
+        resourcesPath: _platform.resourcesPath,
+        isPackaged: _platform.isPackaged,
+      },
+      coreConfig: {
+        workspace: managed.workspace,
+        session: {
+          id: `vision-${randomUUID()}`,
+          workspaceRootPath: managed.workspace.rootPath,
+          createdAt: now,
+          lastUsedAt: now,
+          model: selection.model,
+          llmConnection: selection.connectionSlug,
+        },
+        model: selection.model,
+        miniModel: selection.model,
+        thinkingLevel: 'off',
+        systemPromptPreset: 'mini',
+        isHeadless: true,
+        skipConfigWatcher: true,
+      },
+      providerOptions: { piAuthProvider: context.connection.piAuthProvider },
+    })
+
+    try {
+      await visionAgent.postInit()
+      const prompt = [
+        '你是 Craft Agent 的视觉解析器。只分析附件中的图片，不要调用工具。',
+        '请按图片名称分段，详细描述可见内容、文字/OCR、界面布局、状态、数值、代码和可能影响后续推理的细节。',
+        '不要编造看不清的内容；不确定时明确标注。输出将被交给一个纯文本模型继续回答用户。',
+      ].join('\n')
+      let streamedText = ''
+      let completedText = ''
+      for await (const event of visionAgent.chat(prompt, images)) {
+        if (event.type === 'text_delta') streamedText += event.text
+        if (event.type === 'text_complete') completedText = event.text
+        if (event.type === 'error') throw new Error(event.message)
+        if (event.type === 'typed_error') throw new Error(event.error.message)
+      }
+      const description = (streamedText || completedText).trim()
+      if (!description) throw new Error('多模态模型返回了空的图片描述')
+
+      if (multimodalDescriptionCache.size >= MULTIMODAL_CACHE_LIMIT) {
+        const oldest = multimodalDescriptionCache.keys().next().value
+        if (oldest) multimodalDescriptionCache.delete(oldest)
+      }
+      multimodalDescriptionCache.set(cacheKey, description)
+      return { text: description, model: selection.model }
+    } finally {
+      visionAgent.destroy()
+    }
+  }
+
   async sendMessage(
     sessionId: string,
     message: string,
@@ -6478,12 +6596,35 @@ export class SessionManager implements ISessionManager {
         sessionConnectionSlug: managed.llmConnection,
         workspaceDefaultConnectionSlug: loadWorkspaceConfig(workspaceRootPath)?.defaults?.defaultLlmConnection,
         managedModel: managed.model,
+        agentRuntime: managed.agentRuntime,
       })
-      const modelInputAttachments = filterAttachmentsForModelInput(
+      let modelInputAttachments = filterAttachmentsForModelInput(
         attachments,
         messageBackendContext.connection,
         messageBackendContext.resolvedModel,
       )
+      const primaryConnection = messageBackendContext.connection
+      const primaryModel = messageBackendContext.resolvedModel
+      const primaryModelIsTextOnly = shouldUseMultimodalFallback(primaryConnection, primaryModel)
+      const imageAttachments = (attachments ?? []).filter(isImageAttachment)
+
+      if (primaryModelIsTextOnly && imageAttachments.length > 0) {
+        this.sendEvent({
+          type: 'info',
+          sessionId,
+          message: '正在使用已选择的多模态模型识别图片…',
+          level: 'info',
+        }, managed.workspace.id)
+        const vision = await this.describeImagesForTextOnlyModel(managed, imageAttachments)
+        effectiveMessage = `${effectiveMessage}\n\n<system-reminder>\nThe active chat model cannot inspect images directly. Craft Agent used the configured multimodal model "${vision.model}" to analyze the attached image(s). Treat the following as visual evidence supplied with the user's message:\n\n${vision.text}\n</system-reminder>`
+        const imageSet = new Set(imageAttachments)
+        const remainingAttachments = (attachments ?? []).filter(attachment => !imageSet.has(attachment))
+        modelInputAttachments = {
+          attachments: remainingAttachments.length > 0 ? remainingAttachments : undefined,
+          omittedImages: [],
+        }
+        sessionLog.info(`Injected multimodal description from ${vision.model} for ${imageAttachments.length} image(s) into ${primaryModel}`)
+      }
       if (modelInputAttachments.omittedImages.length > 0) {
         const omittedNames = modelInputAttachments.omittedImages.map(a => a.name).join(', ')
         sessionLog.info(`Omitting ${modelInputAttachments.omittedImages.length} image attachment(s) from model input for ${messageBackendContext.resolvedModel}: ${omittedNames}`)
@@ -8972,6 +9113,7 @@ export class SessionManager implements ISessionManager {
       sessionConnectionSlug: managed.llmConnection,
       workspaceDefaultConnectionSlug: wsConfig?.defaults?.defaultLlmConnection,
       managedModel: managed.model || defaultModel,
+      agentRuntime: managed.agentRuntime,
     })
 
     const miniModel = backendContext.connection
@@ -8997,6 +9139,7 @@ export class SessionManager implements ISessionManager {
           sdkCwd: managed.sdkCwd,
           model: managed.model,
           llmConnection: managed.llmConnection,
+          agentRuntime: managed.agentRuntime,
           permissionMode: managed.permissionMode,
           previousPermissionMode: managed.previousPermissionMode,
         },

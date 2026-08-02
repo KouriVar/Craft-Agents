@@ -7,6 +7,10 @@ type HandlerFn = (ctx: { clientId: string }, ...args: any[]) => Promise<any> | a
 
 const getDefaultThinkingLevelMock = mock(() => 'think')
 const setDefaultThinkingLevelMock = mock((_level: string) => true)
+const getDefaultAgentRuntimeMock = mock(() => null)
+const setDefaultAgentRuntimeMock = mock((_runtime: string) => true)
+const getMultimodalModelMock = mock(() => null)
+const setMultimodalModelMock = mock((_selection: unknown) => true)
 
 mock.module('@craft-agent/shared/config', () => ({
   getPreferencesPath: () => '/tmp/preferences.json',
@@ -17,15 +21,24 @@ mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: () => null,
   getDefaultThinkingLevel: getDefaultThinkingLevelMock,
   setDefaultThinkingLevel: setDefaultThinkingLevelMock,
+  getDefaultAgentRuntime: getDefaultAgentRuntimeMock,
+  setDefaultAgentRuntime: setDefaultAgentRuntimeMock,
+  getMultimodalModel: getMultimodalModelMock,
+  setMultimodalModel: setMultimodalModelMock,
+  getLlmConnection: (slug: string) => slug === 'vision' ? { slug: 'vision' } : null,
 }))
 
-describe('settings default thinking RPC handlers', () => {
+describe('settings default agent RPC handlers', () => {
   const handlers = new Map<string, HandlerFn>()
 
   beforeEach(async () => {
     handlers.clear()
     getDefaultThinkingLevelMock.mockClear()
     setDefaultThinkingLevelMock.mockClear()
+    getDefaultAgentRuntimeMock.mockClear()
+    setDefaultAgentRuntimeMock.mockClear()
+    getMultimodalModelMock.mockClear()
+    setMultimodalModelMock.mockClear()
 
     const server: RpcServer = {
       handle(channel, handler) {
@@ -97,5 +110,28 @@ describe('settings default thinking RPC handlers', () => {
 
     await expect(setHandler!({ clientId: 'client-1' }, 'ultra')).rejects.toThrow('Invalid thinking level')
     expect(setDefaultThinkingLevelMock).not.toHaveBeenCalled()
+  })
+
+  it('reads and persists the default agent runtime', async () => {
+    const getHandler = handlers.get(RPC_CHANNELS.settings.GET_DEFAULT_AGENT_RUNTIME)
+    const setHandler = handlers.get(RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME)
+    expect(await getHandler!({ clientId: 'client-1' })).toBeNull()
+    expect(await setHandler!({ clientId: 'client-1' }, 'codex')).toEqual({ success: true })
+    expect(setDefaultAgentRuntimeMock).toHaveBeenCalledWith('codex')
+  })
+
+  it('rejects an unknown agent runtime', async () => {
+    const setHandler = handlers.get(RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME)
+    await expect(setHandler!({ clientId: 'client-1' }, 'other')).rejects.toThrow('Invalid agent runtime')
+    expect(setDefaultAgentRuntimeMock).not.toHaveBeenCalled()
+  })
+
+  it('reads and persists the multimodal fallback model', async () => {
+    const getHandler = handlers.get(RPC_CHANNELS.settings.GET_MULTIMODAL_MODEL)
+    const setHandler = handlers.get(RPC_CHANNELS.settings.SET_MULTIMODAL_MODEL)
+    expect(await getHandler!({ clientId: 'client-1' })).toBeNull()
+    const selection = { connectionSlug: 'vision', model: 'gpt-5.2' }
+    expect(await setHandler!({ clientId: 'client-1' }, selection)).toEqual({ success: true })
+    expect(setMultimodalModelMock).toHaveBeenCalledWith(selection)
   })
 })

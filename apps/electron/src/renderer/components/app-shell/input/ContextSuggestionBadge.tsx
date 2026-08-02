@@ -13,7 +13,6 @@
 import * as React from 'react'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown } from 'lucide-react'
 import type { CognitionGuidanceDto, PrivacyPolicyDto } from '@craft-agent/shared/protocol'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent } from '@/components/ui/styled-dropdown'
@@ -35,7 +34,7 @@ import { resolveContextActionSuggestions } from '@/context-actions/suggestions'
 import type { ContextActionSuggestion, PrivacyPolicySnapshot } from '@/context-actions/types'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { useLibraryGenerateFromSession } from '@/hooks/useLibraryGenerateFromSession'
-import { cn } from '@/lib/utils'
+import { MetadataBadge } from '@/components/ui/metadata-badge'
 import { ContextSuggestionMenu } from './ContextSuggestionMenu'
 
 export interface ContextSuggestionBadgeProps {
@@ -212,40 +211,20 @@ export function ContextSuggestionBadge({
           </DropdownMenuTrigger>
 
           <div className="relative z-[1] inline-flex items-center min-w-0">
-            <button
-              type="button"
+            <MetadataBadge
+              label={label}
               disabled={disabled}
               title={label}
-              onClick={(event) => {
+              interactive
+              isActive={menuOpen}
+              showChevron={hasAlternates}
+              badgeColor="var(--foreground)"
+              onClick={() => {
                 if (disabled) return
-                if ((event.target as HTMLElement).closest('[data-suggestion-chevron]')) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  setMenuOpen(true)
-                  return
-                }
                 runSuggestion(primary)
               }}
-              className={cn(
-                'inline-flex items-center gap-1.5 shrink-0 select-none outline-none transition-colors',
-                'h-7 pl-3 pr-2.5 rounded-control bg-foreground/5 text-foreground/70 shadow-tinted',
-                'text-xs font-medium',
-                'hover:bg-foreground/[0.07]',
-                menuOpen && 'bg-foreground/[0.07]',
-                'disabled:opacity-50 disabled:pointer-events-none',
-              )}
-              style={{ '--shadow-color': 'var(--foreground-rgb)' } as React.CSSProperties}
-            >
-              <span className="whitespace-nowrap">{label}</span>
-              {hasAlternates && (
-                <span
-                  data-suggestion-chevron
-                  className="-mr-0.5 inline-flex h-full items-center pl-0.5"
-                >
-                  <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-                </span>
-              )}
-            </button>
+              onChevronClick={hasAlternates ? () => setMenuOpen(true) : undefined}
+            />
           </div>
         </div>
 

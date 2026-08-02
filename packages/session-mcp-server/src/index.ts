@@ -63,6 +63,17 @@ interface SessionConfig {
 
 const CALLBACK_TOOL_TIMEOUT_MS = 120000;
 
+const DESKTOP_SESSION_TOOL_NAMES = new Set([
+  'set_session_labels',
+  'set_session_status',
+  'get_session_info',
+  'list_sessions',
+  'list_background_tasks',
+  'send_agent_message',
+  'list_messaging_channels',
+  'unbind_messaging_channel',
+]);
+
 // ============================================================
 // Callback Communication
 // ============================================================
@@ -447,6 +458,59 @@ async function handleSpawnSession(
   );
 }
 
+async function handleBrowserTool(
+  args: Record<string, unknown>,
+  config: SessionConfig,
+): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  if (!config.callbackPort) return errorResponse('browser_tool requires the Craft Agent desktop callback.');
+  try {
+    const resp = await fetch(`http://127.0.0.1:${config.callbackPort}/browser-tool`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(CALLBACK_TOOL_TIMEOUT_MS),
+    });
+    const result = await resp.json() as { content?: string; error?: string };
+    if (result.error) return errorResponse(`browser_tool failed: ${result.error}`);
+    return { content: [{ type: 'text', text: result.content || '(Browser action completed)' }] };
+  } catch (err) {
+    return errorResponse(`browser_tool callback failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function handleDesktopSessionTool(
+  name: string,
+  args: Record<string, unknown>,
+  config: SessionConfig,
+): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  if (!config.callbackPort) {
+    return errorResponse(`${name} requires the Craft Agent desktop callback.`);
+  }
+
+  try {
+    const resp = await fetch(`http://127.0.0.1:${config.callbackPort}/session-tool`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, arguments: args }),
+      signal: AbortSignal.timeout(CALLBACK_TOOL_TIMEOUT_MS),
+    });
+    const result = await resp.json() as {
+      content?: Array<{ type: 'text'; text: string }>;
+      isError?: boolean;
+      error?: string;
+    };
+    if (!resp.ok || result.error) {
+      return errorResponse(`${name} callback failed: ${result.error || `HTTP ${resp.status}`}`);
+    }
+    return {
+      content: result.content || [{ type: 'text', text: '(Session action completed)' }],
+      isError: result.isError,
+    };
+  } catch (err) {
+    return errorResponse(`${name} callback failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // ============================================================
 // MCP Server Setup
 // ============================================================
@@ -549,6 +613,18 @@ async function main() {
       // spawn_session has backend-specific execution (precomputed result / HTTP callback)
       if (name === 'spawn_session') {
         return await handleSpawnSession(toolArgs as Record<string, unknown>, config);
+      }
+
+      if (name === 'browser_tool') {
+        return await handleBrowserTool(toolArgs as Record<string, unknown>, config);
+      }
+
+      if (DESKTOP_SESSION_TOOL_NAMES.has(name)) {
+        return await handleDesktopSessionTool(
+          name,
+          toolArgs as Record<string, unknown>,
+          config,
+        );
       }
 
       // Check canonical session tool registry first (feature-filtered)

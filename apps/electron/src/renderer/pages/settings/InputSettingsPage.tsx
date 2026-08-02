@@ -56,12 +56,13 @@ export default function InputSettingsPage({
   const [rightSidebarMode, setRightSidebarModeState] = useState<'manual' | 'auto' | 'always'>('manual')
   const [rightSidebarFollow, setRightSidebarFollow] = useState(false)
   const [browserOpenMode, setBrowserOpenModeState] = useState<'sidebar' | 'window'>('sidebar')
+  const [fileReviewOpenMode, setFileReviewOpenModeState] = useState<'fullscreen' | 'sidebar'>('fullscreen')
 
   useEffect(() => {
     const loadSettings = async () => {
       if (!window.electronAPI) return
       try {
-        const [autoCapEnabled, spellCheckEnabled, sendKey, scrollPos, rsMode, rsFollow, browserMode] = await Promise.all([
+        const [autoCapEnabled, spellCheckEnabled, sendKey, scrollPos, rsMode, rsFollow, browserMode, reviewMode] = await Promise.all([
           window.electronAPI.getAutoCapitalisation(),
           window.electronAPI.getSpellCheck(),
           window.electronAPI.getSendMessageKey(),
@@ -69,6 +70,7 @@ export default function InputSettingsPage({
           window.electronAPI.getRightSidebarMode(),
           window.electronAPI.getRightSidebarFollowSession(),
           window.electronAPI.getBrowserOpenMode(),
+          window.electronAPI.getFileReviewOpenMode(),
         ])
         setAutoCapitalisation(autoCapEnabled)
         setSpellCheck(spellCheckEnabled)
@@ -77,6 +79,7 @@ export default function InputSettingsPage({
         setRightSidebarModeState(rsMode)
         setRightSidebarFollow(rsFollow)
         setBrowserOpenModeState(browserMode)
+        setFileReviewOpenModeState(reviewMode)
       } catch (error) {
         console.error('Failed to load input settings:', error)
       }
@@ -121,6 +124,13 @@ export default function InputSettingsPage({
     const mode = value as 'sidebar' | 'window'
     setBrowserOpenModeState(mode)
     window.electronAPI.setBrowserOpenMode(mode)
+  }, [])
+
+  const handleFileReviewOpenModeChange = useCallback((value: string) => {
+    const mode = value as 'fullscreen' | 'sidebar'
+    setFileReviewOpenModeState(mode)
+    window.electronAPI.setFileReviewOpenMode(mode)
+    window.dispatchEvent(new CustomEvent('craft:file-review-mode-changed', { detail: mode }))
   }, [])
 
   const body = (
@@ -207,6 +217,16 @@ export default function InputSettingsPage({
               options={[
                 { value: 'sidebar', label: t('settings.input.browserOpenSidebar'), description: t('settings.input.browserOpenSidebarDesc') },
                 { value: 'window', label: t('settings.input.browserOpenWindow'), description: t('settings.input.browserOpenWindowDesc') },
+              ]}
+            />
+            <SettingsMenuSelectRow
+              label={t('settings.input.fileReviewOpenMode')}
+              description={t('settings.input.fileReviewOpenModeDesc')}
+              value={fileReviewOpenMode}
+              onValueChange={handleFileReviewOpenModeChange}
+              options={[
+                { value: 'fullscreen', label: t('settings.input.fileReviewFullscreen'), description: t('settings.input.fileReviewFullscreenDesc') },
+                { value: 'sidebar', label: t('settings.input.fileReviewSidebar'), description: t('settings.input.fileReviewSidebarDesc') },
               ]}
             />
           </SettingsCard>

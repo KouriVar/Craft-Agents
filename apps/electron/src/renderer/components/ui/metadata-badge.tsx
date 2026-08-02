@@ -22,6 +22,8 @@ export interface MetadataBadgeProps extends React.ButtonHTMLAttributes<HTMLButto
   isActive?: boolean
   /** Show dropdown chevron on the right */
   showChevron?: boolean
+  /** Optional split-chevron action; the label/body keeps the button's onClick. */
+  onChevronClick?: React.MouseEventHandler<HTMLSpanElement>
   /** Shadow style for the chip */
   shadow?: 'none' | 'minimal'
 }
@@ -38,6 +40,7 @@ export const MetadataBadge = React.forwardRef<HTMLButtonElement, MetadataBadgePr
       interactive = false,
       isActive = false,
       showChevron = false,
+      onChevronClick,
       shadow = 'minimal',
       className,
       type = 'button',
@@ -94,7 +97,17 @@ export const MetadataBadge = React.forwardRef<HTMLButtonElement, MetadataBadgePr
         )}
 
         {showChevron && (
-          <ChevronDown className="h-3 w-3 opacity-40 ml-1 shrink-0" />
+          <span
+            data-metadata-chevron={onChevronClick ? '' : undefined}
+            className={cn('ml-1 inline-flex h-full shrink-0 items-center', onChevronClick && 'cursor-pointer')}
+            onClick={onChevronClick ? (event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onChevronClick(event)
+            } : undefined}
+          >
+            <ChevronDown className="h-3 w-3 opacity-40" />
+          </span>
         )}
       </button>
     )

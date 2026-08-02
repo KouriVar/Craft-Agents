@@ -17,6 +17,8 @@ describe('v0.16.9 input suggestion entry', () => {
     expect(source).toContain('align="start"')
     expect(source).toContain('sideOffset={4}')
     expect(source).toContain('absolute inset-0')
+    expect(source).toContain('<MetadataBadge')
+    expect(source).toContain('badgeColor="var(--foreground)"')
     expect(source).toContain('ContextSuggestionMenu')
     expect(source).toContain('bindContextActionHost')
     expect(source).not.toContain('CommandDialog')

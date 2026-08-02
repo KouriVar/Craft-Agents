@@ -13,6 +13,7 @@
     "rightSidebarMode": "manual",
     "rightSidebarFollowSession": false,
     "browserOpenMode": "sidebar",
+    "fileReviewOpenMode": "fullscreen",
     "keepAwakeWhileRunning": false,
     "richToolDescriptions": true,
     "extendedPromptCache": false,

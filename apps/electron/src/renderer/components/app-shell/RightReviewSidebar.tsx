@@ -9,7 +9,7 @@
 import { useCallback } from 'react'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, AppWindow, Brush, FolderOpen, Globe, Keyboard, ListTree, LoaderCircle, MessageSquare, Plus, RotateCcw, Terminal, X } from 'lucide-react'
+import { AlertTriangle, AppWindow, Brush, FileCode2, FolderOpen, GitCompareArrows, Globe, Keyboard, ListTree, LoaderCircle, Maximize2, MessageSquare, Plus, RotateCcw, Terminal, X } from 'lucide-react'
 import { useActiveWorkspace, useAppShellContext } from '@/context/AppShellContext'
 import { EmbeddedTerminal } from './EmbeddedTerminal'
 import { WorkspaceFileBrowser } from './WorkspaceFileBrowser'
@@ -30,7 +30,12 @@ import * as storage from '@/lib/local-storage'
 import { ShortcutsContent } from '@/pages/settings/ShortcutsPage'
 import { ChatPage } from '@/pages'
 import { sessionMetaMapAtom } from '@/atoms/sessions'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
+import { diffReviewPreviewAtom, fileReviewPreviewAtom, type DiffReviewPreview } from '@/atoms/file-review'
+import type { FilePreviewState } from '@/hooks/useLinkInterceptor'
+import { FilePreviewRenderer } from './FilePreviewRenderer'
+import { useTheme } from '@/hooks/useTheme'
+import { MultiDiffPreviewOverlay, type DiffViewerSettings } from '@craft-agent/ui'
 
 // --- Toolbar button (matches HeaderIconButton styling) ---
 function ToolMenuItem({
@@ -84,7 +89,7 @@ function EmptySidebarAction({
   )
 }
 
-type RightSidebarTool = 'chat' | 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'shortcuts' | 'widget'
+type RightSidebarTool = 'review' | 'chat' | 'files' | 'terminal' | 'browser' | 'cowart' | 'sources' | 'shortcuts' | 'widget'
 interface RightSidebarTab {
   id: string
   type: RightSidebarTool
@@ -98,6 +103,8 @@ interface RightSidebarTab {
   runtimeError?: string
   restored?: boolean
   browserInstanceId?: string
+  preview?: FilePreviewState
+  diff?: DiffReviewPreview
 }
 
 interface PersistedWidgetTab {
@@ -134,6 +141,7 @@ function createSidebarTab(type: RightSidebarTool, label: string, url?: string, r
 }
 
 function getToolIcon(type: RightSidebarTool, className = 'h-4 w-4 shrink-0') {
+  if (type === 'review') return <FileCode2 className={className} />
   if (type === 'chat') return <MessageSquare className={className} />
   if (type === 'terminal') return <Terminal className={className} />
   if (type === 'files') return <FolderOpen className={className} />
@@ -177,6 +185,11 @@ export function RightReviewSidebar() {
   const { t } = useTranslation()
   const [session] = useSession()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
+  const [fileReviewPreview, setFileReviewPreview] = useAtom(fileReviewPreviewAtom)
+  const [diffReviewPreview, setDiffReviewPreview] = useAtom(diffReviewPreviewAtom)
+  const { isDark } = useTheme()
+  const [fullscreenDiff, setFullscreenDiff] = React.useState<DiffReviewPreview | null>(null)
+  const [diffViewerSettings, setDiffViewerSettings] = React.useState<Partial<DiffViewerSettings>>({})
   const activeWorkspace = useActiveWorkspace()
   const { onCreateSession } = useAppShellContext()
   const rootPath = activeWorkspace?.rootPath
@@ -274,6 +287,12 @@ export function RightReviewSidebar() {
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
       const closing = current.find((tab) => tab.id === id)
+      if (closing?.type === 'review' && closing.preview?.filePath === fileReviewPreview?.filePath) {
+        setFileReviewPreview(null)
+      }
+      if (closing?.type === 'review' && closing.diff && closing.diff === diffReviewPreview) {
+        setDiffReviewPreview(null)
+      }
       if (closing?.browserInstanceId) {
         void window.electronAPI.browserPane.destroy(closing.browserInstanceId).catch(() => {})
       }
@@ -289,7 +308,71 @@ export function RightReviewSidebar() {
       })
       return next
     })
+  }, [diffReviewPreview, fileReviewPreview?.filePath, setDiffReviewPreview, setFileReviewPreview])
+
+  React.useEffect(() => {
+    if (!fileReviewPreview) return
+    const label = fileReviewPreview.filePath.replace(/\\/g, '/').split('/').pop() || fileReviewPreview.filePath
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.type === 'review' && tab.preview?.filePath === fileReviewPreview.filePath)
+      if (existing) {
+        setActiveTabId(existing.id)
+        return current.map((tab) => tab.id === existing.id ? { ...tab, label, preview: fileReviewPreview } : tab)
+      }
+      const tab = createSidebarTab('review', label)
+      tab.preview = fileReviewPreview
+      setActiveTabId(tab.id)
+      return [...current, tab]
+    })
+  }, [fileReviewPreview])
+
+  React.useEffect(() => {
+    if (!diffReviewPreview) return
+    const label = t('rightSidebar.reviewChanges', { defaultValue: `审阅·${diffReviewPreview.changes.length} 处更改`, count: diffReviewPreview.changes.length })
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.type === 'review' && tab.diff)
+      if (existing) {
+        setActiveTabId(existing.id)
+        return current.map((tab) => tab.id === existing.id ? { ...tab, label, diff: diffReviewPreview, preview: undefined } : tab)
+      }
+      const tab = createSidebarTab('review', label)
+      tab.diff = diffReviewPreview
+      setActiveTabId(tab.id)
+      return [...current, tab]
+    })
+  }, [diffReviewPreview, t])
+
+  React.useEffect(() => {
+    void window.electronAPI.readPreferences().then(({ content }) => {
+      try {
+        const prefs = JSON.parse(content)
+        if (prefs.diffViewer) setDiffViewerSettings(prefs.diffViewer)
+      } catch { /* use defaults */ }
+    })
   }, [])
+
+  const handleDiffViewerSettingsChange = useCallback((settings: DiffViewerSettings) => {
+    setDiffViewerSettings(settings)
+    void window.electronAPI.readPreferences().then(({ content }) => {
+      try {
+        const prefs = JSON.parse(content)
+        prefs.diffViewer = settings
+        prefs.updatedAt = Date.now()
+        return window.electronAPI.writePreferences(JSON.stringify(prefs, null, 2))
+      } catch {
+        return window.electronAPI.writePreferences(JSON.stringify({ diffViewer: settings, updatedAt: Date.now() }, null, 2))
+      }
+    })
+  }, [])
+
+  const openActiveReviewFullscreen = useCallback(() => {
+    if (activeTab?.type !== 'review') return
+    if (activeTab.preview) {
+      window.dispatchEvent(new CustomEvent('craft:file-preview-fullscreen', { detail: activeTab.preview }))
+    } else if (activeTab.diff) {
+      setFullscreenDiff(activeTab.diff)
+    }
+  }, [activeTab])
 
   const handleOpenTerminal = useCallback(() => {
     addTab('terminal', t('rightSidebar.openTerminal'))
@@ -468,10 +551,18 @@ export function RightReviewSidebar() {
           {tabs.map((tab) => {
             const isActive = tab.id === activeTab?.id
             return (
-              <button
+              <div
                 key={tab.id}
-                type="button"
                 onClick={() => setActiveTabId(tab.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setActiveTabId(tab.id)
+                  }
+                }}
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
                 className={cn(
                   'group flex h-8 min-w-[132px] max-w-[220px] items-center gap-2 rounded-surface px-2.5 text-left text-sm transition-colors',
                   isActive
@@ -484,11 +575,12 @@ export function RightReviewSidebar() {
                   ? <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
                   : tab.runtimeStatus === 'loading'
                     ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
-                    : getToolIcon(tab.type)}
+                    : tab.diff
+                      ? <GitCompareArrows className="h-4 w-4 shrink-0" />
+                      : getToolIcon(tab.type)}
                 <span className="min-w-0 flex-1 truncate">{tab.label}</span>
-                <span
-                  role="button"
-                  tabIndex={-1}
+                <button
+                  type="button"
                   onClick={(event) => {
                     event.stopPropagation()
                     closeTab(tab.id)
@@ -501,11 +593,22 @@ export function RightReviewSidebar() {
                   title="Close tab"
                 >
                   <X className="h-3.5 w-3.5" />
-                </span>
-              </button>
+                </button>
+              </div>
             )
           })}
         </div>
+        {activeTab?.type === 'review' && (
+          <button
+            type="button"
+            onClick={openActiveReviewFullscreen}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-surface text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label={t('settings.input.fileReviewFullscreen')}
+            title={t('settings.input.fileReviewFullscreen')}
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -607,6 +710,37 @@ export function RightReviewSidebar() {
           if (tab.type === 'terminal') {
             return <EmbeddedTerminal key={tab.id} cwd={rootPath} className={className} />
           }
+          if (tab.type === 'review' && tab.preview) {
+            return (
+              <div key={tab.id} className={cn(className, 'bg-foreground-3')}>
+                <FilePreviewRenderer
+                  state={tab.preview}
+                  onClose={() => closeTab(tab.id)}
+                  loadDataUrl={(path) => window.electronAPI.readFileDataUrl(path)}
+                  loadPdfData={(path) => window.electronAPI.readFileBinary(path)}
+                  isDark={isDark}
+                  embedded
+                />
+              </div>
+            )
+          }
+          if (tab.type === 'review' && tab.diff) {
+            return (
+              <div key={tab.id} className={cn(className, 'bg-foreground-3')}>
+                <MultiDiffPreviewOverlay
+                  isOpen
+                  onClose={() => closeTab(tab.id)}
+                  changes={tab.diff.changes}
+                  consolidated={tab.diff.consolidated}
+                  focusedChangeId={tab.diff.focusedChangeId}
+                  theme={isDark ? 'dark' : 'light'}
+                  embedded
+                  diffViewerSettings={diffViewerSettings}
+                  onDiffViewerSettingsChange={handleDiffViewerSettingsChange}
+                />
+              </div>
+            )
+          }
           if (tab.type === 'chat' && tab.sessionId) {
             return (
               <div key={tab.id} className={cn(className, 'bg-background')}>
@@ -664,6 +798,18 @@ export function RightReviewSidebar() {
           )
         })}
       </div>
+      {fullscreenDiff && (
+        <MultiDiffPreviewOverlay
+          isOpen
+          onClose={() => setFullscreenDiff(null)}
+          changes={fullscreenDiff.changes}
+          consolidated={fullscreenDiff.consolidated}
+          focusedChangeId={fullscreenDiff.focusedChangeId}
+          theme={isDark ? 'dark' : 'light'}
+          diffViewerSettings={diffViewerSettings}
+          onDiffViewerSettingsChange={handleDiffViewerSettingsChange}
+        />
+      )}
     </div>
   )
 }

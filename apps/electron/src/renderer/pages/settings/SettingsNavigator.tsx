@@ -1,281 +1,214 @@
-/**
- * SettingsNavigator
- *
- * Flat list of canonical settings pages from SETTINGS_MENU_ITEMS.
- */
+/** Codex-style grouped settings navigation. */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AppWindow, ChevronRight, MoreHorizontal } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  StyledDropdownMenuContent,
-  StyledDropdownMenuItem,
-} from '@/components/ui/styled-dropdown'
-import { DropdownMenuProvider } from '@/components/ui/menu-context'
+  ArrowLeft,
+  Bell,
+  BatteryCharging,
+  Stethoscope,
+  Info,
+  Palette,
+  TextCursorInput,
+  PanelRight,
+  Keyboard,
+  Columns3,
+  Workflow,
+  SlidersHorizontal,
+  UserRound,
+  Building2,
+  Paintbrush,
+  Tags,
+  Bot,
+  Layers3,
+  PlugZap,
+  Gauge,
+  Globe2,
+  Database,
+  Bookmark,
+  Download,
+  ShieldCheck,
+  Settings2,
+  MessageSquareMore,
+  RadioTower,
+  Wrench,
+  KeyRound,
+  Network,
+  UserCog,
+  ListChecks,
+  LockKeyhole,
+  Search,
+  type LucideIcon,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import type { SettingsSubpage } from '../../../shared/types'
-import { SETTINGS_MENU_ITEMS } from '../../../shared/menu-schema'
-import { SETTINGS_ICONS } from '@/components/icons/SettingsIcons'
-import { LeftSidebar, type LinkItem } from '@/components/app-shell/LeftSidebar'
 
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'navigator',
-}
+export const meta: DetailsPageMeta = { navigator: 'settings', slug: 'navigator' }
 
 interface SettingsNavigatorProps {
-  /**
-   * Currently selected settings subpage. `null` means the bare `settings`
-   * route (no row highlighted) — happens in compact mode where the navigator
-   * stands alone before the user drills into a subpage.
-   */
   selectedSubpage: SettingsSubpage | null
-  /** Currently selected in-page section. */
   selectedSection?: string
-  /** Called when a subpage is selected */
   onSelectSubpage: (subpage: SettingsSubpage) => void
-  /** Called when a nested in-page section is selected. */
   onSelectSection?: (subpage: SettingsSubpage, section: string) => void
+  onBack: () => void
 }
 
-interface SettingsItem {
-  id: SettingsSubpage
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-}
-
-interface SettingsItemRowProps {
-  item: SettingsItem
-  isSelected: boolean
-  isExpanded: boolean
-  onSelect: () => void
-  onToggle: () => void
-}
-
-interface SettingsSectionDefinition {
-  id: string
+interface SettingsDestination {
+  subpage: SettingsSubpage
+  section: string
   labelKey: string
+  label?: string
+  icon: LucideIcon
 }
 
-const SETTINGS_SECTIONS: Partial<Record<SettingsSubpage, SettingsSectionDefinition[]>> = {
-  app: [
-    { id: 'notifications', labelKey: 'settings.notifications.title' },
-    { id: 'power', labelKey: 'settings.power.title' },
-    { id: 'diagnostics', labelKey: 'settings.diagnostics.title' },
-    { id: 'about', labelKey: 'settings.about.title' },
-  ],
-  interface: [
-    { id: 'appearance', labelKey: 'settings.appearance.title' },
-    { id: 'input', labelKey: 'settings.input.title' },
-    { id: 'layout', labelKey: 'settings.input.rightSidebar' },
-    { id: 'shortcuts', labelKey: 'settings.shortcuts.title' },
-    { id: 'kanban', labelKey: 'settings.appearance.kanbanBoard' },
-    { id: 'kanban-behavior', labelKey: 'settings.appearance.kanbanColumnStatus' },
-    { id: 'advanced-ui', labelKey: 'settings.interface.advancedUi' },
-  ],
-  profile: [
-    { id: 'about-me', labelKey: 'settings.preferences.title' },
-    { id: 'workspace', labelKey: 'settings.workspace.workspaceSettings' },
-    { id: 'workspace-appearance', labelKey: 'settings.appearance.workspaceThemes' },
-    { id: 'labels', labelKey: 'settings.labels.title' },
-  ],
-  ai: [
-    { id: 'defaults', labelKey: 'settings.ai.defaultSection' },
-    { id: 'workspace-overrides', labelKey: 'settings.ai.workspaceOverrides' },
-    { id: 'connections', labelKey: 'settings.ai.connections' },
-    { id: 'performance', labelKey: 'settings.ai.performance' },
-  ],
-  browser: [
-    { id: 'general', labelKey: 'settings.browser.general' },
-    { id: 'browsing-data', labelKey: 'settings.browser.browsingData' },
-    { id: 'bookmarks', labelKey: 'settings.bookmarks.title' },
-    { id: 'downloads', labelKey: 'settings.browser.downloads' },
-    { id: 'permissions', labelKey: 'settings.browser.permissions' },
-    { id: 'advanced', labelKey: 'settings.browser.advanced' },
-  ],
-  integrations: [
-    { id: 'messaging', labelKey: 'settings.messaging.title' },
-    { id: 'remote-access', labelKey: 'settings.server.remoteAccess' },
-    { id: 'tools', labelKey: 'settings.tools.title' },
-    { id: 'credentials', labelKey: 'settings.integrations.credentialsTitle' },
-    { id: 'proxy', labelKey: 'settings.network.title' },
-  ],
-  security: [
-    { id: 'agent-permissions', labelKey: 'settings.workspace.permissionsSection' },
-    { id: 'permission-rules', labelKey: 'settings.permissions.title' },
-    { id: 'privacy', labelKey: 'settings.privacy.title' },
-  ],
+interface SettingsGroup {
+  labelKey: string
+  items: SettingsDestination[]
 }
 
-/**
- * SettingsItemRow - Individual settings item with dropdown menu
- * Tracks menu open state to keep "..." button visible when menu is open
- */
-function SettingsItemRow({
-  item,
-  isSelected,
-  isExpanded,
-  onSelect,
-  onToggle,
-}: SettingsItemRowProps) {
-  const { t } = useTranslation()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const Icon = item.icon
-
-  // Open settings page in a new window via deep link
-  const handleOpenInNewWindow = () => {
-    window.electronAPI.openUrl(`craftagents://settings/${item.id}?window=focused`)
-  }
-
-  return (
-    <div className="group/setting relative select-none" data-selected={isSelected || undefined}>
-      <button
-        type="button"
-        onClick={onSelect}
-        className={cn(
-          'flex h-10 w-full items-center gap-3 rounded-[10px] px-3 pr-10 text-left text-sm outline-none',
-          'transition-[background-color,color] duration-75',
-          isSelected
-            ? 'bg-foreground/[0.08] font-medium text-foreground hover:bg-foreground/[0.1]'
-            : 'text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground',
-        )}
-      >
-        <Icon
-          className={cn(
-            'h-[17px] w-[17px] shrink-0 transition-opacity group-hover/setting:opacity-0',
-            isSelected ? 'text-foreground' : 'text-muted-foreground',
-          )}
-        />
-        <span className="min-w-0 truncate">{item.label}</span>
-      </button>
-
-      <div
-        data-touch-reveal="true"
-        className="absolute left-3 top-1/2 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/setting:opacity-100"
-      >
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={isExpanded ? t('menu.collapse') : t('menu.expand')}
-          aria-expanded={isExpanded}
-          className="flex h-[17px] w-[17px] items-center justify-center text-muted-foreground hover:text-foreground"
-        >
-          <ChevronRight
-            className={cn(
-              'h-4 w-4 transition-transform duration-200',
-              isExpanded && 'rotate-90',
-            )}
-          />
-        </button>
-      </div>
-
-      <div
-        data-touch-reveal="true"
-        className={cn(
-          'absolute right-1.5 top-1/2 z-10 -translate-y-1/2 transition-opacity',
-          menuOpen ? 'opacity-100' : 'opacity-0 group-hover/setting:opacity-100',
-        )}
-      >
-        <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={t('common.more')}
-              className="flex h-7 w-7 items-center justify-center rounded-[7px] text-muted-foreground hover:bg-foreground/10 hover:text-foreground data-[state=open]:bg-foreground/10"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent align="end">
-            <DropdownMenuProvider>
-              <StyledDropdownMenuItem onClick={handleOpenInNewWindow}>
-                <AppWindow className="h-3.5 w-3.5" />
-                <span className="flex-1">{t('sessionMenu.openInNewWindow')}</span>
-              </StyledDropdownMenuItem>
-            </DropdownMenuProvider>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  )
-}
+const SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    labelKey: 'settings.groups.app',
+    items: [
+      { subpage: 'app', section: 'notifications', labelKey: 'settings.notifications.title', icon: Bell },
+      { subpage: 'app', section: 'power', labelKey: 'settings.power.title', icon: BatteryCharging },
+      { subpage: 'app', section: 'diagnostics', labelKey: 'settings.diagnostics.title', icon: Stethoscope },
+      { subpage: 'app', section: 'about', labelKey: 'settings.about.title', icon: Info },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.interface',
+    items: [
+      { subpage: 'interface', section: 'appearance', labelKey: 'settings.appearance.title', icon: Palette },
+      { subpage: 'interface', section: 'input', labelKey: 'settings.input.title', icon: TextCursorInput },
+      { subpage: 'interface', section: 'layout', labelKey: 'settings.input.rightSidebar', icon: PanelRight },
+      { subpage: 'interface', section: 'shortcuts', labelKey: 'settings.shortcuts.title', icon: Keyboard },
+      { subpage: 'interface', section: 'kanban', labelKey: 'settings.appearance.kanbanBoard', icon: Columns3 },
+      { subpage: 'interface', section: 'kanban-behavior', labelKey: 'settings.appearance.kanbanColumnStatus', icon: Workflow },
+      { subpage: 'interface', section: 'advanced-ui', labelKey: 'settings.interface.advancedUi', icon: SlidersHorizontal },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.personalWorkspace',
+    items: [
+      { subpage: 'profile', section: 'about-me', labelKey: 'settings.preferences.title', icon: UserRound },
+      { subpage: 'profile', section: 'workspace', labelKey: 'settings.workspace.workspaceSettings', icon: Building2 },
+      { subpage: 'profile', section: 'workspace-appearance', labelKey: 'settings.appearance.workspaceThemes', icon: Paintbrush },
+      { subpage: 'profile', section: 'labels', labelKey: 'settings.labels.title', icon: Tags },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.ai',
+    items: [
+      { subpage: 'ai', section: 'defaults', labelKey: 'settings.ai.defaultSection', icon: Bot },
+      { subpage: 'ai', section: 'workspace-overrides', labelKey: 'settings.ai.workspaceOverrides', icon: Layers3 },
+      { subpage: 'ai', section: 'connections', labelKey: 'settings.ai.connections', icon: PlugZap },
+      { subpage: 'ai', section: 'performance', labelKey: 'settings.ai.performance', icon: Gauge },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.browser',
+    items: [
+      { subpage: 'browser', section: 'general', labelKey: 'settings.browser.general', icon: Globe2 },
+      { subpage: 'browser', section: 'browsing-data', labelKey: 'settings.browser.browsingData', icon: Database },
+      { subpage: 'browser', section: 'bookmarks', labelKey: 'settings.bookmarks.title', icon: Bookmark },
+      { subpage: 'browser', section: 'downloads', labelKey: 'settings.browser.downloads', icon: Download },
+      { subpage: 'browser', section: 'permissions', labelKey: 'settings.browser.permissions', icon: ShieldCheck },
+      { subpage: 'browser', section: 'advanced', labelKey: 'settings.browser.advanced', icon: Settings2 },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.integrations',
+    items: [
+      { subpage: 'integrations', section: 'messaging', labelKey: 'settings.messaging.title', icon: MessageSquareMore },
+      { subpage: 'integrations', section: 'remote-access', labelKey: 'settings.server.remoteAccess', icon: RadioTower },
+      { subpage: 'integrations', section: 'tools', labelKey: 'settings.tools.title', icon: Wrench },
+      { subpage: 'integrations', section: 'credentials', labelKey: 'settings.integrations.credentialsTitle', icon: KeyRound },
+      { subpage: 'integrations', section: 'proxy', labelKey: 'settings.network.title', icon: Network },
+    ],
+  },
+  {
+    labelKey: 'settings.groups.security',
+    items: [
+      { subpage: 'security', section: 'agent-permissions', labelKey: 'settings.workspace.permissionsSection', label: '会话权限', icon: UserCog },
+      { subpage: 'security', section: 'permission-rules', labelKey: 'settings.permissions.title', label: '权限规则', icon: ListChecks },
+      { subpage: 'security', section: 'privacy', labelKey: 'settings.privacy.title', icon: LockKeyhole },
+    ],
+  },
+]
 
 export default function SettingsNavigator({
   selectedSubpage,
   selectedSection,
   onSelectSubpage,
   onSelectSection,
+  onBack,
 }: SettingsNavigatorProps) {
   const { t } = useTranslation()
+  const [query, setQuery] = useState('')
 
-  const settingsItems: SettingsItem[] = useMemo(() =>
-    SETTINGS_MENU_ITEMS.map((item) => ({
-      id: item.id,
-      label: t(item.labelKey),
-      icon: SETTINGS_ICONS[item.id],
-    })),
-    [t]
-  )
-
-  const effectiveSubpage = selectedSubpage ?? 'app'
-  const [expandedSubpage, setExpandedSubpage] = useState<SettingsSubpage | null>(effectiveSubpage)
-
-  useEffect(() => {
-    setExpandedSubpage(effectiveSubpage)
-  }, [effectiveSubpage])
+  const groups = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    return SETTINGS_GROUPS.map(group => ({
+      ...group,
+      label: t(group.labelKey),
+      items: group.items.map(item => ({ ...item, label: item.label ?? t(item.labelKey) }))
+        .filter(item => !normalizedQuery || item.label.toLocaleLowerCase().includes(normalizedQuery)),
+    })).filter(group => group.items.length > 0)
+  }, [query, t])
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
-        <div className="space-y-0.5">
-          {settingsItems.map((item) => {
-            const sectionLinks: LinkItem[] = (SETTINGS_SECTIONS[item.id] ?? []).map((section) => ({
-              id: `settings:${item.id}:${section.id}`,
-              title: <span className="min-w-0 truncate">{t(section.labelKey)}</span>,
-              icon: <span className="h-1 w-1 rounded-full bg-current" />,
-              variant:
-                effectiveSubpage === item.id && selectedSection === section.id
-                  ? 'default'
-                  : 'ghost',
-              onClick: () => onSelectSection?.(item.id, section.id),
-            }))
-            const isExpanded = expandedSubpage === item.id
+    <div className="flex h-full min-h-0 flex-col select-none">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mx-[6px] mt-2 flex h-9 shrink-0 items-center gap-2 rounded-[8px] px-2 text-left text-[15px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.05]"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        <span>{t('settings.navigator.backToApp', { defaultValue: '返回应用' })}</span>
+      </button>
 
-            return (
-              <div key={item.id} className="group/section">
-                <SettingsItemRow
-                  item={item}
-                  isSelected={effectiveSubpage === item.id}
-                  isExpanded={isExpanded}
-                  onSelect={() => {
-                    setExpandedSubpage(item.id)
-                    onSelectSubpage(item.id)
-                  }}
-                  onToggle={() => {
-                    setExpandedSubpage((current) => current === item.id ? null : item.id)
-                  }}
-                />
-                <AnimatePresence initial={false}>
-                  {isExpanded && sectionLinks.length > 0 && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 }}
-                      exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <LeftSidebar isCollapsed={false} isNested links={sectionLinks} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )
-          })}
-        </div>
+      <div className="relative mx-[6px] mt-2 shrink-0">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder={t('settings.navigator.search', { defaultValue: '搜索设置…' })}
+          className="h-9 w-full rounded-[9px] border border-foreground/10 bg-foreground/[0.035] pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/20 focus:bg-foreground/[0.05]"
+        />
+      </div>
+
+      <div className="mt-1 min-h-0 flex-1 overflow-y-auto px-[6px] pb-4">
+        {groups.map(group => (
+          <section key={group.label} className="pt-3">
+            <div className="px-3 pb-1 text-[12px] font-semibold text-muted-foreground/65">{group.label}</div>
+            <nav className="grid gap-[1px]" aria-label={group.label}>
+              {group.items.map(({ subpage, section, label, icon: Icon }) => {
+                const selected = selectedSubpage === subpage && selectedSection === section
+                return (
+                  <button
+                    key={`${subpage}:${section}`}
+                    type="button"
+                    onClick={() => onSelectSection ? onSelectSection(subpage, section) : onSelectSubpage(subpage)}
+                    className={cn(
+                      'flex h-9 w-full items-center gap-2.5 rounded-[8px] px-3 text-left text-[14px] outline-none transition-[background-color,color] duration-75',
+                      selected
+                        ? 'bg-foreground/[0.09] font-medium text-foreground'
+                        : 'text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground',
+                    )}
+                  >
+                    <Icon className={cn('h-4 w-4 shrink-0', selected ? 'text-foreground' : 'text-muted-foreground')} />
+                    <span className="min-w-0 truncate">{label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+          </section>
+        ))}
+        {groups.length === 0 && (
+          <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">{t('settings.navigator.noMatches', { defaultValue: '没有匹配的设置' })}</div>
+        )}
       </div>
     </div>
   )

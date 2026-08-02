@@ -493,8 +493,8 @@ export function UserMessageBubble({
       <div className="group relative max-w-[80%]">
         {(onEdit || onDelete) && (
           <div className="absolute -left-16 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {onEdit && <button type="button" onClick={onEdit} className="rounded p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground" aria-label="Edit message"><Pencil className="h-3.5 w-3.5" /></button>}
-            {onDelete && <button type="button" onClick={onDelete} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete message"><Trash2 className="h-3.5 w-3.5" /></button>}
+            {onEdit && <button type="button" onClick={onEdit} className="rounded p-1 text-muted-foreground hover:bg-foreground/5 hover:text-foreground" aria-label={t('chat.editMessage', { defaultValue: 'Edit message' })}><Pencil className="h-3.5 w-3.5" /></button>}
+            {onDelete && <button type="button" onClick={onDelete} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={t('chat.deleteMessage', { defaultValue: 'Delete message' })}><Trash2 className="h-3.5 w-3.5" /></button>}
           </div>
         )}
         <div

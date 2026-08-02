@@ -23,7 +23,9 @@ import { useSetAtom } from 'jotai'
 import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
 import { motion, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
+import type { MultimodalModelSelection } from '@craft-agent/shared/config'
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
+import type { AgentRuntime } from '@craft-agent/shared/agent/runtime-types'
 import type { DetailsPageMeta } from '@/lib/details-page-meta'
 import {
   DropdownMenu,
@@ -649,6 +651,8 @@ export default function AiSettingsPage() {
 
   // Default settings state (app-level)
   const [defaultThinking, setDefaultThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
+  const [defaultAgentRuntime, setDefaultAgentRuntime] = useState<AgentRuntime | null>(null)
+  const [multimodalModel, setMultimodalModel] = useState<MultimodalModelSelection | null>(null)
   const [extendedPromptCache, setExtendedPromptCache] = useState(false)
   const [enable1MContext, setEnable1MContext] = useState(false)
   const [rtkEnabled, setRtkEnabled] = useState(false)
@@ -680,6 +684,9 @@ export default function AiSettingsPage() {
 
         const defaultThinkingLevel = await window.electronAPI.getDefaultThinkingLevel()
         setDefaultThinking(defaultThinkingLevel)
+
+        setDefaultAgentRuntime(await window.electronAPI.getDefaultAgentRuntime())
+        setMultimodalModel(await window.electronAPI.getMultimodalModel())
 
         const extendedCache = await window.electronAPI.getExtendedPromptCache()
         setExtendedPromptCache(extendedCache)
@@ -960,6 +967,23 @@ export default function AiSettingsPage() {
   }, [llmConnections])
 
   const defaultModel = defaultConnection?.defaultModel ?? ''
+  const effectiveAgentRuntime: AgentRuntime = defaultAgentRuntime
+    ?? (defaultConnection?.providerType === 'anthropic' ? 'claude' : 'pi')
+
+  const multimodalModelOptions = useMemo(() => [
+    { value: '', label: '未指定', description: '图片将直接交给当前会话模型' },
+    ...llmConnections.flatMap(connection =>
+      getModelOptionsForConnection(connection).map(model => ({
+        value: `${connection.slug}::${model.value}`,
+        label: model.label,
+        description: connection.name,
+      })),
+    ),
+  ], [llmConnections])
+
+  const multimodalModelValue = multimodalModel
+    ? `${multimodalModel.connectionSlug}::${multimodalModel.model}`
+    : ''
 
   // App-level default handlers
   const handleDefaultModelChange = useCallback(async (model: string) => {
@@ -989,6 +1013,34 @@ export default function AiSettingsPage() {
       setDefaultThinking(previous)
     }
   }, [defaultThinking])
+
+  const handleDefaultAgentRuntimeChange = useCallback(async (runtime: AgentRuntime) => {
+    if (!window.electronAPI) return
+    const previous = defaultAgentRuntime
+    setDefaultAgentRuntime(runtime)
+    try {
+      await window.electronAPI.setDefaultAgentRuntime(runtime)
+    } catch (error) {
+      console.error('Failed to set default agent runtime:', error)
+      setDefaultAgentRuntime(previous)
+    }
+  }, [defaultAgentRuntime])
+
+  const handleMultimodalModelChange = useCallback(async (value: string) => {
+    const separator = value.indexOf('::')
+    const next = separator > 0
+      ? { connectionSlug: value.slice(0, separator), model: value.slice(separator + 2) }
+      : null
+    const previous = multimodalModel
+    setMultimodalModel(next)
+    try {
+      await window.electronAPI?.setMultimodalModel(next)
+    } catch (error) {
+      console.error('Failed to set multimodal model:', error)
+      setMultimodalModel(previous)
+      toast.error('多模态模型保存失败')
+    }
+  }, [multimodalModel])
 
   const handleExtendedPromptCacheChange = useCallback(async (enabled: boolean) => {
     setExtendedPromptCache(enabled)
@@ -1089,6 +1141,24 @@ export default function AiSettingsPage() {
                       label: t(nameKey),
                       description: t(descriptionKey),
                     }))}
+                  />
+                  <SettingsMenuSelectRow
+                    label={t("settings.ai.agentRuntime")}
+                    description={t("settings.ai.agentRuntimeDesc")}
+                    value={effectiveAgentRuntime}
+                    onValueChange={(value) => handleDefaultAgentRuntimeChange(value as AgentRuntime)}
+                    options={[
+                      { value: 'claude', label: 'Claude', description: t('settings.ai.agentRuntimeClaudeDesc') },
+                      { value: 'pi', label: 'Pi', description: t('settings.ai.agentRuntimePiDesc') },
+                      { value: 'codex', label: 'Codex', description: t('settings.ai.agentRuntimeCodexDesc') },
+                    ]}
+                  />
+                  <SettingsMenuSelectRow
+                    label="多模态模型"
+                    description="当会话模型不支持图片时，先用该模型识别图片再继续对话"
+                    value={multimodalModelValue}
+                    onValueChange={handleMultimodalModelChange}
+                    options={multimodalModelOptions}
                   />
                 </SettingsCard>
               </SettingsSection>

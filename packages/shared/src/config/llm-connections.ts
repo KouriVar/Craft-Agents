@@ -223,6 +223,12 @@ export interface LlmConnectionWithStatus extends LlmConnection {
   isDefault?: boolean;
 }
 
+/** App-level vision fallback used when the active chat model is text-only. */
+export interface MultimodalModelSelection {
+  connectionSlug: string;
+  model: string;
+}
+
 // ============================================================
 // Helpers
 // ============================================================

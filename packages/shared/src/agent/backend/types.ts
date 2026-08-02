@@ -28,8 +28,6 @@ import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 import { AbortReason, type RecoveryMessage } from '../core/index.ts';
 export { AbortReason, type RecoveryMessage };
 
-import type { ModelProvider } from '../../config/models.ts';
-
 // Import LLM connection types for auth
 import type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
 export type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
@@ -50,9 +48,9 @@ import type { AutomationSystem } from '../../automations/index.ts';
 
 /**
  * Provider identifier for AI backends.
- * @deprecated Use ModelProvider from config/models.ts instead
+ * Identifies the agent loop/runtime independently from the model API provider.
  */
-export type AgentProvider = ModelProvider;
+export type AgentProvider = 'anthropic' | 'pi' | 'codex';
 
 
 // ============================================================
@@ -659,6 +657,7 @@ export interface BackendConfig extends CoreBackendConfig {
    * Determines which agent class is instantiated:
    * - 'anthropic' → ClaudeAgent (Anthropic SDK)
    * - 'pi' → PiAgent (Pi via @earendil-works/pi-coding-agent)
+   * - 'codex' → CodexAgent (Codex app-server)
    */
   provider: AgentProvider;
 

@@ -1,9 +1,11 @@
 /**
- * TopBar - Persistent top bar above all panels (Slack-style)
+ * TopBar - Window controls scoped to the primary sidebar.
  *
- * Layout: [Sidebar] [Menu] [Back] [Forward] [Workspace selector] ... [Browser strip] [+] [Help]
+ * Desktop: the sidebar controls remain at the top-left while content panels
+ * extend to the window's top edge. Windows caption controls remain on the
+ * top-right until their dedicated presentation is redesigned.
  *
- * Fixed at top of window, 48px tall.
+ * Compact: remains a full-width persistent top bar.
  * macOS: offset left to avoid stoplight controls.
  */
 
@@ -11,23 +13,13 @@ import { useTranslation } from "react-i18next"
 import { useEffect, useRef, useState } from "react"
 import * as Icons from "lucide-react"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
-import { PanelLeftRounded } from "../icons/PanelLeftRounded"
 import { TopBarButton } from "../ui/TopBarButton"
 import { cn } from "@/lib/utils"
 import { isMac, isWebUI, isWindows } from "@/lib/platform"
 import { useActionLabel } from "@/actions"
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  StyledDropdownMenuContent,
-  StyledDropdownMenuItem,
-  StyledDropdownMenuSeparator,
-} from "@/components/ui/styled-dropdown"
 import type { SettingsMenuItem } from "../../../shared/menu-schema"
 import type { Workspace } from "../../../shared/types"
-import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
 import { CompactWorkspaceSwitcher } from "./CompactWorkspaceSwitcher"
-import { getDocUrl } from "@craft-agent/shared/docs/doc-links"
 import { AppMenu } from "../AppMenu"
 import { PANEL_EDGE_INSET } from "./panel-constants"
 
@@ -54,6 +46,8 @@ interface TopBarProps {
   isSidebarVisible?: boolean
   isSessionListVisible?: boolean
   isFocusModeActive?: boolean
+  /** Current primary-sidebar width; desktop controls stay within this region. */
+  desktopSidebarWidth?: number
   /** When true, hides controls that don't apply in compact/mobile layout */
   isCompact?: boolean
 }
@@ -79,8 +73,8 @@ export function TopBar({
   onToggleSessionList,
   onToggleFocusMode,
   isSidebarVisible = true,
-  isSessionListVisible = true,
   isFocusModeActive = false,
+  desktopSidebarWidth = 220,
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
@@ -101,12 +95,9 @@ export function TopBar({
   }, [isFocusModeActive])
 
   useEffect(() => {
-    const expandedInset = isCompact
-      ? 'var(--topbar-height)'
-      : `calc(var(--topbar-height) + ${PANEL_EDGE_INSET}px)`
     document.documentElement.style.setProperty(
       '--app-topbar-inset',
-      topBarCollapsed ? `${PANEL_EDGE_INSET}px` : expandedInset,
+      isCompact && !topBarCollapsed ? 'var(--topbar-height)' : '0px',
     )
     return () => {
       document.documentElement.style.removeProperty('--app-topbar-inset')
@@ -134,10 +125,31 @@ export function TopBar({
   // 12px inset so the logo sits at the edge.
   const menuLeftPadding = isMac && !isWebUI ? 86 : 12
 
+  const activateSidebarToggle = () => {
+    onToggleSidebar()
+  }
+
   return (
+    <>
+    {!isCompact && (
+      <TopBarButton
+        onClick={activateSidebarToggle}
+        aria-label={t("menu.collapseSidebar")}
+        aria-pressed={!isSidebarVisible}
+        title={t("menu.collapseSidebar")}
+        data-sidebar-toggle="true"
+        className="titlebar-no-drag pointer-events-auto fixed z-splash"
+        style={{
+          left: menuLeftPadding,
+          top: 'calc((var(--topbar-height) - 28px) / 2)',
+        }}
+      >
+        <Icons.PanelLeft className="h-[18px] w-[18px] text-foreground/70" />
+      </TopBarButton>
+    )}
     <div
       ref={rootRef}
-      className="ca-topbar-surface fixed top-0 left-0 right-0 z-panel titlebar-drag-region"
+      className="ca-topbar-surface pointer-events-none fixed top-0 left-0 right-0 z-dropdown-backdrop"
       style={{
         height: 'var(--topbar-height)',
         transform: topBarCollapsed
@@ -152,66 +164,39 @@ export function TopBar({
       onMouseMove={cancelCollapse}
       onMouseLeave={scheduleCollapse}
     >
-      <div className="flex h-full w-full items-center justify-between gap-2">
+      <div aria-hidden="true" className="pointer-events-auto absolute inset-0 titlebar-drag-region" />
+      <div className="relative z-local flex h-full w-full items-center justify-between gap-2">
       {/* === LEFT: Sidebar + Menu + Navigation + Workspace === */}
       {/* Keep this container draggable. Only individual interactive controls should use titlebar-no-drag. */}
       {/* In compact mode the right slot is hidden, so we add right padding here
           so the workspace pill doesn't run flush against the viewport edge. */}
       <div
-        className="pointer-events-auto flex min-w-0 flex-1 items-center gap-0.5"
-        style={{ paddingLeft: menuLeftPadding, paddingRight: isCompact ? 12 : 0 }}
+        className={cn(
+          "pointer-events-auto titlebar-no-drag relative z-local flex min-w-0 items-center gap-0.5",
+          isCompact ? "flex-1" : "shrink-0",
+        )}
+        style={{
+          width: isCompact ? undefined : desktopSidebarWidth,
+          paddingLeft: menuLeftPadding,
+          paddingRight: isCompact ? 12 : 0,
+        }}
       >
         <div className="flex items-center gap-0.5">
-        {!isCompact && (
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <TopBarButton aria-label={t("menu.layoutCollapse")}>
-                  <PanelLeftRounded className="h-[18px] w-[18px] text-foreground/70" />
-                </TopBarButton>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{t("menu.layoutCollapse")}</TooltipContent>
-          </Tooltip>
-          <StyledDropdownMenuContent align="start" minWidth="min-w-[190px]">
-            <StyledDropdownMenuItem onClick={onToggleSidebar}>
-              <PanelLeftRounded className="h-4 w-4" />
-              <span className="flex-1">{t("menu.collapseSidebar")}</span>
-              {!isFocusModeActive && !isSidebarVisible && (
-                <Icons.Check className="h-4 w-4 text-muted-foreground" />
-              )}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={onToggleSessionList}>
-              <Icons.List className="h-4 w-4" />
-              <span className="flex-1">{t("menu.collapseSessionList")}</span>
-              {!isFocusModeActive && !isSessionListVisible && (
-                <Icons.Check className="h-4 w-4 text-muted-foreground" />
-              )}
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem onClick={onToggleFocusMode}>
-              <Icons.PanelLeftClose className="h-4 w-4" />
-              <span className="flex-1">{t("menu.toggleFocusMode")}</span>
-              {isFocusModeActive && (
-                <Icons.Check className="h-4 w-4 text-muted-foreground" />
-              )}
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-        )}
+        {!isCompact && <div aria-hidden="true" className="h-7 w-7 shrink-0" />}
 
-        <AppMenu
-          onNewChat={onNewChat}
-          onNewWindow={onNewWindow}
-          onOpenSettings={onOpenSettings}
-          onOpenSettingsSubpage={onOpenSettingsSubpage}
-          onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
-          onOpenStoredUserPreferences={onOpenStoredUserPreferences}
-          onToggleSidebar={onToggleSidebar}
-          onToggleSessionList={onToggleSessionList}
-          onToggleFocusMode={onToggleFocusMode}
-        />
+        {isCompact && (
+          <AppMenu
+            onNewChat={onNewChat}
+            onNewWindow={onNewWindow}
+            onOpenSettings={onOpenSettings}
+            onOpenSettingsSubpage={onOpenSettingsSubpage}
+            onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
+            onOpenStoredUserPreferences={onOpenStoredUserPreferences}
+            onToggleSidebar={onToggleSidebar}
+            onToggleSessionList={onToggleSessionList}
+            onToggleFocusMode={onToggleFocusMode}
+          />
+        )}
         </div>
 
         {/* Back / Forward / Workspace selector (moved from center).
@@ -219,13 +204,13 @@ export function TopBar({
             drill-in chevron in PanelHeader plus the browser's native back gesture
             cover that affordance, and the freed width lets the workspace pill
             actually fit on phone-width viewports. */}
-        <div className={cn("ml-1 flex min-w-0 items-center gap-1", isCompact ? "flex-1" : "w-[clamp(220px,42vw,640px)]")}>
+        <div className={cn("ml-1 flex min-w-0 items-center gap-1", isCompact && "flex-1")}>
           {!isCompact && (
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <TopBarButton onClick={onBack} disabled={!canGoBack} aria-label={t("common.back")}>
-                    <Icons.ChevronLeft className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
+                    <Icons.ChevronLeft className="h-[18px] w-[18px] text-foreground/70" />
                   </TopBarButton>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{t("common.back")} {goBackHotkey}</TooltipContent>
@@ -234,7 +219,7 @@ export function TopBar({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <TopBarButton onClick={onForward} disabled={!canGoForward} aria-label={t("common.forward")}>
-                    <Icons.ChevronRight className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
+                    <Icons.ChevronRight className="h-[18px] w-[18px] text-foreground/70" />
                   </TopBarButton>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{t("common.forward")} {goForwardHotkey}</TooltipContent>
@@ -242,8 +227,8 @@ export function TopBar({
             </>
           )}
 
-          <div className="min-w-0 flex-1">
-            {isCompact ? (
+          {isCompact && (
+            <div className="min-w-0 flex-1">
               <CompactWorkspaceSwitcher
                 workspaces={workspaces}
                 activeWorkspaceId={activeWorkspaceId}
@@ -252,73 +237,19 @@ export function TopBar({
                 onWorkspaceRemoved={onWorkspaceRemoved}
                 workspaceUnreadMap={workspaceUnreadMap}
               />
-            ) : (
-              <WorkspaceSwitcher
-                variant="topbar"
-                workspaces={workspaces}
-                activeWorkspaceId={activeWorkspaceId}
-                onSelect={onSelectWorkspace}
-                onWorkspaceCreated={onWorkspaceCreated}
-                onWorkspaceRemoved={onWorkspaceRemoved}
-                workspaceUnreadMap={workspaceUnreadMap}
-              />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {!isCompact && (
-      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1" style={{ paddingRight: isWindows ? 8 : 12 }}>
-        {/* Help button */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <TopBarButton aria-label={t("menu.helpAndDocs")} className="h-[26px] w-[26px] rounded-lg">
-              <Icons.HelpCircle className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
-            </TopBarButton>
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent align="end" minWidth="min-w-48">
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('sources'))}>
-              <Icons.DatabaseZap className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("sidebar.sources")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('skills'))}>
-              <Icons.Zap className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("sidebar.skills")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('statuses'))}>
-              <Icons.CheckCircle2 className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("sidebar.statuses")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('permissions'))}>
-              <Icons.Settings className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("settings.permissions.title")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('automations'))}>
-              <Icons.Webhook className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("sidebar.automations")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('messaging'))}>
-              <Icons.MessageSquare className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("settings.messaging.title")}</span>
-              <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuSeparator />
-            <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
-              <Icons.ExternalLink className="h-3.5 w-3.5" />
-              <span className="flex-1">{t("menu.allDocumentation")}</span>
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
-        {isWindows && <WindowsWindowControls />}
-      </div>
+      {!isCompact && isWindows && (
+        <div className="pointer-events-auto flex min-w-0 shrink-0 items-center justify-end" style={{ paddingRight: 8 }}>
+          <WindowsWindowControls />
+        </div>
       )}
       </div>
     </div>
+    </>
   )
 }
 
@@ -338,6 +269,13 @@ function WindowsWindowControls() {
       dispose()
     }
   }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.windowMaximized = String(isMaximized)
+    return () => {
+      delete document.documentElement.dataset.windowMaximized
+    }
+  }, [isMaximized])
 
   return (
     <div className="titlebar-no-drag ml-1 flex h-[30px] shrink-0 items-center overflow-hidden">

@@ -53,7 +53,7 @@ import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { parsePermissionMode } from '@craft-agent/shared/agent/mode-types'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
 import { normalizePanelRouteForReconcile } from './navigation-reconcile'
-import { buildSemanticHistoryKey, canRunInitialRestore } from './navigation-history'
+import { buildSemanticHistoryKey, canRunInitialRestore, shouldReplaceHistoryEntry } from './navigation-history'
 import * as storage from '@/lib/local-storage'
 import type {
   DeepLinkNavigation,
@@ -347,8 +347,13 @@ export function NavigationProvider({
   const focusedPanelId = useAtomValue(focusedPanelIdAtom)
   useEffect(() => {
     if (!initialRouteRestoredRef.current) return
+    // Meaningful navigation is pushed by the subscriptions below. Replacing
+    // the URL here first would overwrite the previous entry, leaving Back and
+    // Forward with two identical destinations. Only layout-only changes reuse
+    // the current history entry.
+    if (!shouldReplaceHistoryEntry(getSemanticHistoryKey(), lastSemanticHistoryKeyRef.current)) return
     syncUrlRef.current(false)
-  }, [panelStack, focusedPanelId, rightSidebar])
+  }, [panelStack, focusedPanelId, rightSidebar, getSemanticHistoryKey])
 
   // =========================================================================
   // ATOM SUBSCRIPTIONS FOR pushState (meaningful navigation)
@@ -1098,7 +1103,7 @@ export function NavigationProvider({
 
     // If nothing was in the URL, navigate to default
     if (!params.get('route') && !params.get('panels')) {
-      navigate(routes.view.browser(), { skipAutoSelect: true })
+      navigate(routes.view.allSessions(), { skipAutoSelect: true })
     }
 
     // Initialize history with seq=0 (replaceState so we don't create an extra entry)

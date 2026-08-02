@@ -31,6 +31,7 @@ import type { Workspace, LlmConnection } from '../../../config/storage.ts';
 import type { SessionConfig as Session } from '../../../sessions/storage.ts';
 import { ClaudeAgent } from '../../claude-agent.ts';
 import { PiAgent } from '../../pi-agent.ts';
+import { CodexAgent } from '../../codex-agent.ts';
 import { isValidProviderAuthCombination } from '../../../config/llm-connections.ts';
 
 // Test helpers
@@ -103,6 +104,14 @@ describe('createBackend / createAgent', () => {
     });
   });
 
+  describe('Codex provider', () => {
+    it('should create CodexAgent for codex provider', () => {
+      const agent = createBackend(createTestConfig({ provider: 'codex', model: 'pi/deepseek-v4-flash' }));
+      expect(agent).toBeInstanceOf(CodexAgent);
+      expect(agent.getModel()).toBe('deepseek-v4-flash');
+    });
+  });
+
   describe('Unknown provider', () => {
     it('should throw for unknown provider', () => {
       const config = createTestConfig({ provider: 'unknown' as any });
@@ -119,12 +128,13 @@ describe('createBackend / createAgent', () => {
 });
 
 describe('getAvailableProviders', () => {
-  it('should return anthropic and pi', () => {
+  it('should return all supported agent runtimes', () => {
     const providers = getAvailableProviders();
 
     expect(providers).toContain('anthropic');
     expect(providers).toContain('pi');
-    expect(providers).toHaveLength(2);
+    expect(providers).toContain('codex');
+    expect(providers).toHaveLength(3);
   });
 });
 
@@ -135,6 +145,10 @@ describe('isProviderAvailable', () => {
 
   it('should return true for pi', () => {
     expect(isProviderAvailable('pi')).toBe(true);
+  });
+
+  it('should return true for codex', () => {
+    expect(isProviderAvailable('codex')).toBe(true);
   });
 
   it('should return false for unknown provider', () => {
@@ -342,6 +356,20 @@ describe('phase4 backend abstraction APIs', () => {
 });
 
 describe('resolveModelForProvider', () => {
+  it('strips the CA pi/ registry prefix for Codex Responses API models', () => {
+    const connection = {
+      slug: 'deepseek',
+      name: 'DeepSeek',
+      providerType: 'pi' as const,
+      authType: 'api_key' as const,
+      models: ['pi/deepseek-v4-pro', 'pi/deepseek-v4-flash'],
+      defaultModel: 'pi/deepseek-v4-flash',
+      createdAt: Date.now(),
+    };
+    expect(resolveModelForProvider('codex', undefined, connection)).toBe('deepseek-v4-flash');
+    expect(resolveModelForProvider('codex', 'pi/deepseek-v4-pro', connection)).toBe('deepseek-v4-pro');
+  });
+
   it('falls back to the Pi connection default when a normalized stale model is not in the connection list', () => {
     const connection = {
       providerType: 'pi',

@@ -857,7 +857,7 @@ export function SessionList({
           'data-focus-zone': 'navigator',
           'data-list-role': 'sessions',
           role: 'listbox',
-          'aria-label': 'Sessions',
+          'aria-label': t('session.listAriaLabel', { defaultValue: 'Sessions' }),
         }}
         scrollAreaClassName="select-none mask-fade-top-short"
         collapsedGroups={collapsedGroups}

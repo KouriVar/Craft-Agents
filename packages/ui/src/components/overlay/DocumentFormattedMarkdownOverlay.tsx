@@ -11,13 +11,15 @@
  * Uses FullscreenOverlayBase for portal, traffic lights, ESC handling, and header.
  */
 
-import { ListTodo } from 'lucide-react'
+import { BookOpen, ListTodo } from 'lucide-react'
 import { Markdown } from '../markdown'
 import type { AnnotationV1 } from '@craft-agent/core'
 import type { ExternalOpenAnnotationRequest } from '../annotations/use-annotation-interaction-controller'
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'
 import type { OverlayTypeBadge } from './FullscreenOverlayBaseHeader'
 import { AnnotatableMarkdownDocument } from './AnnotatableMarkdownDocument'
+import { PreviewOverlay } from './PreviewOverlay'
+import { CopyButton } from './CopyButton'
 
 export interface DocumentFormattedMarkdownOverlayProps {
   /** The content to display (markdown) */
@@ -56,6 +58,8 @@ export interface DocumentFormattedMarkdownOverlayProps {
   isStreaming?: boolean
   /** Optional external request to open a specific annotation */
   openAnnotationRequest?: ExternalOpenAnnotationRequest | null
+  /** Render inline inside a docked review panel. */
+  embedded?: boolean
 }
 
 export function DocumentFormattedMarkdownOverlay({
@@ -77,16 +81,10 @@ export function DocumentFormattedMarkdownOverlay({
   sendMessageKey = 'enter',
   isStreaming = false,
   openAnnotationRequest,
+  embedded = false,
 }: DocumentFormattedMarkdownOverlayProps) {
-  return (
-    <FullscreenOverlayBase
-      isOpen={isOpen}
-      onClose={onClose}
-      filePath={filePath}
-      typeBadge={typeBadge}
-      copyContent={content}
-      error={error ? { label: 'Write Failed', message: error } : undefined}
-    >
+  const body = (
+    <>
       {/* Content wrapper — min-h-full for vertical centering within FullscreenOverlayBase's scroll container.
           Scrolling and gradient fade mask are handled by FullscreenOverlayBase. */}
       <div className="min-h-full flex flex-col justify-center px-6 py-16">
@@ -133,6 +131,42 @@ export function DocumentFormattedMarkdownOverlay({
           </div>
         </div>
       </div>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <PreviewOverlay
+        isOpen={isOpen}
+        onClose={onClose}
+        typeBadge={typeBadge
+          ? { ...typeBadge, variant: typeBadge.variant ?? 'default' }
+          : {
+              icon: variant === 'plan' ? ListTodo : BookOpen,
+              label: variant === 'plan' ? 'Plan' : 'Read',
+              variant: variant === 'plan' ? 'green' : 'blue',
+            }}
+        filePath={filePath}
+        error={error ? { label: 'Write Failed', message: error } : undefined}
+        headerActions={<CopyButton content={content} />}
+        embedded
+        className="bg-foreground-3"
+      >
+        {body}
+      </PreviewOverlay>
+    )
+  }
+
+  return (
+    <FullscreenOverlayBase
+      isOpen={isOpen}
+      onClose={onClose}
+      filePath={filePath}
+      typeBadge={typeBadge}
+      copyContent={content}
+      error={error ? { label: 'Write Failed', message: error } : undefined}
+    >
+      {body}
     </FullscreenOverlayBase>
   )
 }

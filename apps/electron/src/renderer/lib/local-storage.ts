@@ -13,7 +13,10 @@ export const KEYS = {
   // Chat sidebar
   sidebarVisible: 'sidebar-visible',
   sessionListVisible: 'session-list-visible',
+  sessionListDefaultCollapsedV1: 'session-list-default-collapsed-v1',
+  sessionListDefaultExpandedV2: 'session-list-default-expanded-v2',
   sidebarWidth: 'sidebar-width',
+  legacyUnifiedSidebarSessionsV1: 'unified-sidebar-sessions-v1',
   sessionListWidth: 'session-list-width',
   rightSidebarWidth: 'right-sidebar-width',
   sidebarMode: 'sidebar-mode',

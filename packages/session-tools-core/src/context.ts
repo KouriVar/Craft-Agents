@@ -452,6 +452,7 @@ export interface SessionInfo {
   workingDirectory?: string;
   llmConnection?: string;
   model?: string;
+  agentRuntime?: 'claude' | 'pi' | 'codex';
   isActive: boolean;
 }
 

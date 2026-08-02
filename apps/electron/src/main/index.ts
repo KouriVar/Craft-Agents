@@ -3,7 +3,8 @@
 import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, nativeImage, nativeTheme, screen, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, systemPreferences, type MenuItemConstructorOptions } from 'electron'
+import type { NativeContextMenuItem } from '../shared/types'
 import { createHash, randomUUID } from 'crypto'
 import { hostname, homedir } from 'os'
 import { spawn, type ChildProcess } from 'child_process'
@@ -648,12 +649,13 @@ async function createInitialWindows(): Promise<void> {
       // Skip invalid workspaces
       if (!validWorkspaceIds.includes(saved.workspaceId)) continue
 
-      // Restore main window with focused mode if it was saved
-      mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, focused=${saved.focused ?? false}, url=${saved.url ?? 'none'}`)
+      // Restore the window itself, but intentionally start its workspace at
+      // the sessions route. The last browser/settings URL is window history,
+      // not the app's home screen.
+      mainLog.info(`Restoring window: workspaceId=${saved.workspaceId}, focused=${saved.focused ?? false}, startupRoute=allSessions`)
       const win = windowManager.createWindow({
         workspaceId: saved.workspaceId,
         focused: saved.focused,
-        restoreUrl: saved.url,
       })
       const restoredBounds = fitWindowBoundsToWorkAreas(saved.bounds, displayWorkAreas)
       win.setBounds(restoredBounds)
@@ -869,6 +871,42 @@ app.whenReady().then(async () => {
         || BrowserWindow.getAllWindows()[0]
       const result = await dialog.showOpenDialog(win, spec)
       return { canceled: result.canceled, filePaths: result.filePaths }
+    })
+    ipcMain.handle('app:show-native-context-menu', async (event, rawItems: unknown) => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+        || BrowserWindow.getFocusedWindow()
+        || BrowserWindow.getAllWindows()[0]
+      if (!window || window.isDestroyed() || !Array.isArray(rawItems)) return null
+
+      let selected: string | null = null
+      const normalize = (items: unknown[], depth = 0): MenuItemConstructorOptions[] => {
+        if (depth > 4) return []
+        return items.slice(0, 80).flatMap((value): MenuItemConstructorOptions[] => {
+          if (!value || typeof value !== 'object') return []
+          const item = value as NativeContextMenuItem
+          if (item.type === 'separator') return [{ type: 'separator' }]
+          if (typeof item.label !== 'string' || item.label.trim().length === 0) return []
+          const action = typeof item.action === 'string' ? item.action.slice(0, 256) : undefined
+          const submenu = Array.isArray(item.submenu) ? normalize(item.submenu, depth + 1) : undefined
+          return [{
+            type: item.type === 'checkbox' ? 'checkbox' : 'normal',
+            label: item.label.slice(0, 160),
+            enabled: item.enabled !== false,
+            checked: item.type === 'checkbox' ? item.checked === true : undefined,
+            submenu,
+            click: action ? () => { selected = action } : undefined,
+          }]
+        })
+      }
+
+      const template = normalize(rawItems)
+      if (template.length === 0) return null
+      return new Promise<string | null>((resolve) => {
+        Menu.buildFromTemplate(template).popup({
+          window,
+          callback: () => resolve(selected),
+        })
+      })
     })
     ipcMain.handle('__cowart:start-canvas', async (_event, request: CowartCanvasLaunchRequest) => {
       return queueCowartCanvasStart(request)

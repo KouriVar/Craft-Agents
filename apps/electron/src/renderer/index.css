@@ -497,17 +497,53 @@ html[data-platform="windows"][data-font="inter"] {
   }
 
   html[data-platform='windows'] .ca-window-shell {
+    --ca-windows-window-radius: 12px;
     --win-shell-background: rgb(var(--ca-shell-glass-tint-rgb));
     --ca-windows-panel-surface: oklch(from var(--foreground-2) l c h / 1);
     background: var(--win-shell-background);
+    --win-shell-backdrop-blur: 0px;
+    backdrop-filter: blur(var(--win-shell-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--win-shell-backdrop-blur));
+    border-radius: var(--ca-windows-window-radius);
+    overflow: hidden;
+  }
+
+  html[data-platform='windows'][data-window-maximized='true'] .ca-window-shell {
+    border-radius: 0;
+  }
+
+  .ca-codex-primary-nav [data-sidebar-item='true'] {
+    min-height: 36px !important;
+    gap: 10px !important;
+    border-radius: 8px !important;
+    /* Keep the navigation glyph axis aligned with the macOS red window control. */
+    padding-left: 6px !important;
+    padding-right: 10px !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+  }
+
+  .ca-codex-primary-nav [data-sidebar-item='true'] > span:first-of-type {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .ca-codex-primary-nav [data-sidebar-item='true'] > span:first-of-type svg {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .ca-codex-primary-nav [data-sidebar-item='true'][data-selected='true'] {
+    font-weight: 600 !important;
   }
 
   html[data-platform='windows'] .ca-window-shell[data-windows-background-effect='enabled'] {
-    --win-shell-background: rgba(var(--ca-shell-glass-tint-rgb), 0.16);
+    --win-shell-background: rgba(244, 247, 249, 0.60);
+    --win-shell-backdrop-blur: 30px;
   }
 
   html[data-platform='windows'].dark .ca-window-shell[data-windows-background-effect='enabled'] {
-    --win-shell-background: rgba(var(--ca-shell-glass-tint-rgb), 0.10);
+    --win-shell-background: rgba(var(--ca-shell-glass-tint-rgb), 0.60);
   }
 
   /*
@@ -923,55 +959,27 @@ html.dark[data-scenic] .fullscreen-overlay-background {
 }
 
 /* =============================================================================
-   DISABLE ANIMATIONS FOR DIALOGS, DROPDOWNS, AND POPOVERS
+   OVERLAY MOTION
 
-   Radix UI (used by shadcn/ui) applies animations via data-state attributes.
-   This globally disables enter/exit animations for overlay components.
-
-   To re-enable for specific components, use: animation: revert !important;
+   Dialogs, menus, popovers, selects, and tooltips keep the small enter/exit
+   animations supplied by the component library. Only users who explicitly
+   request reduced motion get the former instant behavior.
 ============================================================================= */
 
-/* Dialog overlay (backdrop) */
-[data-radix-dialog-overlay] {
-  animation: none !important;
-}
-
-/* Dialog content */
-[role="dialog"][data-state],
-[data-radix-dialog-content] {
-  animation: none !important;
-}
-
-/* Dropdown menu content */
-[data-radix-menu-content],
-[data-radix-dropdown-menu-content] {
-  animation: none !important;
-}
-
-/* Popover content */
-[data-radix-popover-content] {
-  animation: none !important;
-}
-
-/* Select content */
-[data-radix-select-content] {
-  animation: none !important;
-}
-
-/* Tooltip content (if you want tooltips instant too) */
-[data-radix-tooltip-content] {
-  animation: none !important;
-}
-
-/* Context menu content */
-[data-radix-context-menu-content] {
-  animation: none !important;
-}
-
-/* Alert dialog */
-[data-radix-alert-dialog-overlay],
-[data-radix-alert-dialog-content] {
-  animation: none !important;
+@media (prefers-reduced-motion: reduce) {
+  [data-radix-dialog-overlay],
+  [role="dialog"][data-state],
+  [data-radix-dialog-content],
+  [data-radix-menu-content],
+  [data-radix-dropdown-menu-content],
+  [data-radix-popover-content],
+  [data-radix-select-content],
+  [data-radix-tooltip-content],
+  [data-radix-context-menu-content],
+  [data-radix-alert-dialog-overlay],
+  [data-radix-alert-dialog-content] {
+    animation: none !important;
+  }
 }
 
 /* Fix ScrollArea internal div preventing content shrink
@@ -1577,8 +1585,11 @@ html.dark[data-scenic] .fullscreen-overlay-background {
    fixed so the App content area reads the same variable for its padding-top.
    ========================================================================== */
 :root {
-  --topbar-height: 48px;
-  --app-topbar-inset: calc(var(--topbar-height) + 6px);
+  /* Desktop panels begin at the same 54px position as before, but the top-bar
+     controls now center within the full region instead of sitting in a 48px
+     bar followed by a separate 6px spacer. */
+  --topbar-height: 54px;
+  --app-topbar-inset: var(--topbar-height);
 }
 @media (max-width: 768px) {
   :root {

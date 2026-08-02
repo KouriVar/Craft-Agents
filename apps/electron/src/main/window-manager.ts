@@ -1,4 +1,4 @@
-import { BrowserWindow, shell, nativeTheme, Menu, app } from 'electron'
+import { BrowserWindow, shell, nativeTheme, app } from 'electron'
 import { windowLog } from './logger'
 import { join, resolve, sep } from 'path'
 import { existsSync } from 'fs'
@@ -459,19 +459,6 @@ export class WindowManager {
       event.preventDefault()
       this.openExternalFromRenderer(url, 'will-navigate', window)
     })
-
-    // Enable right-click context menu in development
-    if (!app.isPackaged) {
-      window.webContents.on('context-menu', (_event, params) => {
-        Menu.buildFromTemplate([
-          { label: 'Inspect Element', click: () => window.webContents.inspectElement(params.x, params.y) },
-          { type: 'separator' },
-          { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
-          { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
-          { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
-        ]).popup()
-      })
-    }
 
     // The renderer's index.html ships with `<title>Craft Agents</title>`, so
     // without this Electron auto-syncs every window's title back to that on

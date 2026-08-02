@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { buildSemanticHistoryKey, canRunInitialRestore } from '../navigation-history'
+import { buildSemanticHistoryKey, canRunInitialRestore, shouldReplaceHistoryEntry } from '../navigation-history'
 
 describe('buildSemanticHistoryKey', () => {
   it('changes when focused panel index changes even if routes are identical', () => {
@@ -61,5 +61,15 @@ describe('canRunInitialRestore', () => {
       workspaceId: 'ws-1',
       initialRouteRestored: true,
     })).toBe(false)
+  })
+})
+
+describe('shouldReplaceHistoryEntry', () => {
+  it('preserves the previous entry for semantic navigation', () => {
+    expect(shouldReplaceHistoryEntry('sessions::s2', 'sessions::s1')).toBe(false)
+  })
+
+  it('replaces the current entry for layout-only changes', () => {
+    expect(shouldReplaceHistoryEntry('sessions::s1', 'sessions::s1')).toBe(true)
   })
 })

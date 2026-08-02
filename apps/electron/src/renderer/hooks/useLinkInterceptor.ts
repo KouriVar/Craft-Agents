@@ -74,6 +74,8 @@ export type FilePreviewState =
 // Callbacks injected by App.tsx so the hook doesn't depend on window.electronAPI directly.
 
 interface LinkInterceptorOptions {
+  /** Route a preview to another surface. Return true when handled. */
+  presentPreview?: (state: FilePreviewState) => boolean
   /** Open file in default external application (e.g., VS Code) */
   openFileExternal: (path: string) => Promise<void>
   /** Open URL in default browser */
@@ -101,6 +103,8 @@ interface LinkInterceptorResult {
   previewState: FilePreviewState | null
   /** Close the preview overlay */
   closePreview: () => void
+  /** Present an already-loaded preview in the fullscreen surface. */
+  showPreview: (state: FilePreviewState) => void
   /** Open the currently previewed file in external app */
   openCurrentExternal: () => void
   /** Reveal the currently previewed file in system file manager */
@@ -127,6 +131,11 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
   const previewStateRef = useRef(previewState)
   useEffect(() => { previewStateRef.current = previewState }, [previewState])
 
+  const presentPreview = useCallback((state: FilePreviewState) => {
+    if (optionsRef.current.presentPreview?.(state)) return
+    setPreviewState(state)
+  }, [])
+
   /**
    * Main entry point for file link clicks.
    * Classifies the file by extension, then either opens a preview overlay
@@ -150,7 +159,7 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
 
     // For image/pdf: set state immediately — the overlay handles its own async loading
     if (type === 'image' || type === 'pdf') {
-      setPreviewState({ type, filePath: path })
+      presentPreview({ type, filePath: path })
       return
     }
 
@@ -159,13 +168,13 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
     try {
       const content = await optionsRef.current.readFile(path)
       const state = buildInitialTextState(type, path)
-      setPreviewState({ ...state, content } as FilePreviewState)
+      presentPreview({ ...state, content } as FilePreviewState)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to read file'
       const state = buildInitialTextState(type, path)
-      setPreviewState({ ...state, content: '', error: errorMsg } as FilePreviewState)
+      presentPreview({ ...state, content: '', error: errorMsg } as FilePreviewState)
     }
-  }, []) // Stable: uses optionsRef
+  }, [presentPreview]) // Stable: uses optionsRef
 
   /** Open file directly in external app, bypassing classification/preview.
    * Used by overlay header badges — when already viewing a file, "Open" should launch the editor. */
@@ -196,6 +205,10 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
 
   const closePreview = useCallback(() => {
     setPreviewState(null)
+  }, [])
+
+  const showPreview = useCallback((state: FilePreviewState) => {
+    setPreviewState(state)
   }, [])
 
   /** Open the currently previewed file in external app (from overlay header) */
@@ -230,6 +243,7 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
     openFileExternal,
     previewState,
     closePreview,
+    showPreview,
     openCurrentExternal,
     revealCurrentInFinder,
     readFileDataUrl,

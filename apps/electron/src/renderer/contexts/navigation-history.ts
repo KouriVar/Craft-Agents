@@ -33,6 +33,14 @@ export function buildSemanticHistoryKey({
 }
 
 /**
+ * Layout-only changes may replace the current URL. Semantic navigation must
+ * preserve the previous entry so Back/Forward can restore it.
+ */
+export function shouldReplaceHistoryEntry(currentKey: string, lastPushedKey: string): boolean {
+  return currentKey === lastPushedKey
+}
+
+/**
  * Returns whether initial route restoration is allowed to run.
  */
 export function canRunInitialRestore({

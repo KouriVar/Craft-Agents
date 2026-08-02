@@ -20,6 +20,7 @@ import { CONFIG_DIR } from './paths.ts';
 import { safeJsonParse, readJsonFileSync } from '../utils/files.ts';
 import { EntityColorSchema } from '../colors/validate.ts';
 import { THINKING_LEVEL_IDS } from '../agent/thinking-levels.ts';
+import { AGENT_RUNTIMES } from '../agent/runtime-types.ts';
 import { isValidProviderAuthCombination } from './llm-connections.ts';
 import { SUPPORTED_LANGUAGE_CODES } from '../i18n/languages.ts';
 import type { LanguageCode } from '../i18n/languages.ts';
@@ -104,6 +105,11 @@ export const StoredConfigSchema = z.object({
   llmConnections: z.array(LlmConnectionSchema).optional(),
   defaultLlmConnection: z.string().optional(),
   defaultThinkingLevel: z.enum([...THINKING_LEVEL_IDS, 'think'] as [string, ...string[]]).transform(v => v === 'think' ? 'medium' : v).optional(),
+  defaultAgentRuntime: z.enum(AGENT_RUNTIMES).optional(),
+  multimodalModel: z.object({
+    connectionSlug: z.string().min(1),
+    model: z.string().min(1),
+  }).optional(),
   // Note: tokenDisplay, showCost, cumulativeUsage, defaultPermissionMode removed
   // Permission mode and cyclable modes are now per-workspace in workspace config.json
 });

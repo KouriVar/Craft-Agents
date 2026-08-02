@@ -31,6 +31,8 @@ export interface ResolvedBackendRuntimePaths {
   piServerPath?: string;
   nodeRuntimePath?: string;
   bundledRuntimePath?: string;
+  /** Codex executable used for the app-server backend. */
+  codexCliPath?: string;
 }
 
 export interface ResolvedBackendHostTooling {
@@ -181,6 +183,33 @@ function resolveServerPath(hostRuntime: BackendHostRuntimeContext, serverName: s
   );
 }
 
+function resolveCodexCliPath(): string | undefined {
+  const override = process.env.CRAFT_CODEX_PATH?.trim();
+  if (override && existsSync(override)) return override;
+
+  const platformCandidates = process.platform === 'darwin'
+    ? [
+        '/Applications/ChatGPT.app/Contents/Resources/codex',
+        join(process.env.HOME || '', 'Applications', 'ChatGPT.app', 'Contents', 'Resources', 'codex'),
+      ]
+    : process.platform === 'win32'
+      ? [
+          join(process.env.LOCALAPPDATA || '', 'Programs', 'ChatGPT', 'resources', 'codex.exe'),
+          join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI ChatGPT', 'resources', 'codex.exe'),
+        ]
+      : [];
+  const installed = firstExistingPath(platformCandidates.filter(Boolean));
+  if (installed) return installed;
+
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(whichCmd, ['codex'], { encoding: 'utf-8' }).split(/\r?\n/)[0]?.trim();
+    return result || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Locate ripgrep. Sourced from `@vscode/ripgrep` since SDK 0.2.113 stopped
  * shipping `vendor/ripgrep/<platform>/rg` (the binary is now compiled into
@@ -227,6 +256,7 @@ export function resolveBackendRuntimePaths(hostRuntime: BackendHostRuntimeContex
     piServerPath: resolveServerPath(hostRuntime, 'pi-agent-server'),
     nodeRuntimePath: hostRuntime.nodeRuntimePath || bundledRuntimePath || process.execPath,
     bundledRuntimePath,
+    codexCliPath: resolveCodexCliPath(),
   };
 }
 

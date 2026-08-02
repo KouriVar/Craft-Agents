@@ -35,7 +35,7 @@ export const SESSION_PERSISTENT_FIELDS = [
   // Config
   'enabledSourceSlugs', 'permissionMode', 'previousPermissionMode', 'workingDirectory',
   // Model/Connection
-  'model', 'llmConnection', 'connectionLocked', 'thinkingLevel',
+  'model', 'llmConnection', 'agentRuntime', 'connectionLocked', 'thinkingLevel',
   // Sharing
   'sharedUrl', 'sharedId',
   // Plan execution
@@ -172,6 +172,8 @@ export interface SessionConfig {
   model?: string;
   /** LLM connection slug for this session (locked after first message) */
   llmConnection?: string;
+  /** Agent loop/runtime selected when this session was created. */
+  agentRuntime?: import('../agent/runtime-types.ts').AgentRuntime;
   /** Whether the connection is locked (cannot be changed after first agent creation) */
   connectionLocked?: boolean;
   /** Thinking level for this session ('off', 'think', 'max') */

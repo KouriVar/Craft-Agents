@@ -905,7 +905,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
   // Show "Thinking" while streaming, stripped markdown content when complete
   if (activity.type === 'intermediate') {
     const isThinking = activity.status === 'running'
-    const displayContent = isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')
+    const displayContent = isThinking ? i18n.t('chat.processing.thinking') : stripMarkdown(activity.content || '')
     const isComplete = activity.status === 'completed'
     return (
       <div className="flex items-stretch">
@@ -985,7 +985,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
   // - Params: Remaining tool input summary
   const toolDisplay = formatToolDisplay(activity)
   const fullDisplayName = toolDisplay.name
-    || (activity.type === 'thinking' ? 'Thinking' : 'Processing')
+    || (activity.type === 'thinking' ? i18n.t('chat.processing.thinking') : i18n.t('turnCard.processing'))
 
   // Detect MCP/API tools (toolName starts with "mcp__")
   const isMcpOrApiTool = activity.toolName?.startsWith('mcp__') ?? false
@@ -1141,9 +1141,9 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
               <span
                 className="px-1.5 py-0.5 bg-[color-mix(in_oklab,var(--destructive)_4%,var(--background))] shadow-tinted rounded-[4px] text-[10px] text-destructive font-medium cursor-default shrink-0"
                 style={{ '--shadow-color': 'var(--destructive-rgb)' } as React.CSSProperties}
-              >
-                Error
-              </span>
+                >
+                  {i18n.t('common.error')}
+                </span>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-[400px]">
               {activity.error}
@@ -2480,7 +2480,7 @@ export function ResponseCard({
               )}
             >
               <ListTodo className={cn(SIZE_CONFIG.iconSize, "text-success")} />
-              <span className="font-medium text-success">Plan</span>
+              <span className="font-medium text-success">{i18n.t('turnCard.plan', { defaultValue: 'Plan' })}</span>
             </div>
           )}
 
@@ -2666,7 +2666,7 @@ export function ResponseCard({
           <div className={cn("px-4 py-2 border-t border-border/30 flex items-center bg-muted/20", SIZE_CONFIG.fontSize)}>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Spinner className={SIZE_CONFIG.spinnerSize} />
-              <span>Streaming...</span>
+              <span>{i18n.t('turnCard.responding')}</span>
             </div>
           </div>
         )}
@@ -2736,7 +2736,7 @@ function TodoList({ todos }: TodoListProps) {
     <div className="pl-4 pr-2 pt-2.5 pb-1.5 space-y-0.5 border-l-2 border-muted ml-[13px]">
       {/* Header */}
       <div className={cn("text-muted-foreground pb-1", SIZE_CONFIG.fontSize)}>
-        Todo List
+        {i18n.t('turnCard.todoList', { defaultValue: 'Todo List' })}
       </div>
       {/* Todo items */}
       {todos.map((todo, index) => (
@@ -3118,7 +3118,7 @@ export const TurnCard = React.memo(function TurnCard({
                       className={cn("flex items-center gap-2 py-0.5 text-muted-foreground/70", SIZE_CONFIG.fontSize)}
                     >
                       <Spinner className={SIZE_CONFIG.spinnerSize} />
-                      <span>{isBuffering ? 'Preparing response...' : 'Thinking...'}</span>
+                      <span>{isBuffering ? i18n.t('turnCard.processing') : i18n.t('chat.processing.thinking')}</span>
                     </motion.div>
                   )}
                   </AnimatePresence>
@@ -3137,7 +3137,7 @@ export const TurnCard = React.memo(function TurnCard({
       {!hasActivities && isThinking && !animateResponse && (
         <div className={cn("flex items-center gap-2 px-3 py-1.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
           <Spinner className={SIZE_CONFIG.spinnerSize} />
-          <span>{isBuffering ? 'Preparing response...' : 'Thinking...'}</span>
+          <span>{isBuffering ? i18n.t('turnCard.processing') : i18n.t('chat.processing.thinking')}</span>
         </div>
       )}
 

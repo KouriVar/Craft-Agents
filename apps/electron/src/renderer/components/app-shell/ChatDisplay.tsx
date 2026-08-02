@@ -73,6 +73,8 @@ import { ChatInputZone, type StructuredInputState, type StructuredResponse, type
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
+import { useAtomValue, useSetAtom } from 'jotai'
+import { diffReviewPreviewAtom, fileReviewOpenModeAtom, type DiffReviewPreview } from '@/atoms/file-review'
 import { useNavigation } from "@/contexts/NavigationContext"
 import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
@@ -81,6 +83,7 @@ import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } fro
 import { resolveBranchNewPanelOption } from "./branching"
 import { handleErrorMessageAction } from "./error-message-actions"
 import { WidgetMessageContent } from "@/components/widgets/WidgetMessageContent"
+import { getErrorPresentation } from "@/lib/error-presentation"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -505,61 +508,11 @@ export interface ChatDisplayHandle {
 }
 
 /**
- * Processing status messages - cycles through these randomly
- * Inspired by Claude Code's playful status messages
+ * Processing copy stays stable while a turn is running. A changing stream of
+ * playful phrases makes a long task feel noisy and hides the only useful
+ * signal here: whether the agent is still working and for how long.
  */
-const PROCESSING_MESSAGE_KEYS = [
-  'chat.processing.thinking',
-  'chat.processing.pondering',
-  'chat.processing.contemplating',
-  'chat.processing.reasoning',
-  'chat.processing.processing',
-  'chat.processing.computing',
-  'chat.processing.considering',
-  'chat.processing.reflecting',
-  'chat.processing.deliberating',
-  'chat.processing.cogitating',
-  'chat.processing.ruminating',
-  'chat.processing.musing',
-  'chat.processing.workingOnIt',
-  'chat.processing.onIt',
-  'chat.processing.crunching',
-  'chat.processing.brewing',
-  'chat.processing.connectingDots',
-  'chat.processing.mullingItOver',
-  'chat.processing.deepInThought',
-  'chat.processing.hmm',
-  'chat.processing.letMeSee',
-  'chat.processing.oneMoment',
-  'chat.processing.holdOn',
-  'chat.processing.bearWithMe',
-  'chat.processing.justASec',
-  'chat.processing.hangTight',
-  'chat.processing.gettingThere',
-  'chat.processing.almost',
-  'chat.processing.working',
-  'chat.processing.busyBusy',
-  'chat.processing.whirring',
-  'chat.processing.churning',
-  'chat.processing.percolating',
-  'chat.processing.simmering',
-  'chat.processing.cooking',
-  'chat.processing.baking',
-  'chat.processing.stirring',
-  'chat.processing.spinningUp',
-  'chat.processing.warmingUp',
-  'chat.processing.revving',
-  'chat.processing.buzzing',
-  'chat.processing.humming',
-  'chat.processing.ticking',
-  'chat.processing.clicking',
-  'chat.processing.whizzing',
-  'chat.processing.zooming',
-  'chat.processing.zipping',
-  'chat.processing.chugging',
-  'chat.processing.trucking',
-  'chat.processing.rolling',
-]
+const PROCESSING_MESSAGE_KEY = 'chat.processing.processing'
 
 /**
  * Format elapsed time: "45s" under a minute, "1:02" for 1+ minutes
@@ -579,15 +532,13 @@ interface ProcessingIndicatorProps {
 }
 
 /**
- * ProcessingIndicator - Shows cycling status messages with elapsed time
- * Matches TurnCard header layout for visual continuity
+ * ProcessingIndicator - Shows the current status with elapsed time.
+ * Keep the copy stable unless the backend provides a meaningful phase change;
+ * a live timer is enough feedback for a long-running turn.
  */
 function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorProps) {
   const { t } = useTranslation()
   const [elapsed, setElapsed] = React.useState(0)
-  const [messageIndex, setMessageIndex] = React.useState(() =>
-    Math.floor(Math.random() * PROCESSING_MESSAGE_KEYS.length)
-  )
 
   // Update elapsed time every second using provided startTime
   React.useEffect(() => {
@@ -601,24 +552,9 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
     return () => clearInterval(interval)
   }, [startTime])
 
-  // Cycle through messages every 10 seconds (only when not showing status)
-  React.useEffect(() => {
-    if (statusMessage) return  // Don't cycle when showing status
-    const interval = setInterval(() => {
-      setMessageIndex(prev => {
-        // Pick a random different message
-        let next = Math.floor(Math.random() * PROCESSING_MESSAGE_KEYS.length)
-        while (next === prev && PROCESSING_MESSAGE_KEYS.length > 1) {
-          next = Math.floor(Math.random() * PROCESSING_MESSAGE_KEYS.length)
-        }
-        return next
-      })
-    }, 10000)
-    return () => clearInterval(interval)
-  }, [statusMessage])
-
-  // Use status message if provided, otherwise cycle through default messages
-  const displayMessage = statusMessage || t(PROCESSING_MESSAGE_KEYS[messageIndex])
+  // Use an explicit backend status when available, otherwise keep one stable
+  // fallback label so the indicator does not animate unrelated copy.
+  const displayMessage = statusMessage || t(PROCESSING_MESSAGE_KEY)
 
   return (
     <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-control text-muted-foreground">
@@ -1316,6 +1252,17 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
+  const fileReviewOpenMode = useAtomValue(fileReviewOpenModeAtom)
+  const setDiffReviewPreview = useSetAtom(diffReviewPreviewAtom)
+
+  const presentMultiDiff = useCallback((state: DiffReviewPreview) => {
+    if (fileReviewOpenMode === 'sidebar') {
+      setDiffReviewPreview(state)
+      window.dispatchEvent(new CustomEvent('craft:open-file-review-sidebar'))
+      return
+    }
+    setOverlayState({ type: 'multi-diff', ...state })
+  }, [fileReviewOpenMode, setDiffReviewPreview])
 
   // Diff viewer settings - loaded from user preferences on mount, persisted on change
   // These settings are stored in ~/.craft-agent/preferences.json (not localStorage)
@@ -2372,8 +2319,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           if ((activity.toolName === 'Edit' || activity.toolName === 'Write') && !isDocumentWrite) {
                             const changes = collectFileChangesFromActivities(turn.activities)
                             if (changes.length > 0) {
-                              setOverlayState({
-                                type: 'multi-diff',
+                              presentMultiDiff({
                                 changes,
                                 consolidated: false, // Ungrouped mode - show individual changes
                                 focusedChangeId: getFirstFileChangeIdForActivity(activity.id, changes),
@@ -2390,8 +2336,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         onOpenMultiFileDiff={() => {
                           const changes = collectFileChangesFromActivities(turn.activities)
                           if (changes.length > 0) {
-                            setOverlayState({
-                              type: 'multi-diff',
+                            presentMultiDiff({
                               changes,
                               consolidated: true, // Consolidated mode - group by file
                             })
@@ -2676,7 +2621,9 @@ interface MessageBubbleProps {
  */
 function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
-  const hasDetails = (message.errorDetails && message.errorDetails.length > 0) || message.errorOriginal
+  const presentation = getErrorPresentation(message)
+  const details = presentation.details
+  const hasDetails = details.length > 0 || presentation.original
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   const actions = message.errorActions?.filter(a => {
     if (a.action === 'open_url') return !!a.url && !!onOpenUrl
@@ -2694,9 +2641,9 @@ function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Mes
         } as React.CSSProperties}
       >
         <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
-          {message.errorTitle || t('common.error')}
+          {presentation.title || t('chat.error.requestFailed', { defaultValue: 'Request failed' })}
         </div>
-        <p className="text-sm text-destructive">{message.content}</p>
+        <p className="text-sm text-destructive">{presentation.content}</p>
 
         {/* Action buttons */}
         {actions && actions.length > 0 && (
@@ -2732,11 +2679,11 @@ function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Mes
 
             <AnimatedCollapsibleContent isOpen={detailsOpen} className="overflow-hidden">
               <div className="mt-2 pt-2 border-t border-destructive/20 text-xs text-destructive/60 font-mono space-y-0.5">
-                {message.errorDetails?.map((detail, i) => (
+                {details.map((detail, i) => (
                   <div key={i}>{detail}</div>
                 ))}
-                {message.errorOriginal && !message.errorDetails?.some(d => d.includes('Raw error:')) && (
-                  <div className="mt-1">Raw: {message.errorOriginal.slice(0, 200)}{message.errorOriginal.length > 200 ? '...' : ''}</div>
+                {presentation.original && !details.some(d => d.includes('Raw error:')) && (
+                  <div className="mt-1">Raw: {presentation.original.slice(0, 200)}{presentation.original.length > 200 ? '...' : ''}</div>
                 )}
               </div>
             </AnimatedCollapsibleContent>
@@ -2862,7 +2809,7 @@ function MessageBubble({
         <div className="flex items-center gap-3 my-12 px-3">
           <div className="flex-1 h-px bg-border" />
           <span className="text-sm text-muted-foreground/70 select-none">
-            Conversation Compacted
+            {t('chat.conversationCompacted', { defaultValue: 'Conversation compacted' })}
           </span>
           <div className="flex-1 h-px bg-border" />
         </div>
@@ -2877,13 +2824,18 @@ function MessageBubble({
       success: { icon: CheckCircle2, className: 'text-success' },
     }[level]
     const Icon = config.icon
+    const infoContent = message.content === 'Response interrupted'
+      ? t('chat.responseInterrupted', { defaultValue: 'Response interrupted' })
+      : message.content === 'Conversation Compacted'
+        ? t('chat.conversationCompacted', { defaultValue: 'Conversation compacted' })
+        : message.content
 
     return (
       <div className={cn('flex items-center gap-2 px-3 py-1 text-control select-none', config.className)}>
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Icon className="w-3 h-3" />
         </div>
-        <span>{message.content}</span>
+        <span>{infoContent}</span>
       </div>
     )
   }
@@ -2894,7 +2846,7 @@ function MessageBubble({
       <div className="flex justify-start">
         <div className="max-w-[80%] bg-info/10 rounded-surface pl-5 pr-4 pt-2 pb-2.5 break-words select-none">
           <div className="text-xs text-info/50 mb-0.5 font-semibold">
-            Warning
+            {t('common.warning', { defaultValue: 'Warning' })}
           </div>
           <p className="text-sm text-info">{message.content}</p>
         </div>

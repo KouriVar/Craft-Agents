@@ -11,6 +11,7 @@ function SettingsNavigatorPreview() {
       <SettingsNavigator
         selectedSubpage={selectedSubpage}
         onSelectSubpage={setSelectedSubpage}
+        onBack={() => {}}
       />
     </div>
   )

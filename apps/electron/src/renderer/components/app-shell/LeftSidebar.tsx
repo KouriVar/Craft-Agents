@@ -1,4 +1,3 @@
-import type { LucideIcon } from "lucide-react"
 import * as React from "react"
 import { AnimatePresence, motion, type Variants } from "motion/react"
 import { ChevronRight } from "lucide-react"
@@ -63,7 +62,7 @@ export interface LinkItem {
   title: React.ReactNode
   label?: string        // Optional badge (e.g., count)
   tooltip?: string
-  icon: LucideIcon | React.ReactNode  // LucideIcon or custom React element
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> | React.ReactNode  // icon component or custom React element
   iconColor?: string    // Optional color class for the icon
   /** Whether the icon responds to color (uses currentColor). Default true for Lucide icons. */
   iconColorable?: boolean
@@ -99,6 +98,8 @@ export const isSeparatorItem = (item: SidebarItem): item is SeparatorItem =>
 interface LeftSidebarProps {
   isCollapsed: boolean
   links: SidebarItem[]
+  /** Vertical gap between items. Defaults to gap-0.5 for the main nav. */
+  gapClassName?: string
   /** Get props for each item (from unified sidebar navigation) */
   getItemProps?: (id: string) => {
     tabIndex: number
@@ -168,7 +169,7 @@ const itemVariants: Variants = {
  * - Uses @dnd-kit with DragOverlay portaled to document.body (no clipping)
  * - Two-phase drop animation: overlay fades out, ghost fades in
  */
-export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, isNested }: LeftSidebarProps) {
+export function LeftSidebar({ links, isCollapsed, gapClassName = 'gap-0.5', getItemProps, focusedItemId, isNested }: LeftSidebarProps) {
   // For nested sidebars, wrap in motion container for stagger effect
   const NavWrapper = isNested ? motion.nav : 'nav'
   const navProps = isNested ? {
@@ -182,8 +183,9 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
     <div className={cn("flex flex-col select-none", !isNested && "py-1")}>
       <NavWrapper
         className={cn(
-          "grid gap-0.5",
-          isNested ? "pl-5 pr-0 relative" : "px-2"
+          "grid",
+          gapClassName,
+          isNested ? "pl-5 pr-0 relative" : "px-[6px]"
         )}
         role="navigation"
         aria-label={isNested ? "Sub navigation" : "Main navigation"}
@@ -490,21 +492,24 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
         onClick={isOverlay ? undefined : link.onClick}
         title={link.tooltip}
         data-tutorial={link.dataTutorial}
+        data-sidebar-item="true"
+        data-selected={link.variant === "default"}
         className={cn(
-          "group flex w-full items-center gap-2 rounded-control text-control select-none outline-none",
+          "group flex w-full items-center gap-2.5 rounded-control text-control font-medium select-none outline-none",
           "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+          "transition-[background-color,color,font-weight,transform] duration-150 ease-out active:scale-[0.985]",
           // Compact mode: 4px less total height (py-[3px] vs py-[5px])
           link.compact ? "py-[3px]" : "py-[5px]",
           "px-2",
           link.variant === "default"
-            ? "bg-foreground/[0.07]"
+            ? "bg-foreground/[0.07] text-foreground"
             // Highlight on hover, context menu open (data-state), or EditPopover active (data-edit-active)
             : "hover:bg-sidebar-hover data-[state=open]:bg-sidebar-hover data-[edit-active=true]:bg-sidebar-hover",
           extraClassName,
         )}
       >
         {/* Icon container with hover toggle for expandable items */}
-        <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+        <span className="relative h-4 w-4 shrink-0 flex items-center justify-center">
           {link.expandable && !isOverlay ? (
             <>
               {/* Main icon - hidden on hover */}
@@ -523,7 +528,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
               >
                 <ChevronRight
                   className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                    "h-4 w-4 text-muted-foreground transition-transform duration-200",
                     link.expanded && "rotate-90"
                   )}
                 />
@@ -570,7 +575,7 @@ function renderIcon(link: LinkItem) {
     const Icon = link.icon as React.ComponentType<{ className?: string; style?: React.CSSProperties }>
     return (
       <Icon
-        className="h-3.5 w-3.5 shrink-0"
+        className="h-4 w-4 shrink-0"
         style={colorStyle}
       />
     )
@@ -587,7 +592,7 @@ function renderIcon(link: LinkItem) {
     : iconElement
   return (
     <span
-      className="h-3.5 w-3.5 shrink-0 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+      className="h-4 w-4 shrink-0 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
       style={colorStyle}
     >
       {bareIcon}

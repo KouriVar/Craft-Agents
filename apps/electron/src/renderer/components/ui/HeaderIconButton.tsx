@@ -33,6 +33,7 @@ export const HeaderIconButton = forwardRef<HTMLButtonElement, HeaderIconButtonPr
           className
         )}
         {...props}
+        aria-label={props['aria-label'] ?? tooltip}
       >
         {icon}
       </button>

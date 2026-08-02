@@ -327,6 +327,8 @@ export const mockElectronAPI = {
   setRightSidebarFollowSession: async () => {},
   getBrowserOpenMode: async () => 'sidebar',
   setBrowserOpenMode: async () => {},
+  getFileReviewOpenMode: async () => 'fullscreen',
+  setFileReviewOpenMode: async () => {},
 
   // Pi provider discovery mocks
   getPiApiKeyProviders: async () => [

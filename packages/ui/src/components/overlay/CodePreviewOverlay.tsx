@@ -11,6 +11,7 @@ import { BookOpen, PenLine } from 'lucide-react'
 import { PreviewOverlay } from './PreviewOverlay'
 import { ContentFrame } from './ContentFrame'
 import { ShikiCodeViewer } from '../code-viewer/ShikiCodeViewer'
+import { CopyButton } from './CopyButton'
 
 export interface CodePreviewOverlayProps {
   /** Whether the overlay is visible */
@@ -77,6 +78,7 @@ export function CodePreviewOverlay({
       filePath={filePath}
       subtitle={subtitle}
       error={error ? { label: mode === 'write' ? 'Write Failed' : 'Read Failed', message: error } : undefined}
+      headerActions={<CopyButton content={content} />}
       embedded={embedded}
       className="bg-foreground-3"
     >
@@ -95,7 +97,7 @@ export function CodePreviewOverlay({
         </div>
       )}
 
-      <ContentFrame title={t('overlay.code')} fitContent minWidth={850}>
+      <ContentFrame title={t('overlay.code')} fitContent minWidth={embedded ? undefined : 850}>
         <div>
           <ShikiCodeViewer
             code={content}

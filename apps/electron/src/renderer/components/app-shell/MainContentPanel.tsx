@@ -32,7 +32,6 @@ import {
   isPluginsNavigation,
   isBrowserNavigation,
   isAutomationsNavigation,
-  isDynamicNavigation,
   isProjectsNavigation,
   isLibraryNavigation,
 } from '@/contexts/NavigationContext'
@@ -58,7 +57,6 @@ import { automationsAtom } from '@/atoms/automations'
 import { pluginListKindAtom, pluginsAtom } from '@/atoms/plugins'
 import { skillsAtom } from '@/atoms/skills'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
-import { DynamicCenterPage } from '../dynamic/DynamicCenterPage'
 
 export interface MainContentPanelProps {
   /** Whether both sidebar and navigator are hidden (focus mode / CMD+.) */
@@ -251,10 +249,6 @@ export function MainContentPanel({
       />
     </StoplightProvider>
   )
-
-  if (isDynamicNavigation(navState)) {
-    return wrapWithStoplight(<Panel variant="grow" className={className}><DynamicCenterPage workspaceId={activeWorkspaceId || ''} /></Panel>)
-  }
 
   // Settings navigator - uses component map from settings-pages.ts.
   // Bare `settings` route (subpage === null) means navigator-only view in compact mode;

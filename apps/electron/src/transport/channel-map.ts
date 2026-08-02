@@ -163,6 +163,10 @@ export const CHANNEL_MAP = {
   testLlmConnectionSetup: invoke(RPC_CHANNELS.settings.TEST_LLM_CONNECTION_SETUP),
   getDefaultThinkingLevel: invoke(RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL),
   setDefaultThinkingLevel: invoke(RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL),
+  getDefaultAgentRuntime: invoke(RPC_CHANNELS.settings.GET_DEFAULT_AGENT_RUNTIME),
+  setDefaultAgentRuntime: invoke(RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME),
+  getMultimodalModel: invoke(RPC_CHANNELS.settings.GET_MULTIMODAL_MODEL),
+  setMultimodalModel: invoke(RPC_CHANNELS.settings.SET_MULTIMODAL_MODEL),
   getNetworkProxySettings: invoke(RPC_CHANNELS.settings.GET_NETWORK_PROXY),
   setNetworkProxySettings: invoke(RPC_CHANNELS.settings.SET_NETWORK_PROXY),
 
@@ -338,6 +342,8 @@ export const CHANNEL_MAP = {
   setRightSidebarFollowSession: invoke(RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION),
   getBrowserOpenMode: invoke(RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE),
   setBrowserOpenMode: invoke(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE),
+  getFileReviewOpenMode: invoke(RPC_CHANNELS.input.GET_FILE_REVIEW_OPEN_MODE),
+  setFileReviewOpenMode: invoke(RPC_CHANNELS.input.SET_FILE_REVIEW_OPEN_MODE),
   getDoubleCommandScreenshotHideApp: invoke(RPC_CHANNELS.screenCapture.GET_HIDE_APP),
   setDoubleCommandScreenshotHideApp: invoke(RPC_CHANNELS.screenCapture.SET_HIDE_APP),
 

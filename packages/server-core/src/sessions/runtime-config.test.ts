@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { LlmConnection } from '@craft-agent/shared/config'
 import type { FileAttachment } from '@craft-agent/shared/protocol'
-import { buildBackendRuntimeSignature, filterAttachmentsForModelInput } from './runtime-config'
+import { buildBackendRuntimeSignature, filterAttachmentsForModelInput, shouldUseMultimodalFallback } from './runtime-config'
 
 const baseCompat: LlmConnection = {
   slug: 'local',
@@ -93,5 +93,25 @@ describe('filterAttachmentsForModelInput', () => {
 
     expect(result.omittedImages).toEqual([imageAttachment])
     expect(result.attachments).toBeUndefined()
+  })
+})
+
+describe('shouldUseMultimodalFallback', () => {
+  it('routes DeepSeek image input through the configured visual model', () => {
+    expect(shouldUseMultimodalFallback({
+      ...baseCompat,
+      providerType: 'pi',
+      piAuthProvider: 'deepseek',
+      defaultModel: 'deepseek-v4-flash',
+    }, 'deepseek-v4-flash')).toBe(true)
+  })
+
+  it('keeps native multimodal models on their normal attachment path', () => {
+    expect(shouldUseMultimodalFallback({
+      ...baseCompat,
+      providerType: 'pi',
+      piAuthProvider: 'openai',
+      defaultModel: 'gpt-5.2',
+    }, 'gpt-5.2')).toBe(false)
   })
 })

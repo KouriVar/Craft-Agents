@@ -77,12 +77,16 @@ import {
   springTransition as collapsibleSpring,
 } from '@/components/ui/collapsible'
 import { SessionList, type ChatGroupingMode } from './SessionList'
+import { hasTransferTargets } from './transfer-targets'
 import { MainContentPanel } from './MainContentPanel'
 import { WorkspaceSearchDialog } from '@/components/search/WorkspaceSearchDialog'
 import { PanelStackContainer } from './PanelStackContainer'
 import { CompactSessionListFilter } from './CompactSessionListFilter'
 import type { ChatDisplayHandle } from './ChatDisplay'
 import { LeftSidebar } from './LeftSidebar'
+import { CodexNavigationSidebar } from './CodexNavigationSidebar'
+import { SidebarModeSwitcher } from './SidebarModeSwitcher'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import { useSession } from '@/hooks/useSession'
 import { ensureSessionMessagesLoadedAtom } from '@/atoms/sessions'
 import { AppShellProvider, type AppShellContextType } from '@/context/AppShellContext'
@@ -112,12 +116,7 @@ import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 import { pluginListKindAtom, pluginsAtom } from '@/atoms/plugins'
 import { capabilityNavigatorKindAtom } from '@/atoms/capability-center'
-import { dynamicCenterFilterAtom, dynamicCenterRefreshAtom } from '@/atoms/dynamic-center'
-import {
-  browserNavigatorKindAtom,
-  browserWorkspaceTabsAtom,
-  type BrowserWorkspaceTab,
-} from '@/atoms/browser-workspace'
+import { browserNavigatorKindAtom, browserWorkspaceTabsAtom, type BrowserWorkspaceTab } from '@/atoms/browser-workspace'
 import { filterInstancesForWorkspace } from '@/atoms/browser-pane'
 import {
   panelStackAtom,
@@ -179,7 +178,6 @@ import {
 import type { SettingsSubpage } from '../../../shared/types'
 import { SourcesListPanel } from './SourcesListPanel'
 import { CapabilityListPanel } from '../capabilities/CapabilityListPanel'
-import { DynamicListPanel } from '../dynamic/DynamicListPanel'
 import { PluginsListPanel } from '../plugins/PluginsListPanel'
 import { PluginInstallMenu } from '../plugins/PluginInstallMenu'
 import { BrowserExtensionInstallMenu } from '../plugins/BrowserExtensionInstallMenu'
@@ -241,7 +239,7 @@ interface AppShellProps {
 
 /** Filter mode for tri-state filtering: include shows only matching, exclude hides matching */
 type FilterMode = 'include' | 'exclude'
-type ResizeTarget = 'sidebar' | 'session-list' | 'right-sidebar'
+type ResizeTarget = 'sidebar' | 'right-sidebar'
 
 const altClickTooltipLabel = isMac ? '⌥ click to exclude' : 'Alt click to exclude'
 const SHOW_SIDEBAR_BOOKMARKS = false
@@ -649,14 +647,27 @@ function AppShellContent({
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
   })
-  const [isSessionListVisible, setIsSessionListVisible] = React.useState(() => {
-    return storage.get(storage.KEYS.sessionListVisible, true)
-  })
+  // Kept as a compatibility signal for compact menus; desktop no longer has a
+  // separately toggleable session-list column.
+  const isSessionListVisible = true
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.sidebarWidth, 220)
+    const storedWidth = storage.get<number>(storage.KEYS.sidebarWidth, 220)
+    const wasExpandedByUnifiedList = storage.get(storage.KEYS.legacyUnifiedSidebarSessionsV1, false)
+
+    // Undo only the one-time width mutation introduced by the discarded
+    // full-SessionList experiment. Preserve widths the user resized manually.
+    if (wasExpandedByUnifiedList) {
+      storage.remove(storage.KEYS.legacyUnifiedSidebarSessionsV1)
+      if (storedWidth === 264) {
+        storage.set(storage.KEYS.sidebarWidth, 220)
+        return 220
+      }
+    }
+
+    return storedWidth
   })
   // Session list width in pixels (min 240, max 480)
-  const [sessionListWidth, setSessionListWidth] = React.useState(() => {
+  const [sessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(() => {
@@ -711,10 +722,8 @@ function AppShellContent({
 
   const [isResizing, setIsResizing] = React.useState<ResizeTarget | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
-  const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const [rightSidebarHandleY, setRightSidebarHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
-  const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
   const rightSidebarResizeStartRef = React.useRef<{
     startX: number
@@ -761,6 +770,12 @@ function AppShellContent({
   }, [session.selected, updateRightSidebar])
 
   React.useEffect(() => {
+    const handleOpenFileReview = () => updateRightSidebar({ type: 'review' })
+    window.addEventListener('craft:open-file-review-sidebar', handleOpenFileReview)
+    return () => window.removeEventListener('craft:open-file-review-sidebar', handleOpenFileReview)
+  }, [updateRightSidebar])
+
+  React.useEffect(() => {
     rightSidebarWidthRef.current = rightSidebarWidth
   }, [rightSidebarWidth])
 
@@ -770,6 +785,15 @@ function AppShellContent({
   // Navigation state is the single source of truth for the focused panel.
   // Derived from focused panel's route — all panels are peers
   const navState = useNavigationState()
+
+  // Dynamic Center has been removed from the product surface. Redirect any
+  // persisted/deep-linked legacy route to the session home instead of leaving
+  // an empty navigator behind.
+  React.useEffect(() => {
+    if (isDynamicNavigation(navState)) {
+      navigate(routes.view.allSessions())
+    }
+  }, [navState])
 
   const store = useStore()
   const panelStack = useAtomValue(panelStackAtom)
@@ -817,10 +841,10 @@ function AppShellContent({
       return { min: RIGHT_SIDEBAR_MIN_WIDTH, max: RIGHT_SIDEBAR_MAX_WIDTH }
     }
 
-    const sidebarVisibleWidth = effectiveSidebarAndNavigatorHidden || !isSidebarVisible ? 0 : sidebarWidth + PANEL_GAP
-    const navigatorVisibleWidth =
-      effectiveSidebarAndNavigatorHidden || isBoardView || !isSessionListVisible ? 0 : sessionListWidth + PANEL_GAP
-    const chromeWidth = sidebarVisibleWidth + navigatorVisibleWidth + (PANEL_EDGE_INSET * 2) + PANEL_GAP
+    const sidebarVisibleWidth = effectiveSidebarAndNavigatorHidden || !isSidebarVisible ? 0 : sidebarWidth
+    // The desktop middle navigator was removed; only the primary rail reduces
+    // the conversation/review area now.
+    const chromeWidth = sidebarVisibleWidth + (PANEL_EDGE_INSET * 2) + PANEL_GAP
     const contentAreaWidth = Math.max(0, shellAvailableWidth - chromeWidth)
 
     const min = contentAreaWidth < 760 ? RIGHT_SIDEBAR_NARROW_MIN_WIDTH : RIGHT_SIDEBAR_MIN_WIDTH
@@ -829,7 +853,7 @@ function AppShellContent({
       min,
       max: Math.max(min, Math.min(RIGHT_SIDEBAR_MAX_WIDTH, maxByContent)),
     }
-  }, [effectiveSidebarAndNavigatorHidden, isBoardView, isSessionListVisible, isSidebarVisible, sessionListWidth, shellWidth, sidebarWidth])
+  }, [effectiveSidebarAndNavigatorHidden, isSidebarVisible, shellWidth, sidebarWidth])
 
   // Derive source filter from navigation state (only when in sources navigator)
   const sourceFilter: SourceFilter | null = isSourcesNavigation(navState) ? (navState.filter ?? null) : null
@@ -1039,9 +1063,13 @@ function AppShellContent({
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setWorkspaceSearchOpen(true) }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setWorkspaceSearchOpen(true)
+      }
     }
-    window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
@@ -1171,8 +1199,6 @@ function AppShellContent({
   const [browserNavigatorKind, setBrowserNavigatorKind] = useAtom(browserNavigatorKindAtom)
   const [sidebarBookmarks, setSidebarBookmarks] = React.useState<BrowserBookmarkEntry[]>([])
   const [capabilityNavigatorKind, setCapabilityNavigatorKind] = useAtom(capabilityNavigatorKindAtom)
-  const [dynamicFilter, setDynamicFilter] = useAtom(dynamicCenterFilterAtom)
-  const requestDynamicRefresh = useSetAtom(dynamicCenterRefreshAtom)
   const [browserHydratedWorkspaceId, setBrowserHydratedWorkspaceId] = React.useState<string | null>(null)
   const [lastActiveBrowserTabId, setLastActiveBrowserTabId] = React.useState<string | null>(null)
   const blankBrowserTabCreationGateRef = React.useRef(new BrowserWorkspaceRequestGate<string | null>())
@@ -1203,10 +1229,6 @@ function AppShellContent({
   activeBrowserWorkspaceScopeKeyRef.current = browserWorkspaceScopeKey
 
   const refreshSidebarBookmarks = React.useCallback(async () => {
-    if (!SHOW_SIDEBAR_BOOKMARKS) {
-      setSidebarBookmarks([])
-      return
-    }
     const api = window.electronAPI?.browserPane
     if (!activeWorkspaceId || !api || !window.electronAPI.isChannelAvailable('browser-pane:list-bookmarks')) {
       setSidebarBookmarks([])
@@ -1221,7 +1243,6 @@ function AppShellContent({
   }, [activeWorkspaceId])
 
   React.useEffect(() => {
-    if (!SHOW_SIDEBAR_BOOKMARKS) return
     void refreshSidebarBookmarks()
     const api = window.electronAPI?.browserPane
     if (!api) return
@@ -1782,9 +1803,10 @@ function AppShellContent({
   }, [])
 
   const handleToggleSessionList = useCallback(() => {
-    setIsSidebarAndNavigatorHidden(false)
-    setIsSessionListVisible((v) => !v)
-  }, [])
+    // Legacy menu/API alias: sessions now live inside the primary sidebar, so
+    // the old "session list" command controls that unified surface.
+    handleToggleSidebar()
+  }, [handleToggleSidebar])
 
   const handleToggleFocusMode = useCallback(() => {
     const nextFocusMode = !isSidebarAndNavigatorHidden
@@ -1935,14 +1957,6 @@ function AppShellContent({
           const rect = resizeHandleRef.current.getBoundingClientRect()
           setSidebarHandleY(e.clientY - rect.top)
         }
-      } else if (isResizing === 'session-list') {
-        const offset = isSidebarVisible ? sidebarWidth : 0
-        const newWidth = Math.min(Math.max(e.clientX - offset, 240), 480)
-        setSessionListWidth(newWidth)
-        if (sessionListHandleRef.current) {
-          const rect = sessionListHandleRef.current.getBoundingClientRect()
-          setSessionListHandleY(e.clientY - rect.top)
-        }
       } else if (isResizing === 'right-sidebar' && rightSidebarResizeStartRef.current) {
         const delta = rightSidebarResizeStartRef.current.startX - e.clientX
         const bounds = getRightSidebarBounds()
@@ -1960,9 +1974,6 @@ function AppShellContent({
       if (isResizing === 'sidebar') {
         storage.set(storage.KEYS.sidebarWidth, sidebarWidth)
         setSidebarHandleY(null)
-      } else if (isResizing === 'session-list') {
-        storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
-        setSessionListHandleY(null)
       } else if (isResizing === 'right-sidebar') {
         storage.set(storage.KEYS.rightSidebarWidth, rightSidebarWidthRef.current)
         rightSidebarResizeStartRef.current = null
@@ -1988,7 +1999,7 @@ function AppShellContent({
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
     }
-  }, [getRightSidebarBounds, isResizing, sidebarWidth, sessionListWidth, isSidebarVisible])
+  }, [getRightSidebarBounds, isResizing, sidebarWidth])
 
   React.useEffect(() => {
     const bounds = getRightSidebarBounds()
@@ -2054,6 +2065,35 @@ function AppShellContent({
   const activeSessionMetas = useMemo(() => {
     return workspaceSessionMetas.filter((s) => !s.isArchived)
   }, [workspaceSessionMetas])
+
+  const codexSidebarSessions = useMemo(() => {
+    const sortedSessions = [...activeSessionMetas].sort(
+      (a, b) => (b.lastMessageAt ?? b.createdAt ?? 0) - (a.lastMessageAt ?? a.createdAt ?? 0),
+    )
+    const pinned = sortedSessions.filter((sessionMeta) => sessionMeta.isPinned).slice(0, 6)
+    const pinnedIds = new Set(pinned.map((sessionMeta) => sessionMeta.id))
+    const projectGroups = projectMenuOptions.map((project) => ({
+      id: project.id,
+      name: project.name,
+      sessions: sortedSessions.filter((sessionMeta) => sessionMeta.projectId === project.id && !pinnedIds.has(sessionMeta.id)),
+    }))
+    // This section is the complete workspace session list. Pinned and project
+    // groups are shortcuts above it, not filters that remove sessions here.
+    const recent = sortedSessions
+
+    return { pinned, projectGroups, recent }
+  }, [activeSessionMetas, projectMenuOptions])
+
+  const workspaceSearchSessionEntries = useMemo(
+    () =>
+      activeSessionMetas.map((sessionMeta) => ({
+        id: sessionMeta.id,
+        title: sessionMeta.name?.trim() || sessionMeta.preview?.trim() || t('chat.titlePlaceholder'),
+        text: sessionMeta.preview?.trim() || '',
+        updatedAt: sessionMeta.lastMessageAt ?? sessionMeta.createdAt ?? 0,
+      })),
+    [activeSessionMetas, t],
+  )
 
   const refreshWorkspaceUnreadMap = useCallback(async () => {
     try {
@@ -2359,11 +2399,6 @@ function AppShellContent({
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
 
-  // Persist session list visibility to localStorage
-  React.useEffect(() => {
-    storage.set(storage.KEYS.sessionListVisible, isSessionListVisible)
-  }, [isSessionListVisible])
-
   // Remove the legacy persisted preference so users upgrading from an older build
   // cannot get trapped in focus mode after restarting the app.
   React.useEffect(() => {
@@ -2575,9 +2610,15 @@ function AppShellContent({
 
   // Both browser entry points request tabs from this one workspace owner. The
   // right sidebar used to instantiate isolated <webview> tabs of its own.
-  React.useEffect(() => subscribeBrowserWorkspaceTabRequests(({ initialUrl, onCreated }) => {
-    void createRuntimeBrowserTab(initialUrl).then(onCreated).catch(() => onCreated(null))
-  }), [createRuntimeBrowserTab])
+  React.useEffect(
+    () =>
+      subscribeBrowserWorkspaceTabRequests(({ initialUrl, onCreated }) => {
+        void createRuntimeBrowserTab(initialUrl)
+          .then(onCreated)
+          .catch(() => onCreated(null))
+      }),
+    [createRuntimeBrowserTab],
+  )
 
   const handleCloseBrowserTabs = useCallback(
     (tabIds: string[]) => {
@@ -2720,10 +2761,6 @@ function AppShellContent({
     navigate(routes.view.automations())
   }, [])
 
-  const handleDynamicClick = useCallback(() => {
-    navigate(routes.view.dynamic())
-  }, [])
-
   // Handler for projects view
   const handleProjectsClick = useCallback(() => {
     navigate(routes.view.projects())
@@ -2748,7 +2785,13 @@ function AppShellContent({
   // Handler for settings view. With no arg → bare `settings` route (navigator-only
   // in compact mode, App fallback on desktop). With an arg → `settings/<subpage>`.
   const handleSettingsClick = useCallback((subpage?: SettingsSubpage) => {
-    navigate(routes.view.settings(subpage))
+    navigate(subpage
+      ? routes.view.settings(subpage)
+      : routes.view.settings('app', 'notifications'))
+  }, [])
+
+  const handleSettingsBack = useCallback(() => {
+    navigate(routes.view.allSessions())
   }, [])
 
   // Handler for What's New overlay
@@ -2879,19 +2922,21 @@ function AppShellContent({
   }, [activeWorkspace?.id])
 
   /**
-   * Resolve the "inherit sole active filter" rule: if exactly one filter value
-   * is selected across statuses + labels + projects, return it as new-session
-   * params. Otherwise return null (fall back to workspace defaults).
+   * Resolve the "inherit sole active filter" rule: if exactly one status or
+   * label filter value is selected, return it as new-session params. Otherwise
+   * return null (fall back to workspace defaults).
+   *
+   * Project is intentionally NOT inherited here: the "new session" button
+   * always creates an unbound session (it lands in Recent). To create a
+   * session inside a project, use the "+" button on the project header.
    */
   const resolveInheritedNewSessionParams = useCallback((): {
     status?: string
     label?: string
-    project?: string
   } | null => {
     const statusCount = listFilter.size
     const labelCount = labelFilter.size
-    const projectCount = projectFilter.size
-    const total = statusCount + labelCount + projectCount
+    const total = statusCount + labelCount
     if (total !== 1) return null
     if (statusCount === 1) {
       const [stateId] = [...listFilter.keys()]
@@ -2901,12 +2946,8 @@ function AppShellContent({
       const [labelId] = [...labelFilter.keys()]
       return { label: labelId }
     }
-    if (projectCount === 1) {
-      const [projectId] = [...projectFilter.keys()]
-      return { project: projectId }
-    }
     return null
-  }, [listFilter, labelFilter, projectFilter])
+  }, [listFilter, labelFilter])
 
   // Create a new chat and select it
   const handleNewChat = useCallback(() => {
@@ -2925,6 +2966,35 @@ function AppShellContent({
     // Focus the chat input after navigation completes
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, focusZone, navigate, resolveInheritedNewSessionParams])
+
+  // Create a new session bound to a specific project. Used by the "+" button on
+  // each project header in the sidebar — the explicit, discoverable way to start
+  // a conversation inside a project (the global new-session button stays unbound
+  // and lands in Recent).
+  const handleNewProjectSession = useCallback((projectId: string) => {
+    if (!activeWorkspace) return
+
+    setSearchActive(false)
+    setSearchQuery('')
+
+    // Scope the All Sessions list to this project so the created session is
+    // visible in context after navigation.
+    setViewFiltersMap((prev) => {
+      const existing = prev['allSessions']
+      return {
+        ...prev,
+        allSessions: {
+          statuses: existing?.statuses ?? {},
+          labels: existing?.labels ?? {},
+          projects: { [projectId]: 'include' },
+          groupingMode: existing?.groupingMode,
+        },
+      }
+    })
+
+    navigate(routes.action.newSession({ project: projectId }))
+    setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
+  }, [activeWorkspace, navigate, focusZone, setViewFiltersMap])
 
   const handlePrimaryCreate = useCallback(() => {
     handleNewChat()
@@ -3186,10 +3256,6 @@ function AppShellContent({
       return t('browser.allTabs', { defaultValue: '所有标签' })
     }
 
-    if (isDynamicNavigation(navState)) {
-      return t('dynamic.title', { defaultValue: '动态' })
-    }
-
     // Automations navigator
     if (isAutomationsNavigation(navState)) {
       if (!automationFilter) return t('sidebar.allAutomations')
@@ -3227,14 +3293,21 @@ function AppShellContent({
       default:
         return t('sidebar.allSessions')
     }
-  }, [navState, t, sessionFilter, automationFilter, labelConfigs, viewConfigs, effectiveSessionStatuses, pluginListKind, browserNavigatorKind, capabilityNavigatorKind])
+  }, [
+    navState,
+    t,
+    sessionFilter,
+    automationFilter,
+    labelConfigs,
+    viewConfigs,
+    effectiveSessionStatuses,
+    pluginListKind,
+    browserNavigatorKind,
+    capabilityNavigatorKind,
+  ])
 
-  const [shellGlassIntensity, setShellGlassIntensityState] = useState(() =>
-    storage.get(storage.KEYS.shellGlassIntensity, 'medium'),
-  )
-  const [panelGlassIntensity, setPanelGlassIntensityState] = useState(() =>
-    storage.get(storage.KEYS.panelGlassIntensity, 'off'),
-  )
+  const [shellGlassIntensity, setShellGlassIntensityState] = useState(() => storage.get(storage.KEYS.shellGlassIntensity, 'medium'))
+  const [panelGlassIntensity, setPanelGlassIntensityState] = useState(() => storage.get(storage.KEYS.panelGlassIntensity, 'off'))
   const [windowsBackgroundEffectEnabled, setWindowsBackgroundEffectEnabledState] = useState(() =>
     isWindows ? migrateWindowsBackgroundEffectEnabled() : true,
   )
@@ -3269,9 +3342,73 @@ function AppShellContent({
   // activate the legacy per-region shell or panel glass intensity levels.
   const effectiveShellGlassIntensity = isWindows ? undefined : shellGlassIntensity
   const effectivePanelGlassIntensity = isWindows ? undefined : panelGlassIntensity
-  const windowsBackgroundEffectState = isWindows
-    ? (windowsBackgroundEffectEnabled ? 'enabled' : 'disabled')
-    : undefined
+  const windowsBackgroundEffectState = isWindows ? (windowsBackgroundEffectEnabled ? 'enabled' : 'disabled') : undefined
+
+  // Desktop no longer has a permanent middle navigator column. Resource
+  // collections use the main surface until an item is selected, then that same
+  // surface is replaced by its detail page.
+  const navigatorAsMainContent = !isAutoCompact && (
+    (isSourcesNavigation(navState) && !navState.details)
+    || (isPluginsNavigation(navState) && !navState.details)
+    || (isProjectsNavigation(navState) && !navState.details)
+    || (isLibraryNavigation(navState) && !navState.details)
+    || (isAutomationsNavigation(navState) && !navState.details)
+  )
+
+  const sessionListPanel = (
+    <SessionList
+      key={sessionFilter?.kind}
+      items={
+        searchActive
+          ? workspaceSessionMetas
+          : isSessionsNavigation(navState)
+            ? filteredSessionMetas
+            : activeSessionMetas
+      }
+      onDelete={handleDeleteSession}
+      onFlag={onFlagSession}
+      onUnflag={onUnflagSession}
+      onArchive={onArchiveSession}
+      onUnarchive={onUnarchiveSession}
+      onMarkUnread={onMarkSessionUnread}
+      onSessionStatusChange={onSessionStatusChange}
+      onRename={onRenameSession}
+      onFocusChatInput={(targetSessionId) => {
+        focusChatInputForSession(targetSessionId ?? focusedSessionId ?? session.selected)
+      }}
+      onOpenInNewWindow={(selectedMeta) => {
+        if (activeWorkspaceId) {
+          window.electronAPI.openSessionInNewWindow(activeWorkspaceId, selectedMeta.id)
+        }
+      }}
+      onNavigateToView={(view) => {
+        if (view === 'allSessions') navigate(routes.view.allSessions())
+        else if (view === 'flagged') navigate(routes.view.flagged())
+      }}
+      sessionOptions={sessionOptions}
+      searchActive={searchActive}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      onSearchClose={() => {
+        setSearchActive(false)
+        setSearchQuery('')
+      }}
+      sessionStatuses={effectiveSessionStatuses}
+      evaluateViews={evaluateViews}
+      labels={displayLabelConfigs}
+      onLabelsChange={handleSessionLabelsChange}
+      projects={projectMenuOptions}
+      onSetProjectId={handleSessionProjectChange}
+      groupingMode={chatGroupingMode}
+      workspaceId={activeWorkspaceId ?? undefined}
+      statusFilter={listFilter}
+      labelFilterMap={labelFilter}
+      focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
+      onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
+      hasPendingPrompt={hasPendingPrompt}
+      activeChatMatchInfo={chatMatchInfo}
+    />
+  )
 
   return (
     <AppShellProvider value={appShellContextValue}>
@@ -3305,6 +3442,7 @@ function AppShellContent({
           isSidebarVisible={isSidebarVisible}
           isSessionListVisible={isSessionListVisible}
           isFocusModeActive={effectiveSidebarAndNavigatorHidden}
+          desktopSidebarWidth={isSidebarVisible && !effectiveSidebarAndNavigatorHidden ? sidebarWidth : 170}
           isCompact={isAutoCompact}
         />
 
@@ -3314,6 +3452,7 @@ function AppShellContent({
         className="ca-workspace-shell flex items-stretch relative"
         style={{
           height: '100%',
+          paddingTop: isAutoCompact ? 0 : PANEL_EDGE_INSET,
           paddingRight: isAutoCompact ? 0 : PANEL_EDGE_INSET,
           paddingBottom: isAutoCompact ? 0 : PANEL_EDGE_INSET,
           paddingLeft: isAutoCompact ? 0 : PANEL_EDGE_INSET,
@@ -3330,189 +3469,156 @@ function AppShellContent({
               tabIndex={sidebarFocused ? 0 : -1}
               onKeyDown={handleSidebarKeyDown}
             >
-            <div className="flex h-full flex-col select-none">
-              {/* Sidebar Top Section */}
-              <div className="flex-1 flex flex-col min-h-0">
-                {/* Primary creation is intentionally stable: always starts a new chat. */}
-                <div className="px-2 pb-2 shrink-0">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <ContextMenu modal={true}>
-                          <ContextMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              onClick={handlePrimaryCreate}
-                              className="w-full justify-start gap-2 py-[7px] px-2 text-control font-normal rounded-control shadow-minimal bg-background"
-                              data-tutorial="new-chat-button"
-                            >
-                              <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
-                              新建会话
-                            </Button>
-                          </ContextMenuTrigger>
-                          <StyledContextMenuContent>
-                            <ContextMenuProvider>
-                              <SidebarMenu type="newSession" />
-                            </ContextMenuProvider>
-                          </StyledContextMenuContent>
-                        </ContextMenu>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                        {newChatHotkey}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                {/* Primary navigation: user-facing product areas only. */}
-                <div className="flex-1 overflow-y-auto min-h-0 pb-4">
-                <LeftSidebar
-                  isCollapsed={false}
-                  getItemProps={getSidebarItemProps}
-                  focusedItemId={focusedSidebarItemId}
-                  links={[
-                    {
-                          id: 'nav:sessions',
-                          title: t('sidebar.sessions', { defaultValue: '会话' }),
-                      icon: List,
-                          variant: isSessionsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleSessionsClick,
-                    },
-                    {
-                          id: 'nav:browser',
-                          title: t('sidebar.browser', {
-                            defaultValue: '浏览器',
-                          }),
-                      label: String(browserTabs.length),
-                      icon: Compass,
-                          variant: isBrowserNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleBrowserClick,
-                    },
-                    {
-                          id: 'nav:projects',
-                          title: t('sidebar.projects'),
-                      label: String(projects.length),
-                      icon: FolderKanban,
-                      // Highlight only when on Projects view itself, not when a child is "active" (jumped-to filter)
-                          variant: isProjectsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleProjectsClick,
-                      contextMenu: {
-                        type: 'projects' as const,
-                        onAddProject: openAddProject,
-                      },
-                    },
-                    {
-                          id: 'nav:automations',
-                          title: t('sidebar.automations'),
-                      label: String(automations.length),
-                      icon: ListTodo,
-                          variant: isAutomationsNavigation(navState) && !automationFilter ? 'default' : 'ghost',
-                      onClick: handleAutomationsClick,
-                      contextMenu: {
-                        type: 'automations' as const,
-                        onAddAutomation: openAddAutomation,
-                      },
-                    },
-                    {
-                          id: 'nav:library',
-                          title: t('sidebar.library'),
-                      icon: Library,
-                      variant: isLibraryNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleLibraryClick,
-                    },
-                    {
-                      id: 'nav:dynamic',
-                      title: t('sidebar.dynamic', { defaultValue: '动态' }),
-                      icon: Inbox,
-                      variant: isDynamicNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleDynamicClick,
-                    },
-                    {
-                          id: 'nav:skills',
-                          title: t('sidebar.skills'),
-                      label: String(skills.length),
-                      icon: Zap,
-                          variant: isSkillsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: handleSkillsClick,
-                      contextMenu: {
-                        type: 'skills',
-                        onAddSkill: openAddSkill,
-                      },
-                    },
-                    ...(SHOW_SIDEBAR_BOOKMARKS ? [{
-                      id: 'nav:bookmarks',
-                      title: t('sidebar.bookmarks', { defaultValue: '书签' }),
-                      label: String(sidebarBookmarks.length),
-                      icon: Star,
-                      variant: 'ghost' as const,
-                      onClick: () => toggleExpanded('nav:bookmarks'),
-                      expandable: true,
-                      expanded: isExpanded('nav:bookmarks'),
-                      onToggle: () => toggleExpanded('nav:bookmarks'),
-                      items: sidebarBookmarks.map((bookmark) => {
-                        const domain = getBookmarkDomain(bookmark.url)
-                        return {
-                          id: `nav:bookmark:${bookmark.id}`,
-                          title: (
-                            <span className="flex min-w-0 flex-col leading-tight">
-                              <span className="truncate text-[12px] text-foreground/85">{bookmark.title || domain}</span>
-                              <span className="truncate text-[10px] text-muted-foreground">{domain}</span>
-                            </span>
-                          ),
-                          tooltip: bookmark.url,
-                          icon: bookmark.favicon ? (
-                            <img src={bookmark.favicon} alt="" className="h-3.5 w-3.5 rounded-sm object-contain" />
-                          ) : Globe,
-                          iconColorable: !bookmark.favicon,
-                          variant: 'ghost' as const,
-                          compact: true,
-                          onClick: () => handleOpenBrowserUrl(bookmark.url),
-                        }
-                      }),
-                    }] : []),
-                  ]}
-                />
-                </div>
-                {/* Settings and release notes are a true viewport-bottom region. */}
-                <div className="shrink-0 -mt-px pt-px pb-1">
-                  <LeftSidebar
-                    isCollapsed={false}
+              <div
+                className="flex h-full flex-col select-none"
+                style={{
+                  paddingTop: isAutoCompact
+                    ? 0
+                    : `calc(var(--topbar-height) - ${PANEL_EDGE_INSET}px)`,
+                }}
+              >
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {isSettingsNavigation(navState) ? (
+                    <SettingsNavigator
+                      selectedSubpage={navState.subpage}
+                      selectedSection={navState.section}
+                      onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
+                      onSelectSection={(subpage, section) => navigate(routes.view.settings(subpage, section))}
+                      onBack={handleSettingsBack}
+                    />
+                  ) : (
+                    <CodexNavigationSidebar
+                    mode={isBrowserNavigation(navState) ? 'browser' : 'sessions'}
+                    workspaceKey={activeWorkspaceId}
+                    header={
+                      <SidebarModeSwitcher
+                        mode={isBrowserNavigation(navState) ? 'browser' : 'sessions'}
+                        onModeChange={(mode) => {
+                          if (mode === 'browser') handleBrowserClick()
+                          else handleSessionsClick()
+                        }}
+                        onSearch={() => setWorkspaceSearchOpen(true)}
+                      />
+                    }
+                    footer={
+                      <WorkspaceSwitcher
+                        variant="sidebar"
+                        workspaces={workspaces}
+                        activeWorkspaceId={activeWorkspaceId}
+                        onSelect={onSelectWorkspace}
+                        onWorkspaceCreated={() => onRefreshWorkspaces?.()}
+                        onWorkspaceRemoved={() => onRefreshWorkspaces?.()}
+                        workspaceUnreadMap={workspaceUnreadMap}
+                        onOpenSettings={() => handleSettingsClick()}
+                        onOpenWhatsNew={handleWhatsNewClick}
+                        hasUnseenReleaseNotes={hasUnseenReleaseNotes}
+                      />
+                    }
                     getItemProps={getSidebarItemProps}
                     focusedItemId={focusedSidebarItemId}
-                    links={[
-                    {
-                          id: 'nav:settings',
-                          title: t('sidebar.settings'),
-                      icon: Settings,
-                          variant: isSettingsNavigation(navState) ? 'default' : 'ghost',
-                      onClick: () => handleSettingsClick(),
-                    },
-                    // --- What's New ---
-                    {
-                          id: 'nav:whats-new',
-                          title: t('sidebar.whatsNew'),
-                      icon: hasUnseenReleaseNotes ? (
-                        <span className="relative">
-                          <Cake className="h-3.5 w-3.5" />
-                          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
-                        </span>
-                          ) : (
-                            Cake
-                          ),
-                          variant: 'ghost' as const,
-                      onClick: handleWhatsNewClick,
-                    },
-                  ]}
-                />
+                    selectedSessionId={session.selected}
+                    projectsOpen={isProjectsNavigation(navState)}
+                    pinnedSessions={codexSidebarSessions.pinned}
+                    projects={codexSidebarSessions.projectGroups}
+                    recentSessions={codexSidebarSessions.recent}
+                    browserBookmarks={sidebarBookmarks}
+                    browserTabs={browserTabs}
+                    selectedBrowserTabId={
+                      isBrowserNavigation(navState) ? (navState.details?.tabId ?? lastActiveBrowserTabId) : lastActiveBrowserTabId
+                    }
+                    onSessionSelect={navigateToSessionInPanel}
+                    onProjectsOpen={handleProjectsClick}
+                    onProjectSessions={handleJumpToProjectSessions}
+                    onNewProjectSession={handleNewProjectSession}
+                    onBookmarkSelect={handleOpenBrowserUrl}
+                    onBrowserTabSelect={handleBrowserTabSelect}
+                    sessionMenu={{
+                      sessionStatuses: effectiveSessionStatuses,
+                      labels: displayLabelConfigs,
+                      projects: projectMenuOptions,
+                      hasTransferTargets: hasTransferTargets(workspaces),
+                      onLabelsChange: handleSessionLabelsChange,
+                      onSetProjectId: handleSessionProjectChange,
+                      onRename: onRenameSession,
+                      onFlag: onFlagSession,
+                      onUnflag: onUnflagSession,
+                      onArchive: onArchiveSession,
+                      onUnarchive: onUnarchiveSession,
+                      onMarkUnread: onMarkSessionUnread,
+                      onSessionStatusChange,
+                      onOpenInNewWindow: (item) => {
+                        if (activeWorkspaceId) {
+                          window.electronAPI.openSessionInNewWindow(activeWorkspaceId, item.id)
+                        }
+                      },
+                      onSendToWorkspace: (sessionIds) => setSendToWorkspaceIds(sessionIds),
+                      onDelete: (sessionId) => void handleDeleteSession(sessionId),
+                    }}
+                    browserMenu={{
+                      onOpenUrl: (url) => handleOpenBrowserUrl(url),
+                      onCloseTabs: (tabIds) => handleCloseBrowserTabs(tabIds),
+                      onReloadTab: (tabId) => void window.electronAPI.browserPane.reload(tabId),
+                      onRemoveBookmark: (url) => {
+                        void window.electronAPI.browserPane.removeBookmark(url).then(() => void refreshSidebarBookmarks())
+                      },
+                      onCopyText: (text) => void navigator.clipboard.writeText(text),
+                    }}
+                    primaryLinks={[
+                      {
+                        id: 'nav:new-session',
+                        title: t('sidebar.newSession'),
+                        tooltip: `${t('sidebar.newSession')} ${newChatHotkey}`,
+                        icon: SquarePenRounded,
+                        iconColor: 'var(--foreground)',
+                        variant: 'ghost',
+                        onClick: handlePrimaryCreate,
+                        dataTutorial: 'new-chat-button',
+                      },
+                      {
+                        id: 'nav:automations',
+                        title: t('sidebar.automations'),
+                        icon: ListTodo,
+                        iconColor: 'var(--foreground)',
+                        variant: isAutomationsNavigation(navState) && !automationFilter ? 'default' : 'ghost',
+                        onClick: handleAutomationsClick,
+                        contextMenu: {
+                          type: 'automations' as const,
+                          onAddAutomation: openAddAutomation,
+                        },
+                      },
+                      {
+                        id: 'nav:library',
+                        title: t('sidebar.library'),
+                        icon: Library,
+                        iconColor: 'var(--foreground)',
+                        variant: isLibraryNavigation(navState) ? 'default' : 'ghost',
+                        onClick: handleLibraryClick,
+                      },
+                      {
+                        id: 'nav:skills',
+                        title: t('sidebar.skills'),
+                        icon: Zap,
+                        iconColor: 'var(--foreground)',
+                        variant: isSkillsNavigation(navState) ? 'default' : 'ghost',
+                        onClick: handleSkillsClick,
+                        contextMenu: {
+                          type: 'skills',
+                          onAddSkill: openAddSkill,
+                        },
+                      },
+                    ]}
+                    />
+                  )}
                 </div>
-                {/* Agent Tree: Hierarchical list of agents */}
-                {/* Agents section removed */}
               </div>
-            </div>
           </div>
           }
-          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : isSidebarVisible ? sidebarWidth : 0}
+          sidebarWidth={effectiveSidebarAndNavigatorHidden ? 0 : isSettingsNavigation(navState) || isSidebarVisible ? sidebarWidth : 0}
           navigatorSlot={
-            <div style={{ width: isAutoCompact ? '100%' : sessionListWidth }} className="h-full flex flex-col min-w-0 relative z-panel">
+            <div
+              style={{ width: isAutoCompact || navigatorAsMainContent ? '100%' : sessionListWidth }}
+              className="h-full flex flex-col min-w-0 relative z-panel"
+            >
               <PanelHeader
               titleAlign="left"
               titleMenuBare
@@ -3520,7 +3626,14 @@ function AppShellContent({
                 title={isSidebarVisible ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
                 badge={
-                  automationFilter?.automationType === 'scheduled' ? (
+                  isSessionsNavigation(navState) ? (
+                    <span
+                      className="rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground/70"
+                      aria-label={`${searchActive ? workspaceSessionMetas.length : filteredSessionMetas.length} sessions`}
+                    >
+                      {searchActive ? workspaceSessionMetas.length : filteredSessionMetas.length}
+                    </span>
+                  ) : automationFilter?.automationType === 'scheduled' ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="text-muted-foreground/50 cursor-default flex items-center titlebar-no-drag">
@@ -3633,47 +3746,6 @@ function AppShellContent({
                       tooltip="新建知识文档"
                       onClick={handleCreateLibraryDocument}
                     />
-                  )}
-                  {isDynamicNavigation(navState) && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <HeaderIconButton icon={<ListFilter className="h-4 w-4" />} tooltip="筛选动态" />
-                      </DropdownMenuTrigger>
-                      <StyledDropdownMenuContent align="end" light minWidth="min-w-[180px]">
-                        {([
-                          ['all', '全部'],
-                          ['unread', '未读'],
-                          ['read', '已读'],
-                        ] as const).map(([value, label]) => (
-                          <StyledDropdownMenuItem key={value} onClick={() => setDynamicFilter(value)}>
-                            <span className="flex-1">{label}</span>
-                            {dynamicFilter === value && <Check className="h-3.5 w-3.5" />}
-                          </StyledDropdownMenuItem>
-                        ))}
-                        <StyledDropdownMenuSeparator />
-                        {([
-                          ['actionable', '待处理'],
-                          ['automation', '自动化'],
-                          ['system', '系统'],
-                        ] as const).map(([value, label]) => (
-                          <StyledDropdownMenuItem key={value} onClick={() => setDynamicFilter(value)}>
-                            <span className="flex-1">{label}</span>
-                            {dynamicFilter === value && <Check className="h-3.5 w-3.5" />}
-                          </StyledDropdownMenuItem>
-                        ))}
-                        <StyledDropdownMenuSeparator />
-                        <StyledDropdownMenuItem onClick={() => {
-                          if (!activeWorkspaceId) return
-                          void window.electronAPI.getDynamicItems(activeWorkspaceId, 'all').then(items =>
-                            Promise.all(items.filter(item => !item.readAt).map(item =>
-                              window.electronAPI.markDynamicRead(activeWorkspaceId, item.id),
-                            )),
-                          ).then(() => requestDynamicRefresh(value => value + 1))
-                        }}>
-                          <MailOpen className="h-3.5 w-3.5" /><span>全部已读</span>
-                        </StyledDropdownMenuItem>
-                      </StyledDropdownMenuContent>
-                    </DropdownMenu>
                   )}
                   {isSkillsNavigation(navState) && (
                     <DropdownMenu>
@@ -4559,6 +4631,14 @@ function AppShellContent({
                       </StyledDropdownMenuContent>
                     </DropdownMenu>
                       ))}
+                  {isSessionsNavigation(navState) && (
+                    <HeaderIconButton
+                      icon={<Search className="h-4 w-4" />}
+                      tooltip={t('sidebar.search')}
+                      className={searchActive ? 'bg-accent/5 text-accent rounded-surface shadow-tinted' : 'rounded-surface'}
+                      onClick={() => setSearchActive(true)}
+                    />
+                  )}
                   {/* Add Source button (only for sources mode) - uses filter-aware edit config */}
                   {isSourcesNavigation(navState) && activeWorkspace && (
                     <EditPopover
@@ -4706,77 +4786,17 @@ function AppShellContent({
                 workspaceRootPath={activeWorkspace?.rootPath}
               />
             )}
-            {isDynamicNavigation(navState) && activeWorkspaceId && (
-              <DynamicListPanel workspaceId={activeWorkspaceId} />
-            )}
-            {isSettingsNavigation(navState) && (
+            {isAutoCompact && isSettingsNavigation(navState) && (
               /* Settings Navigator */
               <SettingsNavigator
                 selectedSubpage={navState.subpage}
                 selectedSection={navState.section}
                 onSelectSubpage={(subpage) => handleSettingsClick(subpage)}
                 onSelectSection={(subpage, section) => navigate(routes.view.settings(subpage, section))}
+                onBack={handleSettingsBack}
               />
             )}
-            {isSessionsNavigation(navState) && (
-              /* Sessions List */
-              <>
-                {/* SessionList: Scrollable list of session cards */}
-                {/* Key on sidebarMode forces full remount when switching views, skipping animations */}
-                <SessionList
-                  key={sessionFilter?.kind}
-                  items={searchActive ? workspaceSessionMetas : filteredSessionMetas}
-                  onDelete={handleDeleteSession}
-                  onFlag={onFlagSession}
-                  onUnflag={onUnflagSession}
-                  onArchive={onArchiveSession}
-                  onUnarchive={onUnarchiveSession}
-                  onMarkUnread={onMarkSessionUnread}
-                  onSessionStatusChange={onSessionStatusChange}
-                  onRename={onRenameSession}
-                  onFocusChatInput={(targetSessionId) => {
-                    focusChatInputForSession(targetSessionId ?? focusedSessionId ?? session.selected)
-                  }}
-                  onSessionSelect={(selectedMeta) => {
-                    navigateToSession(selectedMeta.id)
-                  }}
-                  onOpenInNewWindow={(selectedMeta) => {
-                    if (activeWorkspaceId) {
-                      window.electronAPI.openSessionInNewWindow(activeWorkspaceId, selectedMeta.id)
-                    }
-                  }}
-                  onNavigateToView={(view) => {
-                    if (view === 'allSessions') {
-                      navigate(routes.view.allSessions())
-                    } else if (view === 'flagged') {
-                      navigate(routes.view.flagged())
-                    }
-                  }}
-                  sessionOptions={sessionOptions}
-                  searchActive={searchActive}
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  onSearchClose={() => {
-                    setSearchActive(false)
-                    setSearchQuery('')
-                  }}
-                  sessionStatuses={effectiveSessionStatuses}
-                  evaluateViews={evaluateViews}
-                  labels={displayLabelConfigs}
-                  onLabelsChange={handleSessionLabelsChange}
-                  projects={projectMenuOptions}
-                  onSetProjectId={handleSessionProjectChange}
-                  groupingMode={chatGroupingMode}
-                  workspaceId={activeWorkspaceId ?? undefined}
-                  statusFilter={listFilter}
-                  labelFilterMap={labelFilter}
-                    focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
-                  onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
-                  hasPendingPrompt={hasPendingPrompt}
-                  activeChatMatchInfo={chatMatchInfo}
-                />
-              </>
-            )}
+            {isAutoCompact && isSessionsNavigation(navState) && sessionListPanel}
             {/* Mobile/compact-only FAB for starting a new chat — only on the
                 session list itself, not when a chat is open (it would overlap
                 the chat input). */}
@@ -4786,12 +4806,9 @@ function AppShellContent({
           navigatorWidth={
             isAutoCompact
               ? sessionListWidth
-              : effectiveSidebarAndNavigatorHidden
-                || isBoardView
-                || !isSessionListVisible
-                ? 0
-                : sessionListWidth
+              : 0
           }
+          navigatorAsContent={navigatorAsMainContent}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={!!navState.rightSidebar}
           rightSidebarWidth={rightSidebarWidth}
@@ -4820,7 +4837,7 @@ function AppShellContent({
         />
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
+        {!effectiveSidebarAndNavigatorHidden && (isSidebarVisible || isSettingsNavigation(navState)) && (
         <div
           ref={resizeHandleRef}
             onMouseDown={(e) => {
@@ -4841,7 +4858,7 @@ function AppShellContent({
             width: PANEL_SASH_HIT_WIDTH,
             top: PANEL_STACK_VERTICAL_OVERFLOW,
             bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-              left: isSidebarVisible ? sidebarWidth + PANEL_GAP / 2 - PANEL_SASH_HALF_HIT_WIDTH : -PANEL_GAP,
+              left: sidebarWidth - PANEL_SASH_HALF_HIT_WIDTH,
             transition: isResizing === 'sidebar' ? undefined : 'left 0.15s ease-out',
           }}
         >
@@ -4855,44 +4872,6 @@ function AppShellContent({
         </div>
         )}
 
-        {!effectiveSidebarAndNavigatorHidden && !isBoardView && isSessionListVisible && (
-        <div
-          ref={sessionListHandleRef}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              setIsResizing('session-list')
-            }}
-          onMouseMove={(e) => {
-            if (sessionListHandleRef.current) {
-              const rect = sessionListHandleRef.current.getBoundingClientRect()
-              setSessionListHandleY(e.clientY - rect.top)
-            }
-          }}
-            onMouseLeave={() => {
-              if (isResizing !== 'session-list') setSessionListHandleY(null)
-            }}
-          className="absolute cursor-col-resize z-panel flex justify-center"
-          style={{
-            width: PANEL_SASH_HIT_WIDTH,
-            top: PANEL_STACK_VERTICAL_OVERFLOW,
-            bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-            left:
-              (isSidebarVisible ? sidebarWidth + PANEL_GAP : PANEL_EDGE_INSET) +
-              sessionListWidth +
-                PANEL_GAP / 2 -
-              PANEL_SASH_HALF_HIT_WIDTH,
-            transition: isResizing === 'session-list' ? undefined : 'left 0.15s ease-out',
-          }}
-        >
-          <div
-            className="h-full"
-            style={{
-              ...getResizeGradientStyle(sessionListHandleY, sessionListHandleRef.current?.clientHeight ?? null),
-              width: PANEL_SASH_LINE_WIDTH,
-            }}
-          />
-        </div>
-        )}
       </div>
 
       {/* ============================================================================
@@ -5088,7 +5067,14 @@ function AppShellContent({
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
-      <WorkspaceSearchDialog workspaceId={activeWorkspaceId || undefined} open={workspaceSearchOpen} onOpenChange={setWorkspaceSearchOpen} />
+      <WorkspaceSearchDialog
+        workspaceId={activeWorkspaceId || undefined}
+        open={workspaceSearchOpen}
+        onOpenChange={setWorkspaceSearchOpen}
+        onNewChat={handlePrimaryCreate}
+        onOpenBrowserUrl={handleOpenBrowserUrl}
+        sessionEntries={workspaceSearchSessionEntries}
+      />
       </div>
     </AppShellProvider>
   )

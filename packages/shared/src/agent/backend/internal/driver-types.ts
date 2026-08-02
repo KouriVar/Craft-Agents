@@ -18,6 +18,7 @@ export interface BackendRuntimePaths {
   node?: string;
   bridgeServer?: string;
   piServer?: string;
+  codexCli?: string;
 }
 
 export interface BackendRuntimePayload extends Record<string, unknown> {
@@ -118,6 +119,8 @@ export function getDefaultProviderType(provider: AgentProvider): LlmProviderType
     case 'anthropic':
       return 'anthropic';
     case 'pi':
+      return 'pi';
+    case 'codex':
       return 'pi';
   }
 }

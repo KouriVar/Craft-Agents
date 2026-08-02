@@ -74,6 +74,7 @@ export interface Session {
   sharedId?: string
   model?: string
   llmConnection?: string
+  agentRuntime?: import('../agent/runtime-types.ts').AgentRuntime
   thinkingLevel?: ThinkingLevel
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   lastFinalMessageId?: string
@@ -151,6 +152,8 @@ export interface CreateSessionOptions {
   workingDirectory?: string | 'user_default' | 'none'
   model?: string
   llmConnection?: string
+  /** Agent engine for this session. Defaults to the app-level selection. */
+  agentRuntime?: import('../agent/runtime-types.ts').AgentRuntime
   systemPromptPreset?: 'default' | 'mini' | string
   hidden?: boolean
   sessionStatus?: SessionStatus

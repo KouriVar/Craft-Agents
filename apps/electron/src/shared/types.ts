@@ -165,6 +165,17 @@ export interface BrowserTabMenuRequest {
   }>
 }
 
+export type NativeContextMenuItem =
+  | { type: 'separator' }
+  | {
+      type?: 'normal' | 'checkbox'
+      label: string
+      action?: string
+      enabled?: boolean
+      checked?: boolean
+      submenu?: NativeContextMenuItem[]
+    }
+
 /**
  * Empty-state launch request from the browser empty-state renderer.
  */
@@ -360,6 +371,7 @@ export interface ElectronAPI {
 
   // App lifecycle
   relaunchApp(): Promise<void>
+  showNativeContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
   removeWorkspace(workspaceId: string): Promise<boolean>
   invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
 
@@ -847,6 +859,8 @@ export interface ElectronAPI {
   setRightSidebarFollowSession(enabled: boolean): Promise<void>
   getBrowserOpenMode(): Promise<'sidebar' | 'window'>
   setBrowserOpenMode(value: 'sidebar' | 'window'): Promise<void>
+  getFileReviewOpenMode(): Promise<'fullscreen' | 'sidebar'>
+  setFileReviewOpenMode(value: 'fullscreen' | 'sidebar'): Promise<void>
   startCowartCanvas(request: {
     projectDir: string
     pageId?: string
@@ -1063,6 +1077,10 @@ export interface ElectronAPI {
   setDefaultLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   getDefaultThinkingLevel(): Promise<ThinkingLevel>
   setDefaultThinkingLevel(level: ThinkingLevel): Promise<{ success: boolean; error?: string }>
+  getDefaultAgentRuntime(): Promise<import('@craft-agent/shared/agent/runtime-types').AgentRuntime | null>
+  setDefaultAgentRuntime(runtime: import('@craft-agent/shared/agent/runtime-types').AgentRuntime): Promise<{ success: boolean; error?: string }>
+  getMultimodalModel(): Promise<import('@craft-agent/shared/config').MultimodalModelSelection | null>
+  setMultimodalModel(selection: import('@craft-agent/shared/config').MultimodalModelSelection | null): Promise<{ success: boolean; error?: string }>
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
 
   // Projects (workspace-scoped)

@@ -23,6 +23,7 @@ export interface ConfigDefaults {
     rightSidebarMode: 'manual' | 'auto' | 'always';
     rightSidebarFollowSession: boolean;
     browserOpenMode: 'sidebar' | 'window';
+    fileReviewOpenMode: 'fullscreen' | 'sidebar';
     keepAwakeWhileRunning: boolean;
     richToolDescriptions: boolean;
     extendedPromptCache: boolean;

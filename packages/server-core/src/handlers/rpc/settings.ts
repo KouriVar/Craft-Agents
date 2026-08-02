@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
-import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultThinkingLevel, setDefaultThinkingLevel } from '@craft-agent/shared/config'
+import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultThinkingLevel, setDefaultThinkingLevel, getDefaultAgentRuntime, setDefaultAgentRuntime, getMultimodalModel, setMultimodalModel, getLlmConnection } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
+import { isAgentRuntime } from '@craft-agent/shared/agent/runtime-types'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
 import { getWorkspaceOrThrow } from '@craft-agent/server-core/handlers'
@@ -34,6 +35,8 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.input.SET_RIGHT_SIDEBAR_FOLLOW_SESSION,
   RPC_CHANNELS.input.GET_BROWSER_OPEN_MODE,
   RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE,
+  RPC_CHANNELS.input.GET_FILE_REVIEW_OPEN_MODE,
+  RPC_CHANNELS.input.SET_FILE_REVIEW_OPEN_MODE,
   RPC_CHANNELS.screenCapture.GET_HIDE_APP,
   RPC_CHANNELS.screenCapture.SET_HIDE_APP,
   RPC_CHANNELS.power.GET_KEEP_AWAKE,
@@ -47,6 +50,10 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.sessions.SET_MODEL,
   RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL,
   RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL,
+  RPC_CHANNELS.settings.GET_DEFAULT_AGENT_RUNTIME,
+  RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME,
+  RPC_CHANNELS.settings.GET_MULTIMODAL_MODEL,
+  RPC_CHANNELS.settings.SET_MULTIMODAL_MODEL,
   RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED,
   RPC_CHANNELS.tools.SET_BROWSER_TOOL_ENABLED,
   RPC_CHANNELS.settings.GET_NETWORK_PROXY,
@@ -74,6 +81,33 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     if (!success) {
       throw new Error('Failed to persist default thinking level')
     }
+    return { success: true }
+  })
+
+  server.handle(RPC_CHANNELS.settings.GET_DEFAULT_AGENT_RUNTIME, async () => {
+    return getDefaultAgentRuntime()
+  })
+
+  server.handle(RPC_CHANNELS.settings.SET_DEFAULT_AGENT_RUNTIME, async (_ctx, runtime: string) => {
+    if (!isAgentRuntime(runtime)) throw new Error(`Invalid agent runtime: ${runtime}`)
+    if (!setDefaultAgentRuntime(runtime)) throw new Error('Failed to persist default agent runtime')
+    return { success: true }
+  })
+
+  server.handle(RPC_CHANNELS.settings.GET_MULTIMODAL_MODEL, async () => {
+    return getMultimodalModel()
+  })
+
+  server.handle(RPC_CHANNELS.settings.SET_MULTIMODAL_MODEL, async (_ctx, selection: { connectionSlug: string; model: string } | null) => {
+    if (selection) {
+      if (!selection.connectionSlug?.trim() || !selection.model?.trim()) {
+        throw new Error('Multimodal model requires a connection and model')
+      }
+      if (!getLlmConnection(selection.connectionSlug)) {
+        throw new Error(`LLM connection not found: ${selection.connectionSlug}`)
+      }
+    }
+    if (!setMultimodalModel(selection)) throw new Error('Failed to persist multimodal model')
     return { success: true }
   })
 
@@ -305,6 +339,18 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_CHANNELS.input.SET_BROWSER_OPEN_MODE, async (_ctx, value: string) => {
     const { setBrowserOpenMode } = await import('@craft-agent/shared/config/storage')
     setBrowserOpenMode(value as 'sidebar' | 'window')
+  })
+
+  // File preview / review presentation
+  server.handle(RPC_CHANNELS.input.GET_FILE_REVIEW_OPEN_MODE, async () => {
+    const { getFileReviewOpenMode } = await import('@craft-agent/shared/config/storage')
+    return getFileReviewOpenMode()
+  })
+
+  server.handle(RPC_CHANNELS.input.SET_FILE_REVIEW_OPEN_MODE, async (_ctx, value: string) => {
+    if (value !== 'fullscreen' && value !== 'sidebar') throw new Error(`Invalid file review open mode: ${value}`)
+    const { setFileReviewOpenMode } = await import('@craft-agent/shared/config/storage')
+    setFileReviewOpenMode(value)
   })
 
   server.handle(RPC_CHANNELS.screenCapture.GET_HIDE_APP, async () => {

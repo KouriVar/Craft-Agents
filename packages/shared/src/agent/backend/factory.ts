@@ -25,6 +25,8 @@ import type {
 } from './types.ts';
 import { ClaudeAgent } from '../claude-agent.ts';
 import { PiAgent } from '../pi-agent.ts';
+import { CodexAgent } from '../codex-agent.ts';
+import { normalizeCodexModelId, type AgentRuntime } from '../runtime-types.ts';
 import {
   getLlmConnection,
   getDefaultLlmConnection,
@@ -59,10 +61,12 @@ import {
 } from './internal/runtime-resolver.ts';
 import { anthropicDriver } from './internal/drivers/anthropic.ts';
 import { piDriver } from './internal/drivers/pi.ts';
+import { codexDriver } from './internal/drivers/codex.ts';
 
 const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
   anthropic: anthropicDriver,
   pi: piDriver,
+  codex: codexDriver,
 };
 
 function getProviderDriver(provider: AgentProvider): ProviderDriver {
@@ -139,6 +143,9 @@ export function createBackend(config: BackendConfig): AgentBackend {
       // PiAgent implements AgentBackend directly
       // Auth is API key based via Pi's AuthStorage
       return new PiAgent(config);
+
+    case 'codex':
+      return new CodexAgent(config);
 
     default:
       throw new Error(`Unknown provider: ${config.provider}`);
@@ -221,7 +228,7 @@ export function resolveBackendHostTooling(args: {
  * @returns Array of provider identifiers that have working implementations
  */
 export function getAvailableProviders(): AgentProvider[] {
-  return ['anthropic', 'pi'];
+  return ['anthropic', 'pi', 'codex'];
 }
 
 /**
@@ -354,15 +361,23 @@ export function resolveBackendContext(args: {
   sessionConnectionSlug?: string;
   workspaceDefaultConnectionSlug?: string;
   managedModel?: string;
+  agentRuntime?: AgentRuntime;
 }): ResolvedBackendContext {
   const connection = resolveSessionConnection(
     args.sessionConnectionSlug,
     args.workspaceDefaultConnectionSlug
   );
 
-  const provider = connection
+  const connectionProvider = connection
     ? providerTypeToAgentProvider(connection.providerType || 'anthropic')
     : 'anthropic';
+  const provider: AgentProvider = args.agentRuntime === 'claude'
+    ? 'anthropic'
+    : args.agentRuntime === 'pi'
+      ? 'pi'
+      : args.agentRuntime === 'codex'
+        ? 'codex'
+        : connectionProvider;
 
   const authType = connection
     ? connectionAuthTypeToBackendAuthType(connection.authType)
@@ -588,6 +603,7 @@ export const BACKEND_CAPABILITIES: Record<AgentProvider, {
 }> = {
   anthropic: { needsHttpPoolServer: false },
   pi: { needsHttpPoolServer: false },
+  codex: { needsHttpPoolServer: true },
 };
 
 // ============================================================
@@ -604,6 +620,7 @@ export function getDefaultAuthType(provider: AgentProvider): LlmAuthType | undef
   switch (provider) {
     case 'anthropic': return undefined;
     case 'pi':        return 'api_key';
+    case 'codex':     return 'api_key';
     default:          return undefined;
   }
 }
@@ -629,9 +646,12 @@ export function resolveModelForProvider(
   managedModel: string | undefined,
   connection: LlmConnection | null
 ): string {
+  if (provider === 'codex' && managedModel) {
+    managedModel = normalizeCodexModelId(managedModel);
+  }
   // Cross-provider guard: if the model belongs to a different provider, fall back
   // to the connection's default. This prevents e.g. sending a Claude model to Pi.
-  if (managedModel) {
+  if (managedModel && provider !== 'codex') {
     managedModel = normalizeDeprecatedModelId(managedModel);
     const modelProvider = getModelProvider(managedModel);
     if (modelProvider && modelProvider !== provider) {
@@ -642,9 +662,15 @@ export function resolveModelForProvider(
   let connectionDefault = connection?.defaultModel
     ? normalizeDeprecatedModelId(connection.defaultModel)
     : undefined;
+  if (provider === 'codex' && connectionDefault) {
+    connectionDefault = normalizeCodexModelId(connectionDefault);
+  }
 
-  if (provider === 'pi' && connection?.models?.length) {
-    const connectionModelIds = connection.models.map(m => typeof m === 'string' ? m : m.id);
+  if ((provider === 'pi' || provider === 'codex') && connection?.models?.length) {
+    const connectionModelIds = connection.models.map(m => {
+      const id = typeof m === 'string' ? m : m.id;
+      return provider === 'codex' ? normalizeCodexModelId(id) : id;
+    });
     if (managedModel && !connectionModelIds.includes(managedModel)) {
       managedModel = undefined;
     }
@@ -655,6 +681,7 @@ export function resolveModelForProvider(
 
   switch (provider) {
     case 'pi':
+    case 'codex':
       return managedModel || connectionDefault || '';
     default:
       return managedModel || connectionDefault || DEFAULT_MODEL;

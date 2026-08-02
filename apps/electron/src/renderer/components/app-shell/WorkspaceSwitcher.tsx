@@ -1,27 +1,45 @@
-import * as React from "react"
-import { useTranslation } from "react-i18next"
-import { useState, useCallback, useRef } from "react"
-import { Check, FolderPlus, ExternalLink, ChevronDown, Cloud, CloudOff, Trash2 } from "lucide-react"
-import { AnimatePresence } from "motion/react"
-import { useSetAtom } from "jotai"
-import { toast } from "sonner"
+import * as React from 'react'
+import { useTranslation } from 'react-i18next'
+import { useState, useCallback, useRef } from 'react'
+import {
+  Cake,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Cloud,
+  CloudOff,
+  DatabaseZap,
+  ExternalLink,
+  FolderPlus,
+  HelpCircle,
+  MessageSquare,
+  Settings,
+  Trash2,
+  Webhook,
+  Zap,
+} from 'lucide-react'
+import { AnimatePresence } from 'motion/react'
+import { useSetAtom } from 'jotai'
+import { toast } from 'sonner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 
-import { cn } from "@/lib/utils"
-import { fullscreenOverlayOpenAtom } from "@/atoms/overlay"
+import { cn } from '@/lib/utils'
+import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   StyledDropdownMenuContent,
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
-} from "@/components/ui/styled-dropdown"
-import { WorkspaceAvatar } from "@/components/ui/workspace-avatar"
-import { FadingText } from "@/components/ui/fading-text"
-import { WorkspaceCreationScreen } from "@/components/workspace"
+} from '@/components/ui/styled-dropdown'
+import { WorkspaceAvatar } from '@/components/ui/workspace-avatar'
+import { FadingText } from '@/components/ui/fading-text'
+import { WorkspaceCreationScreen } from '@/components/workspace'
 import { waitForTransportConnected } from '@/lib/transport-wait'
-import { useWorkspaceIcons } from "@/hooks/useWorkspaceIcon"
-import { useTransportConnectionState } from "@/hooks/useTransportConnectionState"
-import type { Workspace } from "../../../shared/types"
+import { useWorkspaceIcons } from '@/hooks/useWorkspaceIcon'
+import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
+import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
+import type { Workspace } from '../../../shared/types'
 
 interface WorkspaceSwitcherProps {
   variant?: 'sidebar' | 'topbar'
@@ -33,6 +51,69 @@ interface WorkspaceSwitcherProps {
   onWorkspaceRemoved?: () => void
   /** workspaceId -> has unread */
   workspaceUnreadMap?: Record<string, boolean>
+  onOpenSettings?: () => void
+  onOpenWhatsNew?: () => void
+  hasUnseenReleaseNotes?: boolean
+}
+
+function SidebarHelpMenu() {
+  const { t } = useTranslation()
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground transition-[background-color,color,transform] duration-150 hover:bg-foreground/[0.055] hover:text-foreground active:scale-[0.98]"
+              aria-label={t('menu.helpAndDocs')}
+            >
+              <HelpCircle className="h-[18px] w-[18px]" />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t('menu.helpAndDocs')}</TooltipContent>
+      </Tooltip>
+      <StyledDropdownMenuContent align="end" sideOffset={6} minWidth="min-w-48">
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('sources'))}>
+          <DatabaseZap className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('sidebar.sources')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('skills'))}>
+          <Zap className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('sidebar.skills')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('statuses'))}>
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('sidebar.statuses')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('permissions'))}>
+          <Settings className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('settings.permissions.title')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('automations'))}>
+          <Webhook className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('sidebar.automations')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('messaging'))}>
+          <MessageSquare className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('settings.messaging.title')}</span>
+          <ExternalLink className="h-3 w-3 text-muted-foreground" />
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuSeparator />
+        <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
+          <ExternalLink className="h-3.5 w-3.5" />
+          <span className="flex-1">{t('menu.allDocumentation')}</span>
+        </StyledDropdownMenuItem>
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 /**
@@ -51,12 +132,15 @@ export function WorkspaceSwitcher({
   onWorkspaceCreated,
   onWorkspaceRemoved,
   workspaceUnreadMap,
+  onOpenSettings,
+  onOpenWhatsNew,
+  hasUnseenReleaseNotes,
 }: WorkspaceSwitcherProps) {
   const { t } = useTranslation()
   const [showCreationScreen, setShowCreationScreen] = useState(false)
   const [reconnectTarget, setReconnectTarget] = useState<Workspace | null>(null)
   const setFullscreenOverlayOpen = useSetAtom(fullscreenOverlayOpenAtom)
-  const selectedWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const selectedWorkspace = workspaces.find((w) => w.id === activeWorkspaceId)
   const workspaceIconMap = useWorkspaceIcons(workspaces)
   const connectionState = useTransportConnectionState()
   const isRemote = connectionState?.mode === 'remote'
@@ -72,11 +156,11 @@ export function WorkspaceSwitcher({
     const abort = new AbortController()
     healthCheckAbort.current = abort
 
-    const remoteWorkspaces = workspaces.filter(w => w.remoteServer && w.id !== activeWorkspaceId)
+    const remoteWorkspaces = workspaces.filter((w) => w.remoteServer && w.id !== activeWorkspaceId)
     if (remoteWorkspaces.length === 0) return
 
     // Mark all as checking
-    setRemoteHealthMap(prev => {
+    setRemoteHealthMap((prev) => {
       const next = new Map(prev)
       for (const ws of remoteWorkspaces) next.set(ws.id, 'checking')
       return next
@@ -84,14 +168,15 @@ export function WorkspaceSwitcher({
 
     // Fire parallel checks
     for (const ws of remoteWorkspaces) {
-      window.electronAPI.testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.token)
-        .then(result => {
+      window.electronAPI
+        .testRemoteConnection(ws.remoteServer!.url, ws.remoteServer!.token)
+        .then((result) => {
           if (abort.signal.aborted) return
-          setRemoteHealthMap(prev => new Map(prev).set(ws.id, result.ok ? 'ok' : 'error'))
+          setRemoteHealthMap((prev) => new Map(prev).set(ws.id, result.ok ? 'ok' : 'error'))
         })
         .catch(() => {
           if (abort.signal.aborted) return
-          setRemoteHealthMap(prev => new Map(prev).set(ws.id, 'error'))
+          setRemoteHealthMap((prev) => new Map(prev).set(ws.id, 'error'))
         })
     }
   }, [workspaces, activeWorkspaceId])
@@ -184,7 +269,12 @@ export function WorkspaceSwitcher({
         )}
       </AnimatePresence>
 
-      <DropdownMenu onOpenChange={(open) => { if (open) checkRemoteHealth() }}>
+      <div className={variant === 'sidebar' ? 'flex items-center gap-1 px-[6px] pb-[6px]' : 'contents'}>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) checkRemoteHealth()
+        }}
+      >
         <DropdownMenuTrigger asChild>
           {variant === 'topbar' ? (
             <button
@@ -201,21 +291,22 @@ export function WorkspaceSwitcher({
                 fallbackClassName="rounded-full"
               />
               <span className="truncate min-w-0 flex-1 text-left">{selectedWorkspace?.name || 'Workspace'}</span>
-              {selectedWorkspace?.remoteServer && (
-                isRemoteDisconnected(selectedWorkspace.id)
-                  ? <CloudOff className="h-3 w-3 text-destructive shrink-0" />
-                  : <Cloud className="h-3 w-3 opacity-60 shrink-0" />
-              )}
+              {selectedWorkspace?.remoteServer &&
+                (isRemoteDisconnected(selectedWorkspace.id) ? (
+                  <CloudOff className="h-3 w-3 text-destructive shrink-0" />
+                ) : (
+                  <Cloud className="h-3 w-3 opacity-60 shrink-0" />
+                ))}
               <ChevronDown data-slot="chevron" className="h-3 w-3 opacity-60 shrink-0" />
               {hasUnreadInOtherWorkspaces && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
             </button>
           ) : (
             <button
               className={cn(
-                "flex items-center gap-1 w-full min-w-0 justify-start px-2 py-1.5 rounded-md",
-                "text-foreground hover:bg-foreground/5 data-[state=open]:bg-foreground/5 transition-colors duration-150",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                isCollapsed && "h-9 w-9 shrink-0 justify-center p-0"
+                'flex min-h-10 flex-1 items-center gap-1.5 min-w-0 justify-start px-2.5 py-2 rounded-[8px]',
+                'text-foreground hover:bg-foreground/5 data-[state=open]:bg-foreground/5 transition-[background-color,transform] duration-150 active:scale-[0.99]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                isCollapsed && 'h-9 w-9 shrink-0 justify-center p-0',
               )}
               aria-label={t('workspace.selectWorkspace')}
             >
@@ -223,19 +314,20 @@ export function WorkspaceSwitcher({
                 workspaceId={selectedWorkspace?.id}
                 workspaceName={selectedWorkspace?.name}
                 src={selectedWorkspace ? workspaceIconMap.get(selectedWorkspace.id) : undefined}
-                className="h-4 w-4 rounded-full ring-1 ring-border/50"
+                className="h-[18px] w-[18px] rounded-full ring-1 ring-border/50"
                 fallbackClassName="rounded-full"
               />
               {!isCollapsed && (
                 <>
-                  <FadingText className="ml-1 font-sans min-w-0 text-sm" fadeWidth={36}>
+                  <FadingText className="ml-1 min-w-0 font-sans text-sm font-medium" fadeWidth={36}>
                     {selectedWorkspace?.name || 'Select workspace'}
                   </FadingText>
-                  {selectedWorkspace?.remoteServer && (
-                    isRemoteDisconnected(selectedWorkspace.id)
-                      ? <CloudOff className="h-3 w-3 text-destructive shrink-0" />
-                      : <Cloud className="h-3 w-3 text-muted-foreground shrink-0" />
-                  )}
+                  {selectedWorkspace?.remoteServer &&
+                    (isRemoteDisconnected(selectedWorkspace.id) ? (
+                      <CloudOff className="h-3 w-3 text-destructive shrink-0" />
+                    ) : (
+                      <Cloud className="h-3 w-3 text-muted-foreground shrink-0" />
+                    ))}
                   <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
                 </>
               )}
@@ -246,7 +338,8 @@ export function WorkspaceSwitcher({
         <StyledDropdownMenuContent
           align={variant === 'topbar' ? 'center' : 'start'}
           sideOffset={variant === 'topbar' ? 6 : 4}
-          minWidth={variant === 'topbar' ? 'min-w-64' : undefined}
+          minWidth={variant === 'topbar' ? 'min-w-64' : 'min-w-0'}
+          className={variant === 'sidebar' ? 'w-[var(--radix-dropdown-menu-trigger-width)]' : undefined}
         >
           {workspaces.map((workspace) => {
             const disconnected = isRemoteDisconnected(workspace.id)
@@ -265,9 +358,9 @@ export function WorkspaceSwitcher({
                   onSelect(workspace.id, openInNewWindow)
                 }}
                 className={cn(
-                  "justify-between group",
-                  activeWorkspaceId === workspace.id && "bg-foreground/10",
-                  disconnected && "opacity-60",
+                  'justify-between group',
+                  activeWorkspaceId === workspace.id && 'bg-foreground/10',
+                  disconnected && 'opacity-60',
                 )}
               >
                 <div className="flex items-center gap-3 font-sans min-w-0 flex-1">
@@ -279,11 +372,14 @@ export function WorkspaceSwitcher({
                     fallbackClassName="rounded-full text-xs"
                   />
                   <span className="truncate">{workspace.name}</span>
-                  {workspace.remoteServer && (
-                    disconnected
-                      ? <span title={getDisconnectTooltip(workspace.id)} className="shrink-0"><CloudOff className="h-3.5 w-3.5 text-destructive" /></span>
-                      : <Cloud className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  )}
+                  {workspace.remoteServer &&
+                    (disconnected ? (
+                      <span title={getDisconnectTooltip(workspace.id)} className="shrink-0">
+                        <CloudOff className="h-3.5 w-3.5 text-destructive" />
+                      </span>
+                    ) : (
+                      <Cloud className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    ))}
                   {workspaceUnreadMap?.[workspace.id] && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
                 </div>
                 <div className="flex items-center gap-1">
@@ -296,7 +392,7 @@ export function WorkspaceSwitcher({
                         e.stopPropagation()
                         handleRemoveWorkspace(workspace)
                       }}
-                      title={t("workspace.removeWorkspace")}
+                      title={t('workspace.removeWorkspace')}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -309,14 +405,12 @@ export function WorkspaceSwitcher({
                         e.stopPropagation()
                         onSelect(workspace.id, true)
                       }}
-                      title={t("sidebarMenu.openInNewWindow")}
+                      title={t('sidebarMenu.openInNewWindow')}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  {activeWorkspaceId === workspace.id && (
-                    <Check className="h-3.5 w-3.5" />
-                  )}
+                  {activeWorkspaceId === workspace.id && <Check className="h-3.5 w-3.5" />}
                 </div>
               </StyledDropdownMenuItem>
             )
@@ -324,15 +418,30 @@ export function WorkspaceSwitcher({
 
           {/* Separator and New Workspace option */}
           <StyledDropdownMenuSeparator />
-          <StyledDropdownMenuItem
-            onClick={handleNewWorkspace}
-            className="font-sans"
-          >
+          <StyledDropdownMenuItem onClick={handleNewWorkspace} className="font-sans">
             <FolderPlus className="h-4 w-4" />
-            {t("workspace.addWorkspace")}
+            {t('workspace.addWorkspace')}
           </StyledDropdownMenuItem>
+          {(onOpenSettings || onOpenWhatsNew) && <StyledDropdownMenuSeparator />}
+          {onOpenSettings && (
+            <StyledDropdownMenuItem onClick={onOpenSettings} className="font-sans">
+              <Settings className="h-4 w-4" />
+              {t('sidebar.settings')}
+            </StyledDropdownMenuItem>
+          )}
+          {onOpenWhatsNew && (
+            <StyledDropdownMenuItem onClick={onOpenWhatsNew} className="font-sans">
+              <span className="relative">
+                <Cake className="h-4 w-4" />
+                {hasUnseenReleaseNotes && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-accent" />}
+              </span>
+              {t('sidebar.whatsNew')}
+            </StyledDropdownMenuItem>
+          )}
         </StyledDropdownMenuContent>
       </DropdownMenu>
+      {variant === 'sidebar' && !isCollapsed && <SidebarHelpMenu />}
+      </div>
     </>
   )
 }
